@@ -1,0 +1,4 @@
+interface:
+  display_name: "README Showcase"
+  short_description: "Design evidence-backed GitHub README showcases"
+  default_prompt: "Use $readme-showcase to redesign this repository README around its real value, proof, and project-native visual language."
