@@ -50,9 +50,12 @@ git clone https://github.com/Acfufu/readme-showcase.git
 cd readme-showcase
 
 skill_target="${CODEX_HOME:-$HOME/.codex}/skills/readme-showcase"
-test ! -e "$skill_target"
-cp -R skill "$skill_target"
-test -f "$skill_target/SKILL.md" && echo "Installed: $skill_target"
+if [ -e "$skill_target" ]; then
+  printf 'Target already exists: %s\n' "$skill_target"
+else
+  cp -R skill "$skill_target"
+  printf 'Installed: %s\n' "$skill_target"
+fi
 ```
 
 Expected result:
