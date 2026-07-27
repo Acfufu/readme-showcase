@@ -1,5 +1,7 @@
 # README Showcase
 
+**English** | [简体中文](README_zh.md)
+
 Evidence-backed GitHub README design for Codex.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -19,6 +21,8 @@ architecture.
 - Keeps unsupported claims, decorative clutter, and unverified badges out.
 
 ## Workflow
+
+![Bilingual five-stage README Showcase workflow from repository evidence to runnable verification](assets/readme/workflow.svg)
 
 | Stage | Result |
 | --- | --- |
