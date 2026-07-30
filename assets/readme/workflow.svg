@@ -1,115 +1,82 @@
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="1200" height="620" viewBox="0 0 1200 620"
+     width="1200" height="540" viewBox="0 0 1200 540"
      role="img" aria-labelledby="title desc">
-  <title id="title">README Showcase evidence-driven workflow</title>
-  <desc id="desc">Five stages move from repository evidence through project type, narrative, presentation, and runnable verification, with gates that reject unsupported claims, decorative visuals, and unauthorized publishing.</desc>
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
-            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#58A6FF"/>
-    </marker>
-  </defs>
+  <title id="title">README Showcase evidence workflow</title>
+  <desc id="desc">Repository evidence moves through five review desks: inspect, select, draft, visualize, and verify.</desc>
 
-  <rect width="1200" height="620" rx="28" fill="#0D1117"/>
-  <rect x="36" y="34" width="1128" height="552" rx="22"
-        fill="#161B22" stroke="#30363D" stroke-width="2"/>
+  <rect width="1200" height="540" rx="24" fill="#1D1B17"/>
 
-  <g id="title-block" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
-    <text x="68" y="82" fill="#8B949E" font-size="20" font-weight="600"
-          letter-spacing="2">README SHOWCASE · WORKFLOW</text>
-    <text x="68" y="132" fill="#F0F6FC" font-size="42" font-weight="700">
-      证据驱动的 README 工作流
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
+    <text x="54" y="58" fill="#D8D0C2" font-size="18" font-weight="700"
+          letter-spacing="3">THE EVIDENCE DESK / WORKFLOW</text>
+    <text x="54" y="112" fill="#FFFDF7" font-size="42" font-weight="750">
+      Every claim passes five desks.
     </text>
-    <text x="68" y="168" fill="#8B949E" font-size="22">
-      Evidence first. Presentation second. Verification closes the loop.
+    <text x="1146" y="58" fill="#C54A36" font-size="18" font-weight="800"
+          text-anchor="end">NO PROOF, NO CLAIM.</text>
+
+    <line x1="54" y1="146" x2="1146" y2="146" stroke="#686257" stroke-width="2"/>
+
+    <g transform="translate(54 178)">
+      <g>
+        <text x="0" y="22" fill="#C54A36" font-size="20" font-weight="800">01</text>
+        <text x="0" y="63" fill="#FFFDF7" font-size="26" font-weight="700">INSPECT</text>
+        <text x="0" y="98" fill="#B9B1A4" font-size="19">Audience</text>
+        <text x="0" y="126" fill="#B9B1A4" font-size="19">Value + proof</text>
+        <text x="0" y="154" fill="#B9B1A4" font-size="19">Limits</text>
+      </g>
+
+      <line x1="180" y1="0" x2="180" y2="190" stroke="#686257"/>
+      <g transform="translate(218 0)">
+        <text x="0" y="22" fill="#C54A36" font-size="20" font-weight="800">02</text>
+        <text x="0" y="63" fill="#FFFDF7" font-size="26" font-weight="700">SELECT</text>
+        <text x="0" y="98" fill="#B9B1A4" font-size="19">Project type</text>
+        <text x="0" y="126" fill="#B9B1A4" font-size="19">Editing mode</text>
+        <text x="0" y="154" fill="#B9B1A4" font-size="19">Sections</text>
+      </g>
+
+      <line x1="398" y1="0" x2="398" y2="190" stroke="#686257"/>
+      <g transform="translate(436 0)">
+        <text x="0" y="22" fill="#C54A36" font-size="20" font-weight="800">03</text>
+        <text x="0" y="63" fill="#FFFDF7" font-size="26" font-weight="700">DRAFT</text>
+        <text x="0" y="98" fill="#B9B1A4" font-size="19">Value → proof</text>
+        <text x="0" y="126" fill="#B9B1A4" font-size="19">Mechanism</text>
+        <text x="0" y="154" fill="#B9B1A4" font-size="19">First success</text>
+      </g>
+
+      <line x1="616" y1="0" x2="616" y2="190" stroke="#686257"/>
+      <g transform="translate(654 0)">
+        <text x="0" y="22" fill="#C54A36" font-size="20" font-weight="800">04</text>
+        <text x="0" y="63" fill="#FFFDF7" font-size="26" font-weight="700">VISUALIZE</text>
+        <text x="0" y="98" fill="#B9B1A4" font-size="19">Markdown first</text>
+        <text x="0" y="126" fill="#B9B1A4" font-size="19">SVG as proof</text>
+        <text x="0" y="154" fill="#B9B1A4" font-size="19">GIF by opt-in</text>
+      </g>
+
+      <line x1="834" y1="0" x2="834" y2="190" stroke="#686257"/>
+      <g transform="translate(872 0)">
+        <text x="0" y="22" fill="#C54A36" font-size="20" font-weight="800">05</text>
+        <text x="0" y="63" fill="#FFFDF7" font-size="26" font-weight="700">VERIFY</text>
+        <text x="0" y="98" fill="#B9B1A4" font-size="19">Claims</text>
+        <text x="0" y="126" fill="#B9B1A4" font-size="19">Links + assets</text>
+        <text x="0" y="154" fill="#B9B1A4" font-size="19">Runnable result</text>
+      </g>
+    </g>
+
+    <rect x="54" y="408" width="1092" height="82" rx="5"
+          fill="#F3EFE5"/>
+    <text x="82" y="441" fill="#686257" font-size="16" font-weight="800"
+          letter-spacing="2">RELEASE GATES</text>
+    <text x="82" y="472" fill="#1D1B17" font-size="20" font-weight="650">
+      Unsupported claim → remove
     </text>
-    <rect x="903" y="72" width="217" height="52" rx="26"
-          fill="#0D1117" stroke="#58A6FF" stroke-width="2"/>
-    <text x="1011" y="106" fill="#79C0FF" font-size="20"
-          font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
-          text-anchor="middle">$readme-showcase</text>
-  </g>
-
-  <g id="workflow" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
-    <line x1="244" y1="318" x2="270" y2="318" stroke="#58A6FF"
-          stroke-width="4" marker-end="url(#arrow)"/>
-    <line x1="454" y1="318" x2="480" y2="318" stroke="#58A6FF"
-          stroke-width="4" marker-end="url(#arrow)"/>
-    <line x1="664" y1="318" x2="690" y2="318" stroke="#58A6FF"
-          stroke-width="4" marker-end="url(#arrow)"/>
-    <line x1="874" y1="318" x2="900" y2="318" stroke="#58A6FF"
-          stroke-width="4" marker-end="url(#arrow)"/>
-
-    <g id="stage-evidence">
-      <rect x="60" y="230" width="184" height="176" rx="18"
-            fill="#0D1117" stroke="#238636" stroke-width="2"/>
-      <circle cx="92" cy="263" r="18" fill="#238636"/>
-      <text x="92" y="270" fill="#FFFFFF" font-size="19" font-weight="700"
-            text-anchor="middle">1</text>
-      <text x="86" y="316" fill="#F0F6FC" font-size="30" font-weight="700">仓库证据</text>
-      <text x="86" y="348" fill="#8B949E" font-size="18">Repository evidence</text>
-      <text x="86" y="378" fill="#7EE787" font-size="18">价值 · 证明 · 边界</text>
-    </g>
-
-    <g id="stage-type">
-      <rect x="270" y="230" width="184" height="176" rx="18"
-            fill="#0D1117" stroke="#1F6FEB" stroke-width="2"/>
-      <circle cx="302" cy="263" r="18" fill="#1F6FEB"/>
-      <text x="302" y="270" fill="#FFFFFF" font-size="19" font-weight="700"
-            text-anchor="middle">2</text>
-      <text x="296" y="316" fill="#F0F6FC" font-size="30" font-weight="700">项目类型</text>
-      <text x="296" y="348" fill="#8B949E" font-size="18">Project type</text>
-      <text x="296" y="378" fill="#79C0FF" font-size="18">Agent Skill · CLI · App</text>
-    </g>
-
-    <g id="stage-narrative">
-      <rect x="480" y="230" width="184" height="176" rx="18"
-            fill="#0D1117" stroke="#8957E5" stroke-width="2"/>
-      <circle cx="512" cy="263" r="18" fill="#8957E5"/>
-      <text x="512" y="270" fill="#FFFFFF" font-size="19" font-weight="700"
-            text-anchor="middle">3</text>
-      <text x="506" y="316" fill="#F0F6FC" font-size="30" font-weight="700">章节叙事</text>
-      <text x="506" y="348" fill="#8B949E" font-size="18">Narrative</text>
-      <text x="506" y="378" fill="#D2A8FF" font-size="18">价值 → 证明 → 成功</text>
-    </g>
-
-    <g id="stage-presentation">
-      <rect x="690" y="230" width="184" height="176" rx="18"
-            fill="#0D1117" stroke="#D29922" stroke-width="2"/>
-      <circle cx="722" cy="263" r="18" fill="#D29922"/>
-      <text x="722" y="270" fill="#FFFFFF" font-size="19" font-weight="700"
-            text-anchor="middle">4</text>
-      <text x="716" y="316" fill="#F0F6FC" font-size="30" font-weight="700">展示形式</text>
-      <text x="716" y="348" fill="#8B949E" font-size="18">Presentation</text>
-      <text x="716" y="378" fill="#E3B341" font-size="18">Markdown · SVG · GIF</text>
-    </g>
-
-    <g id="stage-verification">
-      <rect x="900" y="230" width="240" height="176" rx="18"
-            fill="#0D1117" stroke="#F85149" stroke-width="2"/>
-      <circle cx="932" cy="263" r="18" fill="#DA3633"/>
-      <text x="932" y="270" fill="#FFFFFF" font-size="19" font-weight="700"
-            text-anchor="middle">5</text>
-      <text x="926" y="316" fill="#F0F6FC" font-size="30" font-weight="700">可运行验证</text>
-      <text x="926" y="348" fill="#8B949E" font-size="18">Runnable verification</text>
-      <text x="926" y="378" fill="#FF7B72" font-size="18">声明 · 命令 · 链接 · 资产</text>
-    </g>
-  </g>
-
-  <g id="gates" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
-    <text x="68" y="464" fill="#8B949E" font-size="18" font-weight="600"
-          letter-spacing="1.5">STOP GATES · 边界</text>
-    <rect x="68" y="485" width="330" height="62" rx="14" fill="#21262D"/>
-    <text x="90" y="523" fill="#F0F6FC" font-size="20">
-      无证据 → 删除公开声明
+    <line x1="416" y1="441" x2="416" y2="475" stroke="#B9B1A4"/>
+    <text x="444" y="472" fill="#1D1B17" font-size="20" font-weight="650">
+      No visual gain → keep Markdown
     </text>
-    <rect x="430" y="485" width="330" height="62" rx="14" fill="#21262D"/>
-    <text x="452" y="523" fill="#F0F6FC" font-size="20">
-      无理解收益 → 保持 Markdown
-    </text>
-    <rect x="792" y="485" width="330" height="62" rx="14" fill="#21262D"/>
-    <text x="814" y="523" fill="#F0F6FC" font-size="20">
-      未明确授权 → 不发布、不生成 GIF
+    <line x1="806" y1="441" x2="806" y2="475" stroke="#B9B1A4"/>
+    <text x="834" y="472" fill="#1D1B17" font-size="20" font-weight="650">
+      No approval → do not publish
     </text>
   </g>
 </svg>

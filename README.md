@@ -1,53 +1,41 @@
-# README Showcase
+<p align="center">
+  <img src="./assets/readme/hero.gif" width="100%" alt="README Showcase turns repository facts into clear GitHub homepages">
+</p>
 
-**English** | [简体中文](README_zh.md)
+<p align="center">
+  <strong>English</strong> · <a href="./README_zh.md">简体中文</a>
+</p>
 
-Evidence-backed GitHub README design for Codex.
+<p align="center">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-1d1b17" alt="GPL-3.0 license"></a>
+  <img src="https://img.shields.io/badge/runtime-Codex-c54a36" alt="Built for Codex">
+  <img src="https://img.shields.io/badge/dependencies-stdlib_only-686257" alt="Audit script uses Python standard library only">
+</p>
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+`readme-showcase` is a Codex skill for redesigning GitHub README homepages from
+verified repository behavior. Markdown carries searchable facts; visuals earn
+their place by proving identity, output, sequence, or architecture.
 
-`readme-showcase` turns verified repository behavior into a clear project
-homepage. It keeps searchable content in Markdown, selects sections by project
-type, and adds visuals only when they prove identity, output, sequence, or
-architecture.
+## Evidence before decoration
 
-## What it does
+![Five review desks move repository evidence through inspect, select, draft, visualize, and verify](assets/readme/workflow.svg)
 
-- Audits repository evidence before drafting claims.
-- Chooses README or asset-only scope explicitly.
-- Organizes content as `Value → Proof → Mechanism → First use → Detail`.
-- Supports project-native SVG and opt-in GIF workflows.
-- Checks local images, alt text, and basic SVG compatibility.
-- Keeps unsupported claims, decorative clutter, and unverified badges out.
+The skill follows one reading order:
 
-## Workflow
+> **Value → Proof → Mechanism → First use → Detail**
 
-![Bilingual five-stage README Showcase workflow from repository evidence to runnable verification](assets/readme/workflow.svg)
-
-| Stage | Result |
+| Desk | Question it must answer |
 | --- | --- |
-| Inspect | Audience, value, proof, first success, limits, and claim sources |
-| Select | Project type, supported sections, and one editing mode |
-| Draft | Evidence-backed Markdown with observable quick start |
-| Visualize | Static project-native assets only when they improve comprehension |
-| Verify | Claims, commands, links, anchors, images, SVG basics, and language parity |
+| Inspect | Who is this for, what works, and where are the limits? |
+| Select | Which project type, sections, and editing mode fit the evidence? |
+| Draft | What is the shortest truthful route from value to first success? |
+| Visualize | Does an SVG, screenshot, or opt-in GIF improve understanding? |
+| Verify | Do claims, commands, links, assets, and language variants hold up? |
 
-Detailed guidance stays load-on-demand:
+Unsupported claims are removed. Decorative visuals stay out. Publishing always
+requires separate approval.
 
-```text
-skill/
-├── SKILL.md
-├── agents/openai.yaml
-├── references/
-│   ├── structure.md
-│   ├── visual-production.md
-│   └── motion-production.md
-└── scripts/
-    ├── audit_readme.py
-    └── render_motion_gif.py
-```
-
-## Install
+## Install and run
 
 ```bash
 git clone https://github.com/Acfufu/readme-showcase.git
@@ -62,33 +50,54 @@ else
 fi
 ```
 
-Expected result:
+Expected install result:
 
 ```text
 Installed: .../skills/readme-showcase
 ```
 
-Start a new Codex task so skill discovery reloads.
-
-## Use
-
-Invoke skill explicitly:
+Start a new Codex task so skill discovery reloads, then invoke:
 
 ```text
 $readme-showcase Redesign this repository README around verified behavior and a runnable quick start.
 ```
 
-For one requested visual without README edits:
+First observable behavior: skill inspects repository evidence, then selects
+README mode or asks whether scope is whole-README versus asset-only when unclear.
 
-```text
-$readme-showcase Create an asset-only workflow diagram from this repository's real architecture.
-```
+## Two modes, one boundary
+
+| Mode | Changes | Use it for |
+| --- | --- | --- |
+| README | Copy, reading order, proof, Markdown, justified visuals | A complete repository homepage |
+| Asset-only | Requested visual files only | A hero, workflow, badge, diagram, or coordinated set |
 
 README mode may change README structure and justified assets. Asset-only mode
-leaves README byte-for-byte unchanged unless embedding receives separate
-approval. GIF generation also requires explicit opt-in.
+leaves README byte-for-byte unchanged unless embedding receives separate approval.
+GIF generation requires explicit opt-in in either mode.
 
-## Verify
+Example asset-only request:
+
+```text
+$readme-showcase Create a static workflow SVG from this repository's real architecture. Do not edit the README.
+```
+
+## What ships
+
+```text
+skill/
+├── SKILL.md                  # workflow and scope gates
+├── agents/openai.yaml        # Codex discovery metadata
+├── references/
+│   ├── structure.md          # evidence map and narrative choices
+│   ├── visual-production.md  # GitHub-safe visual rules
+│   └── motion-production.md  # opt-in GIF workflow
+└── scripts/
+    ├── audit_readme.py       # README and SVG checks
+    └── render_motion_gif.py  # approved motion renderer
+```
+
+## Verify a result
 
 Audit any generated README:
 
@@ -103,15 +112,15 @@ python3 -m py_compile skill/scripts/audit_readme.py skill/scripts/render_motion_
 ```
 
 `audit_readme.py` uses Python standard library only. Motion rendering additionally
-requires Pillow, `ffmpeg`, and either `rsvg-convert` or macOS `sips`.
+needs Pillow, `ffmpeg`, and either `rsvg-convert` or macOS `sips`.
 
 ## Boundaries
 
-- Repository evidence controls public claims and sections.
-- Animation is optional output, never default mode.
-- Commands and frequently changing facts remain Markdown, not images.
-- Generated assets default to target repository's `assets/readme/` convention.
-- Publishing, commits, pushes, and remote changes still require explicit approval.
+- Repository evidence controls claims and sections.
+- Commands and changing facts remain copyable Markdown.
+- Static SVG is default for deterministic visuals; GIF is opt-in.
+- Generated assets use target repository's `assets/readme/` convention.
+- Commits, pushes, publishing, and remote changes need explicit approval.
 
 ## License
 
