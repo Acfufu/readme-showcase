@@ -22,6 +22,7 @@ scan_repository = _CORE.scan_repository
 retrieve_patterns = _CORE.retrieve_patterns
 validate_generated_bundle = _CORE.validate_generated_bundle
 evaluate_generated_bundle = _CORE.evaluate_generated_bundle
+build_pr_bundle = _CORE.build_pr_bundle
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
 import_benchmark = _BENCHMARK.import_benchmark
 
@@ -100,6 +101,40 @@ def _evaluate(arguments: argparse.Namespace) -> dict[str, object]:
     return report
 
 
+def _within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _build_pr_bundle(arguments: argparse.Namespace) -> dict[str, object]:
+    target_root = Path.cwd().resolve()
+    for path in (arguments.bundle, arguments.evaluation, arguments.output):
+        if _within(path, target_root):
+            raise ContractError(
+                "E_PR_PATH",
+                "pipeline inputs and outputs must stay outside target repository",
+            )
+    bundle = read_json_object(arguments.bundle)
+    evaluation = read_json_object(arguments.evaluation)
+    for path, payload in (
+        (arguments.bundle, bundle),
+        (arguments.evaluation, evaluation),
+    ):
+        if path.read_bytes() != canonical_json_bytes(payload):
+            raise ContractError("E_PR_INPUT", f"input is not canonical JSON: {path.name}")
+    result = build_pr_bundle(
+        bundle,
+        evaluation,
+        arguments.bundle.parent.resolve(),
+        target_root,
+    )
+    write_canonical_json_atomic(arguments.output, result)
+    return result
+
+
 def _path_argument(
     parser: argparse.ArgumentParser,
     flag: str,
@@ -161,7 +196,7 @@ def build_parser() -> argparse.ArgumentParser:
     _path_argument(build_pr_bundle, "--bundle")
     _path_argument(build_pr_bundle, "--evaluation")
     _path_argument(build_pr_bundle, "--output")
-    build_pr_bundle.set_defaults(handler=_pending("build-pr-bundle"))
+    build_pr_bundle.set_defaults(handler=_build_pr_bundle)
 
     publish_gate = subcommands.add_parser("check-publish-gate")
     _path_argument(publish_gate, "--pr-bundle")

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import time
 from pathlib import Path, PurePosixPath
 from typing import Any, NoReturn, cast
@@ -229,6 +230,38 @@ _ADVISORY_METRICS = (
     "observable_commands",
     "section_intents",
     "visual_provenance",
+)
+_EVALUATION_REPORT_FIELDS = {
+    "schema_version",
+    "status",
+    "decision_basis",
+    "bundle_sha256",
+    "hard_gate",
+    "advisory",
+}
+_PR_EXCLUDED_PARTS = {
+    ".git",
+    ".omo",
+    "evaluation-only",
+    "node_modules",
+    "previews",
+    "run-artifacts",
+}
+_PR_EXCLUDED_NAMES = {
+    "approval-envelope.json",
+    "asset-manifest.json",
+    "claim-map.json",
+    "evaluation-report.json",
+    "generated-readme-bundle.json",
+    "pr-bundle.json",
+    "readme-plan.json",
+    "remote-state.json",
+    "repository-evidence.json",
+    "retrieval-packet.json",
+}
+_GITHUB_REPOSITORY = re.compile(
+    r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})/"
+    r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})\Z"
 )
 _RETRIEVAL_PROJECT_TYPES = {
     "developer-tool",
@@ -1776,4 +1809,339 @@ def evaluate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
         "bundle_sha256": bundle_sha256,
         "hard_gate": {"status": "pass", "findings": []},
         "advisory": advisory,
+    }
+
+
+def _validate_evaluation_report(
+    payload: Any,
+    *,
+    bundle_sha256: str,
+) -> None:
+    report = validate_contract(
+        payload,
+        required=_EVALUATION_REPORT_FIELDS,
+        optional=set(),
+        context="evaluation report",
+    )
+    if (
+        report["status"] != "pass"
+        or report["decision_basis"] != "hard-gates-only"
+        or report["bundle_sha256"] != bundle_sha256
+    ):
+        _fail("E_PR_EVALUATION", "evaluation does not pass for this exact bundle")
+    hard_gate = _object(
+        report["hard_gate"],
+        {"status", "findings"},
+        "evaluation report.hard_gate",
+    )
+    if hard_gate["status"] != "pass" or hard_gate["findings"] != []:
+        _fail("E_PR_EVALUATION", "evaluation hard gate must pass without findings")
+    advisory = _object(
+        report["advisory"],
+        set(_ADVISORY_METRICS),
+        "evaluation report.advisory",
+    )
+    for name in _ADVISORY_METRICS:
+        pair = _object(
+            advisory[name],
+            {"covered", "total"},
+            f"evaluation report.advisory.{name}",
+        )
+        covered = pair["covered"]
+        total = pair["total"]
+        if (
+            type(covered) is not int
+            or type(total) is not int
+            or covered < 0
+            or total < 0
+            or covered > total
+        ):
+            _fail("E_PR_EVALUATION", f"evaluation metric {name} is invalid")
+
+
+def _git_output(root: Path, *arguments: str) -> bytes:
+    environment = os.environ.copy()
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
+    environment["LC_ALL"] = "C"
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "--no-optional-locks",
+                "-C",
+                str(root),
+                *arguments,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+            env=environment,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ContractError("E_PR_GIT", "local Git inspection is unavailable") from exc
+    if result.returncode != 0:
+        _fail("E_PR_GIT", f"local Git inspection failed: {arguments[0]}")
+    return result.stdout
+
+
+def _github_repository_from_origin(value: str) -> str:
+    patterns = (
+        r"https://github\.com/(?P<repo>[^?#]+?)(?:\.git)?\Z",
+        r"git@github\.com:(?P<repo>.+?)(?:\.git)?\Z",
+        r"ssh://git@github\.com/(?P<repo>.+?)(?:\.git)?\Z",
+    )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, value)
+        if match and _GITHUB_REPOSITORY.fullmatch(match.group("repo")):
+            return match.group("repo")
+    _fail("E_PR_TARGET", "origin must identify the exact GitHub repository")
+
+
+def _publish_path(value: str, kind: str) -> PurePosixPath:
+    path = _relative_path(value, f"PR {kind} path")
+    if (
+        any(part in _PR_EXCLUDED_PARTS for part in path.parts)
+        or path.name in _PR_EXCLUDED_NAMES
+    ):
+        _fail("E_PR_PATH", f"excluded path cannot enter PR bundle: {value}")
+    if kind == "readme" and path.name not in {"README.md", "README_zh.md"}:
+        _fail("E_PR_PATH", "README candidate must target README.md or README_zh.md")
+    if kind in {"asset", "semantic"} and path.parts[:2] != ("assets", "readme"):
+        _fail("E_PR_PATH", f"{kind} candidate must stay under assets/readme")
+    if kind == "semantic" and not path.name.endswith(".glyphic.json"):
+        _fail("E_PR_PATH", "Glyphic semantic source must use .glyphic.json")
+    return path
+
+
+def _target_file_sha256(root: Path, path: PurePosixPath) -> str | None:
+    current = root
+    for index, part in enumerate(path.parts):
+        current = current / part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            return None
+        if stat.S_ISLNK(info.st_mode):
+            _fail("E_PR_PATH", f"target path crosses symlink: {path.as_posix()}")
+        if index < len(path.parts) - 1:
+            if not stat.S_ISDIR(info.st_mode):
+                _fail("E_PR_PATH", f"target parent is not a directory: {path.as_posix()}")
+        elif not stat.S_ISREG(info.st_mode):
+            _fail("E_PR_PATH", f"target candidate is not a regular file: {path.as_posix()}")
+    return hashlib.sha256(
+        _read_scanned_file(current, current.lstat(), path.as_posix())
+    ).hexdigest()
+
+
+def _candidate_change(
+    *,
+    artifact_root: Path,
+    target_root: Path,
+    reference: dict[str, str],
+    kind: str,
+) -> dict[str, object]:
+    path = _publish_path(reference["path"], kind)
+    _artifact_bytes(artifact_root, reference, f"PR {kind} candidate")
+    before_sha256 = _target_file_sha256(target_root, path)
+    after_sha256 = reference["sha256"]
+    change = (
+        "add"
+        if before_sha256 is None
+        else "unchanged"
+        if before_sha256 == after_sha256
+        else "modify"
+    )
+    return {
+        "path": path.as_posix(),
+        "before_sha256": before_sha256,
+        "after_sha256": after_sha256,
+        "change": change,
+    }
+
+
+def build_pr_bundle(
+    payload: Any,
+    evaluation: Any,
+    artifact_root: Path,
+    target_root: Path,
+) -> dict[str, object]:
+    artifact_root = artifact_root.resolve(strict=True)
+    try:
+        target_info = target_root.lstat()
+    except FileNotFoundError as exc:
+        raise ContractError("E_PR_TARGET", "target repository is missing") from exc
+    if stat.S_ISLNK(target_info.st_mode) or not stat.S_ISDIR(target_info.st_mode):
+        _fail("E_PR_TARGET", "target repository must be a real directory")
+    target_root = target_root.resolve(strict=True)
+    try:
+        artifact_root.relative_to(target_root)
+    except ValueError:
+        pass
+    else:
+        _fail("E_PR_PATH", "pipeline run directory must stay outside target repository")
+
+    bundle = validate_contract(
+        payload,
+        required=_BUNDLE_FIELDS,
+        optional=set(),
+        context="generated README bundle",
+    )
+    target = _object(bundle["target"], _TARGET_FIELDS, "bundle target")
+    repository = _text(target["repository"], "bundle target.repository")
+    base_sha = target["base_sha"]
+    if not isinstance(base_sha, str) or not _COMMIT.fullmatch(base_sha):
+        _fail("E_BUNDLE_TARGET", "bundle target.base_sha must be immutable")
+    if not _GITHUB_REPOSITORY.fullmatch(repository):
+        _fail("E_PR_TARGET", "bundle target.repository must be owner/name")
+
+    head = _git_output(target_root, "rev-parse", "--verify", "HEAD").decode(
+        "ascii",
+        errors="strict",
+    ).strip()
+    if head != base_sha:
+        _fail("E_PR_BASE", "target HEAD differs from bundle base SHA")
+    origin = _git_output(target_root, "remote", "get-url", "origin").decode(
+        "utf-8",
+        errors="strict",
+    ).strip()
+    if _github_repository_from_origin(origin) != repository:
+        _fail("E_PR_TARGET", "target origin differs from bundle repository")
+    cached_before = _git_output(
+        target_root,
+        "diff",
+        "--cached",
+        "--binary",
+        "--no-ext-diff",
+    )
+    worktree = _git_output(
+        target_root,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+    )
+    if worktree:
+        _fail("E_PR_WORKTREE", "target worktree and index must be clean")
+
+    validate_generated_bundle(bundle, artifact_root)
+    bundle_sha256 = canonical_sha256(bundle)
+    _validate_evaluation_report(evaluation, bundle_sha256=bundle_sha256)
+    candidate = cast(dict[str, Any], bundle["candidate"])
+    references: list[tuple[dict[str, str], str]] = []
+    if candidate["readme"] is not None:
+        references.append(
+            (_reference(candidate["readme"], "bundle candidate.readme"), "readme")
+        )
+    references.extend(
+        (
+            _reference(value, f"bundle candidate.assets[{index}]"),
+            "asset",
+        )
+        for index, value in enumerate(cast(list[Any], candidate["assets"]))
+    )
+    candidate_files = sorted(
+        (
+            _candidate_change(
+                artifact_root=artifact_root,
+                target_root=target_root,
+                reference=reference,
+                kind=kind,
+            )
+            for reference, kind in references
+        ),
+        key=lambda item: cast(str, item["path"]),
+    )
+
+    artifacts = cast(dict[str, Any], bundle["artifacts"])
+    asset_manifest, _ = _artifact_json(
+        artifact_root,
+        artifacts["asset_manifest"],
+        "bundle artifacts.asset_manifest",
+    )
+    semantic_references = [
+        _reference(asset["semantic"], f"asset manifest.assets[{index}].semantic")
+        for index, asset in enumerate(cast(list[dict[str, Any]], asset_manifest["assets"]))
+        if asset.get("engine_kind") == "glyphic"
+    ]
+    semantic_sources = sorted(
+        (
+            _candidate_change(
+                artifact_root=artifact_root,
+                target_root=target_root,
+                reference=reference,
+                kind="semantic",
+            )
+            for reference in semantic_references
+        ),
+        key=lambda item: cast(str, item["path"]),
+    )
+    paths = [
+        cast(str, item["path"])
+        for item in [*candidate_files, *semantic_sources]
+    ]
+    if len(paths) != len(set(paths)):
+        _fail("E_PR_PATH", "PR candidate paths must be unique")
+    if not any(
+        item["change"] != "unchanged"
+        for item in [*candidate_files, *semantic_sources]
+    ):
+        _fail("E_PR_NO_CHANGES", "candidate bytes equal target base")
+    if _git_output(
+        target_root,
+        "diff",
+        "--cached",
+        "--binary",
+        "--no-ext-diff",
+    ) != cached_before:
+        _fail("E_PR_INDEX", "cached diff changed during PR bundle inspection")
+
+    mode = cast(str, bundle["mode"])
+    metadata = {
+        "commit_message": (
+            "docs(readme): refresh project showcase"
+            if mode == "readme"
+            else "docs(readme): refresh showcase assets"
+        ),
+        "pull_request_title": (
+            "docs: refresh README showcase"
+            if mode == "readme"
+            else "docs: refresh README showcase assets"
+        ),
+        "pull_request_body": (
+            "## Summary\n\n"
+            "- Refresh evidence-bound README showcase artifacts\n\n"
+            "## Verification\n\n"
+            "- Deterministic hard gates: pass\n"
+        ),
+    }
+    projection: dict[str, object] = {
+        "schema_version": 1,
+        "mode": mode,
+        "target": {
+            "repository": repository,
+            "base_sha": base_sha,
+            "branch": f"readme-showcase/{bundle_sha256[:12]}",
+        },
+        "candidate_files": candidate_files,
+        "semantic_sources": semantic_sources,
+        "evaluation": {
+            "status": "pass",
+            "bundle_sha256": bundle_sha256,
+            "report_sha256": canonical_sha256(evaluation),
+        },
+        "metadata": metadata,
+        "exclusions": [
+            ".omo/**",
+            "evaluation-only/**",
+            "node_modules/**",
+            "previews/**",
+            "run-artifacts/**",
+        ],
+    }
+    return {
+        **projection,
+        "status": "ready",
+        "fingerprint": canonical_sha256(projection),
     }
