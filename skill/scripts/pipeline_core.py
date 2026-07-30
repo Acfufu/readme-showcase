@@ -8,7 +8,7 @@ import re
 import stat
 import time
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 from urllib.parse import urlparse
 
 _CONTRACTS = importlib.import_module(
@@ -27,6 +27,7 @@ validate_contract = _CONTRACTS.validate_contract
 audit_readme = _AUDIT.audit_readme
 audit_svg_bytes = _AUDIT.audit_svg_bytes
 image_references = _AUDIT.image_references
+visible_svg_text = _AUDIT.visible_svg_text
 
 
 _DATASET_FIELDS = {
@@ -217,6 +218,9 @@ _RETRIEVAL_EVIDENCE_FIELDS = {
     "facts",
     "warnings",
 }
+_EVIDENCE_TARGET_FIELDS = {"name", "base_sha"}
+_EVIDENCE_FILE_FIELDS = {"path", "bytes", "lines", "sha256", "content"}
+_EVIDENCE_FACT_FIELDS = {"fact_id", "kind", "path", "evidence_sha256"}
 _RETRIEVAL_PROJECT_TYPES = {
     "developer-tool",
     "library",
@@ -225,7 +229,7 @@ _RETRIEVAL_PROJECT_TYPES = {
 }
 
 
-def _fail(code: str, message: str) -> None:
+def _fail(code: str, message: str) -> NoReturn:
     raise ContractError(code, message)
 
 
@@ -806,36 +810,357 @@ def _validate_asset_bytes(raw: bytes, asset_type: str, path: str, context: str) 
         _fail("E_BUNDLE_ASSET", f"{context} is not WebP bytes")
 
 
-def _validate_claim_map(payload: Any) -> set[str]:
+def segment_markdown_blocks(text: str) -> list[str]:
+    blocks: list[str] = []
+    current: list[str] = []
+    fence: str | None = None
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        marker = re.match(r"^[ \t]{0,3}(`{3,}|~{3,})", line)
+        if marker and fence is None:
+            fence = marker.group(1)[0]
+        elif marker and fence == marker.group(1)[0]:
+            fence = None
+        if not line.strip() and fence is None:
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+        else:
+            current.append(line)
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+def _content_sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _load_evidence_facts(
+    root: Path,
+    *,
+    base_sha: str,
+    evidence_ids: list[str],
+) -> dict[str, str]:
+    path = root / "repository-evidence.json"
+    try:
+        info = path.lstat()
+    except FileNotFoundError as exc:
+        raise ContractError(
+            "E_CLAIM_EVIDENCE",
+            "repository-evidence.json is required for claim validation",
+        ) from exc
+    if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+        _fail("E_CLAIM_EVIDENCE", "repository evidence must be a regular file")
+    if info.st_size > MAX_TOTAL_BYTES:
+        _fail("E_CLAIM_EVIDENCE", "repository evidence exceeds scan byte limit")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractError(
+            "E_CLAIM_EVIDENCE",
+            "repository evidence must be UTF-8 JSON",
+        ) from exc
+    evidence = _object(payload, _RETRIEVAL_EVIDENCE_FIELDS, "repository evidence")
+    if evidence["schema_version"] != 1 or evidence["status"] != "complete":
+        _fail("E_CLAIM_EVIDENCE", "claims require complete schema-v1 repository evidence")
+    target = _object(
+        evidence["target"],
+        _EVIDENCE_TARGET_FIELDS,
+        "repository evidence.target",
+    )
+    if target["base_sha"] != base_sha:
+        _fail("E_CLAIM_EVIDENCE", "repository evidence base SHA differs from bundle")
+
+    files = evidence["files"]
+    if not isinstance(files, list):
+        _fail("E_CLAIM_EVIDENCE", "repository evidence.files must be a list")
+    file_hashes: dict[str, str] = {}
+    for index, value in enumerate(files):
+        item = _object(
+            value,
+            _EVIDENCE_FILE_FIELDS,
+            f"repository evidence.files[{index}]",
+        )
+        path_value = _relative_path(item["path"], f"repository evidence.files[{index}].path")
+        content = item["content"]
+        digest = item["sha256"]
+        if (
+            not isinstance(content, str)
+            or not isinstance(digest, str)
+            or not _SHA256.fullmatch(digest)
+            or _content_sha256(content) != digest
+            or item["bytes"] != len(content.encode("utf-8"))
+            or item["lines"] != len(content.splitlines())
+        ):
+            _fail("E_CLAIM_EVIDENCE", "repository evidence file hash/counts are inconsistent")
+        if path_value.as_posix() in file_hashes:
+            _fail("E_CLAIM_EVIDENCE", "repository evidence contains duplicate file path")
+        file_hashes[path_value.as_posix()] = digest
+
+    facts = evidence["facts"]
+    if not isinstance(facts, list):
+        _fail("E_CLAIM_EVIDENCE", "repository evidence.facts must be a list")
+    fact_hashes: dict[str, str] = {}
+    for index, value in enumerate(facts):
+        item = _object(
+            value,
+            _EVIDENCE_FACT_FIELDS,
+            f"repository evidence.facts[{index}]",
+        )
+        fact_id = item["fact_id"]
+        path_value = item["path"]
+        digest = item["evidence_sha256"]
+        if (
+            not isinstance(fact_id, str)
+            or not fact_id
+            or fact_id.startswith(("gold:", "retrieval:"))
+            or item["kind"] != "repository-file"
+            or not isinstance(path_value, str)
+            or file_hashes.get(path_value) != digest
+        ):
+            _fail("E_CLAIM_EVIDENCE", "repository evidence fact is not target-file evidence")
+        if fact_id in fact_hashes:
+            _fail("E_CLAIM_EVIDENCE", f"duplicate repository fact: {fact_id}")
+        fact_hashes[fact_id] = digest
+    if not set(evidence_ids).issubset(fact_hashes):
+        _fail("E_CLAIM_EVIDENCE", "README plan references unknown target evidence")
+    return fact_hashes
+
+
+def _readme_claim_inputs(
+    root: Path,
+    *,
+    readme_path: str | None,
+    readme_text: str | None,
+    languages: list[str],
+) -> list[dict[str, str]]:
+    if readme_path is None or readme_text is None:
+        return []
+    if len(languages) == 1:
+        return [
+            {
+                "content": block,
+                "content_sha256": _content_sha256(block),
+                "language": languages[0],
+            }
+            for block in segment_markdown_blocks(readme_text)
+        ]
+    if languages != ["en", "zh"]:
+        _fail("E_CLAIM_LANGUAGE", "bilingual claim coverage requires en and zh")
+    primary = PurePosixPath(readme_path)
+    if primary.name == "README.md":
+        primary_language, companion_name = "en", "README_zh.md"
+    elif primary.name == "README_zh.md":
+        primary_language, companion_name = "zh", "README.md"
+    else:
+        _fail("E_CLAIM_LANGUAGE", "bilingual bundle README must use README.md or README_zh.md")
+    companion_path = root.joinpath(*primary.parent.parts, companion_name)
+    try:
+        info = companion_path.lstat()
+    except FileNotFoundError as exc:
+        raise ContractError("E_CLAIM_LANGUAGE", "bilingual companion README is missing") from exc
+    if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+        _fail("E_CLAIM_LANGUAGE", "bilingual companion README must be a regular file")
+    try:
+        companion_text = companion_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ContractError("E_CLAIM_LANGUAGE", "bilingual companion README must be UTF-8") from exc
+    issues, _, _ = audit_readme(companion_path, root=root)
+    if issues:
+        _fail("E_README_AUDIT", issues[0])
+    sources = {
+        primary_language: readme_text,
+        "zh" if primary_language == "en" else "en": companion_text,
+    }
+    return [
+        {
+            "content": block,
+            "content_sha256": _content_sha256(block),
+            "language": language,
+        }
+        for language in languages
+        for block in segment_markdown_blocks(sources[language])
+    ]
+
+
+def _diagram_claim_inputs(
+    payload: Any,
+    *,
+    root: Path,
+    default_language: str,
+) -> list[dict[str, str | None]]:
+    manifest = validate_contract(
+        payload,
+        required=_ASSET_MANIFEST_FIELDS,
+        optional=set(),
+        context="asset manifest",
+    )
+    assets = manifest["assets"]
+    if not isinstance(assets, list):
+        _fail("E_SCHEMA_TYPE", "asset manifest.assets must be a list")
+    expected: list[dict[str, str | None]] = []
+    for index, value in enumerate(assets):
+        if not isinstance(value, dict):
+            _fail("E_SCHEMA_TYPE", f"asset manifest.assets[{index}] must be an object")
+        path_value = value.get("path")
+        language = (
+            "zh"
+            if isinstance(path_value, str)
+            and (
+                "/zh/" in f"/{path_value.lower()}/"
+                or "-zh." in path_value.lower()
+                or "_zh." in path_value.lower()
+            )
+            else default_language
+        )
+        if value.get("engine_kind") == "glyphic":
+            semantic, _ = _artifact_json(
+                root,
+                value.get("semantic"),
+                f"asset manifest.assets[{index}].semantic",
+            )
+            _validate_glyphic_semantic(semantic)
+            labels = [
+                (semantic["accessibility_claim_id"], semantic["accessibility_title"]),
+                *[(item["claim_id"], item["label"]) for item in semantic["groups"]],
+                *[(item["claim_id"], item["label"]) for item in semantic["nodes"]],
+                *[
+                    (item["claim_id"], item["label"])
+                    for item in semantic["edges"]
+                    if item["label"] is not None
+                ],
+            ]
+            expected.extend(
+                {
+                    "claim_id": claim_id,
+                    "content": text,
+                    "content_sha256": _content_sha256(text),
+                    "language": language,
+                }
+                for claim_id, text in labels
+            )
+        elif value.get("type") == "svg":
+            reference = _reference(
+                {"path": value.get("path"), "sha256": value.get("sha256")},
+                f"asset manifest.assets[{index}]",
+            )
+            raw = _artifact_bytes(root, reference, f"asset manifest.assets[{index}]")
+            expected.extend(
+                {
+                    "claim_id": None,
+                    "content": text,
+                    "content_sha256": _content_sha256(text),
+                    "language": language,
+                }
+                for text in visible_svg_text(raw)
+            )
+    return expected
+
+
+def _validate_claim_map(
+    payload: Any,
+    *,
+    markdown_expected: list[dict[str, str]],
+    diagram_expected: list[dict[str, str | None]],
+    fact_hashes: dict[str, str],
+    evidence_ids: list[str],
+    languages: list[str],
+) -> set[str]:
     claim_map = validate_contract(
         payload,
         required=_CLAIM_MAP_FIELDS,
         optional=set(),
         context="claim map",
     )
+    if claim_map["schema_version"] != 1:
+        _fail("E_SCHEMA_VERSION", "claim map requires schema_version 1")
     truth_ids: set[str] = set()
+    claim_ids: set[str] = set()
+    content_hashes: set[str] = set()
+    expected_all = [*markdown_expected, *diagram_expected]
+    expected_hashes = [str(item["content_sha256"]) for item in expected_all]
+    if len(expected_hashes) != len(set(expected_hashes)):
+        _fail("E_CLAIM_DUPLICATE", "generated content contains duplicate block or label hash")
+    expected_by_collection = {
+        "markdown_blocks": {
+            str(item["content_sha256"]): item for item in markdown_expected
+        },
+        "diagram_labels": {
+            str(item["content_sha256"]): item for item in diagram_expected
+        },
+    }
+    paired: dict[tuple[str, str], list[tuple[dict[str, Any], str]]] = {}
     for collection_name in ("markdown_blocks", "diagram_labels"):
         collection = claim_map[collection_name]
         if not isinstance(collection, list):
             _fail("E_SCHEMA_TYPE", f"claim map.{collection_name} must be a list")
+        ordered_ids: list[str] = []
         for index, value in enumerate(collection):
             context = f"claim map.{collection_name}[{index}]"
             claim = _object(value, _CLAIM_FIELDS, context)
-            for field in ("claim_id", "truth_id"):
-                _text(claim[field], f"{context}.{field}")
+            claim_id = _text(claim["claim_id"], f"{context}.claim_id")
+            truth_id = _text(claim["truth_id"], f"{context}.truth_id")
             for field in ("content_sha256", "evidence_sha256"):
                 digest = claim[field]
                 if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
                     _fail("E_BUNDLE_CLAIM", f"{context}.{field} must be a SHA-256")
+            content_hash = cast(str, claim["content_sha256"])
+            if claim_id in claim_ids or content_hash in content_hashes:
+                _fail("E_CLAIM_DUPLICATE", f"{context} duplicates claim id or content hash")
+            claim_ids.add(claim_id)
+            content_hashes.add(content_hash)
+            ordered_ids.append(claim_id)
             if claim["claim_kind"] not in {"factual", "instruction", "decorative"}:
                 _fail("E_BUNDLE_CLAIM", f"{context}.claim_kind is unsupported")
             language_pair = claim["language_pair_id"]
             if language_pair is not None and (not isinstance(language_pair, str) or not language_pair):
                 _fail("E_BUNDLE_CLAIM", f"{context}.language_pair_id is invalid")
-            truth_id = claim["truth_id"]
-            if truth_id in truth_ids:
-                _fail("E_BUNDLE_CLAIM", f"duplicate truth_id: {truth_id}")
             truth_ids.add(truth_id)
+            if (
+                truth_id.startswith(("gold:", "retrieval:"))
+                or truth_id not in evidence_ids
+                or fact_hashes.get(truth_id) != claim["evidence_sha256"]
+            ):
+                _fail("E_CLAIM_EVIDENCE", f"{context} lacks matching target evidence")
+            expected = expected_by_collection[collection_name].get(content_hash)
+            if expected is None:
+                _fail("E_CLAIM_COVERAGE", f"{context} is orphan or stale")
+            expected_claim_id = expected.get("claim_id")
+            if expected_claim_id is not None and claim_id != expected_claim_id:
+                _fail("E_CLAIM_LABEL", f"{context}.claim_id differs from semantic source")
+            language = str(expected["language"])
+            if collection_name == "markdown_blocks" and not claim_id.startswith(
+                f"markdown:{language}:"
+            ):
+                _fail("E_CLAIM_LANGUAGE", f"{context}.claim_id has wrong language")
+            if len(languages) == 1:
+                if language_pair is not None:
+                    _fail("E_CLAIM_LANGUAGE", f"{context} has stale language pair")
+            else:
+                if language_pair is None:
+                    _fail("E_CLAIM_LANGUAGE", f"{context} is missing bilingual pair")
+                paired.setdefault((collection_name, language_pair), []).append(
+                    (claim, language)
+                )
+        if ordered_ids != sorted(ordered_ids):
+            _fail("E_CLAIM_COVERAGE", f"claim map.{collection_name} must be claim-id sorted")
+        if set(expected_by_collection[collection_name]) != {
+            claim["content_sha256"] for claim in collection
+        }:
+            _fail("E_CLAIM_COVERAGE", f"claim map.{collection_name} is incomplete")
+    if len(languages) > 1:
+        for (collection_name, pair_id), entries in paired.items():
+            if (
+                len(entries) != 2
+                or {language for _, language in entries} != set(languages)
+                or len({claim["truth_id"] for claim, _ in entries}) != 1
+                or len({claim["evidence_sha256"] for claim, _ in entries}) != 1
+                or len({claim["claim_kind"] for claim, _ in entries}) != 1
+            ):
+                _fail(
+                    "E_CLAIM_LANGUAGE",
+                    f"{collection_name} language pair {pair_id} is incomplete or inconsistent",
+                )
     return truth_ids
 
 
@@ -1214,9 +1539,11 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
     for index, reference in enumerate(candidate_assets):
         _artifact_bytes(artifact_root, reference, f"bundle candidate.assets[{index}]")
 
+    readme_path_value: str | None = None
     readme_text: str | None = None
     if mode == "readme":
         readme_ref = _reference(readme, "bundle candidate.readme")
+        readme_path_value = readme_ref["path"]
         readme_raw = _artifact_bytes(artifact_root, readme_ref, "bundle candidate.readme")
         try:
             readme_text = readme_raw.decode("utf-8")
@@ -1264,13 +1591,34 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
                 _fail("E_README_LANGUAGE", "bilingual README must link its language pair")
     if retrieval.get("schema_version") != 1:
         _fail("E_SCHEMA_VERSION", "retrieval packet requires schema_version 1")
-    truth_ids = _validate_claim_map(claims)
+    fact_hashes = _load_evidence_facts(
+        artifact_root,
+        base_sha=target["base_sha"],
+        evidence_ids=validated_plan["evidence_ids"],
+    )
     _validate_asset_manifest(
         asset_manifest,
         root=artifact_root,
         candidate_assets=candidate_assets,
-        truth_ids=truth_ids,
+        truth_ids=set(fact_hashes),
         readme_text=readme_text,
+    )
+    _validate_claim_map(
+        claims,
+        markdown_expected=_readme_claim_inputs(
+            artifact_root,
+            readme_path=readme_path_value,
+            readme_text=readme_text,
+            languages=validated_plan["languages"],
+        ),
+        diagram_expected=_diagram_claim_inputs(
+            asset_manifest,
+            root=artifact_root,
+            default_language=validated_plan["languages"][0],
+        ),
+        fact_hashes=fact_hashes,
+        evidence_ids=validated_plan["evidence_ids"],
+        languages=validated_plan["languages"],
     )
     return {
         "schema_version": 1,

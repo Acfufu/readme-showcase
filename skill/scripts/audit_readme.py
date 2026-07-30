@@ -217,6 +217,16 @@ def audit_svg(path: Path) -> list[str]:
     return [f"{code}: {message}" for code, message in audit_svg_bytes(raw)]
 
 
+def visible_svg_text(raw: bytes) -> list[str]:
+    root = ET.fromstring(raw.decode("utf-8"))
+    labels = [
+        " ".join("".join(node.itertext()).split())
+        for node in root.iter()
+        if _xml_name(node.tag) == "text"
+    ]
+    return [label for label in labels if label]
+
+
 def _anchors(path: Path) -> set[str]:
     try:
         text = _masked_markdown(path.read_text(encoding="utf-8"))

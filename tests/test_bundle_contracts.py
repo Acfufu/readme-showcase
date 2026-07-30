@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import subprocess
@@ -68,24 +69,6 @@ class BundleContractTests(unittest.TestCase):
                 "evidence_ids": ["file:README.md"],
             },
         )
-        claims = self.write_json(
-            root,
-            "claim-map.json",
-            {
-                "schema_version": 1,
-                "markdown_blocks": [],
-                "diagram_labels": [
-                    {
-                        "claim_id": "diagram:architecture",
-                        "content_sha256": "6" * 64,
-                        "claim_kind": "factual",
-                        "evidence_sha256": "7" * 64,
-                        "truth_id": "file:README.md",
-                        "language_pair_id": None,
-                    }
-                ],
-            },
-        )
         retrieval = self.write_json(
             root,
             "retrieval-packet.json",
@@ -93,6 +76,7 @@ class BundleContractTests(unittest.TestCase):
         )
         assets: list[dict[str, object]] = []
         candidate_assets: list[dict[str, str]] = []
+        semantic_value: dict[str, Any] | None = None
         if mode != "audit-only":
             semantic_value = (
                 json.loads(
@@ -251,6 +235,97 @@ class BundleContractTests(unittest.TestCase):
             )
             if mode == "readme"
             else None
+        )
+        evidence_content = "target repository evidence\n"
+        evidence_sha256 = hashlib.sha256(evidence_content.encode()).hexdigest()
+        self.write_json(
+            root,
+            "repository-evidence.json",
+            {
+                "schema_version": 1,
+                "status": "complete",
+                "target": {"name": "repository", "base_sha": "a" * 40},
+                "scan_limits": {},
+                "files": [
+                    {
+                        "path": "source/README.md",
+                        "bytes": len(evidence_content.encode()),
+                        "lines": len(evidence_content.splitlines()),
+                        "sha256": evidence_sha256,
+                        "content": evidence_content,
+                    }
+                ],
+                "facts": [
+                    {
+                        "fact_id": "file:README.md",
+                        "kind": "repository-file",
+                        "path": "source/README.md",
+                        "evidence_sha256": evidence_sha256,
+                    }
+                ],
+                "warnings": [],
+            },
+        )
+        markdown_claims: list[dict[str, object]] = []
+        if readme is not None:
+            readme_text = (root / readme["path"]).read_text(encoding="utf-8")
+            markdown_claims = [
+                {
+                    "claim_id": f"markdown:en:{index:03d}",
+                    "content_sha256": hashlib.sha256(block.encode()).hexdigest(),
+                    "claim_kind": "factual",
+                    "evidence_sha256": evidence_sha256,
+                    "truth_id": "file:README.md",
+                    "language_pair_id": None,
+                }
+                for index, block in enumerate(_CORE.segment_markdown_blocks(readme_text))
+            ]
+        diagram_claims: list[dict[str, object]] = []
+        if glyphic and semantic_value is not None:
+            labels = [
+                (
+                    semantic_value["accessibility_claim_id"],
+                    semantic_value["accessibility_title"],
+                ),
+                *[
+                    (item["claim_id"], item["label"])
+                    for item in semantic_value["groups"]
+                ],
+                *[
+                    (item["claim_id"], item["label"])
+                    for item in semantic_value["nodes"]
+                ],
+                *[
+                    (item["claim_id"], item["label"])
+                    for item in semantic_value["edges"]
+                    if item["label"] is not None
+                ],
+            ]
+            diagram_claims = [
+                {
+                    "claim_id": claim_id,
+                    "content_sha256": hashlib.sha256(label.encode()).hexdigest(),
+                    "claim_kind": "factual",
+                    "evidence_sha256": evidence_sha256,
+                    "truth_id": "file:README.md",
+                    "language_pair_id": None,
+                }
+                for claim_id, label in labels
+            ]
+        claims = self.write_json(
+            root,
+            "claim-map.json",
+            {
+                "schema_version": 1,
+                "markdown_blocks": sorted(
+                    markdown_claims,
+                    key=lambda item: str(item["claim_id"]),
+                ),
+                "diagram_labels": sorted(
+                    diagram_claims,
+                    key=lambda item: str(item["claim_id"]),
+                ),
+            },
         )
         bundle: dict[str, Any] = {
             "schema_version": 1,
