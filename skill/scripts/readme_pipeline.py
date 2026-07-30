@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import Callable
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from skill.scripts.pipeline_contracts import (
+    ContractError,
+    canonical_json_bytes,
+    read_json_object,
+    validate_contract,
+)
+
+
+Handler = Callable[[argparse.Namespace], dict[str, object]]
+
+
+def _pending(command: str) -> Handler:
+    def run(_: argparse.Namespace) -> dict[str, object]:
+        raise ContractError(
+            "E_COMMAND_NOT_IMPLEMENTED",
+            f"{command} is reserved for its owning implementation task",
+        )
+
+    return run
+
+
+def _validate_bundle(arguments: argparse.Namespace) -> dict[str, object]:
+    payload = read_json_object(arguments.bundle)
+    validate_contract(
+        payload,
+        required={"schema_version"},
+        optional=set(),
+        context="generated README bundle",
+    )
+    return {"schema_version": 1, "status": "pass"}
+
+
+def _path_argument(
+    parser: argparse.ArgumentParser,
+    flag: str,
+    *,
+    required: bool = True,
+) -> None:
+    parser.add_argument(flag, type=Path, required=required)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Validate and assemble deterministic README pipeline artifacts."
+    )
+    subcommands = parser.add_subparsers(dest="command", required=True)
+
+    validate_dataset = subcommands.add_parser("validate-dataset")
+    _path_argument(validate_dataset, "--manifest")
+    validate_dataset.set_defaults(handler=_pending("validate-dataset"))
+
+    scan = subcommands.add_parser("scan")
+    _path_argument(scan, "--root")
+    _path_argument(scan, "--output")
+    scan.set_defaults(handler=_pending("scan"))
+
+    retrieve = subcommands.add_parser("retrieve")
+    _path_argument(retrieve, "--evidence")
+    _path_argument(retrieve, "--manifest", required=False)
+    retrieve.add_argument("--section", action="append", default=[])
+    retrieve.add_argument(
+        "--mode",
+        choices=("production", "benchmark"),
+        default="production",
+    )
+    _path_argument(retrieve, "--output")
+    retrieve.set_defaults(handler=_pending("retrieve"))
+
+    validate_bundle = subcommands.add_parser("validate-bundle")
+    _path_argument(validate_bundle, "--bundle")
+    validate_bundle.set_defaults(handler=_validate_bundle)
+
+    evaluate = subcommands.add_parser("evaluate")
+    _path_argument(evaluate, "--bundle")
+    _path_argument(evaluate, "--output")
+    evaluate.set_defaults(handler=_pending("evaluate"))
+
+    import_benchmark = subcommands.add_parser("import-benchmark")
+    _path_argument(import_benchmark, "--input")
+    _path_argument(import_benchmark, "--license-sidecar")
+    _path_argument(import_benchmark, "--output-dir")
+    import_benchmark.set_defaults(handler=_pending("import-benchmark"))
+
+    build_pr_bundle = subcommands.add_parser("build-pr-bundle")
+    _path_argument(build_pr_bundle, "--bundle")
+    _path_argument(build_pr_bundle, "--evaluation")
+    _path_argument(build_pr_bundle, "--output")
+    build_pr_bundle.set_defaults(handler=_pending("build-pr-bundle"))
+
+    publish_gate = subcommands.add_parser("check-publish-gate")
+    _path_argument(publish_gate, "--pr-bundle")
+    _path_argument(publish_gate, "--remote-state")
+    _path_argument(publish_gate, "--approval")
+    _path_argument(publish_gate, "--output")
+    publish_gate.set_defaults(handler=_pending("check-publish-gate"))
+
+    return parser
+
+
+def main(arguments: list[str] | None = None) -> int:
+    parser = build_parser()
+    parsed = parser.parse_args(arguments)
+    try:
+        result = parsed.handler(parsed)
+    except ContractError as exc:
+        print(f"{exc.code}: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"E_OUTPUT_IO: {exc}", file=sys.stderr)
+        return 2
+
+    _ = sys.stdout.buffer.write(canonical_json_bytes(result))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
