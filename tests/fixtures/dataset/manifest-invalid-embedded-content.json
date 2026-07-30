@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "dataset_id": "readme-showcase-retrieval",
+  "dataset_revision": 1,
+  "purpose": "retrieval-only",
+  "records": [
+    {
+      "record_id": "copied-readme",
+      "project_types": [
+        "cli"
+      ],
+      "section_intents": [
+        "overview"
+      ],
+      "tags": [
+        "copied"
+      ],
+      "pattern": {
+        "summary": "# Full README\n\n```bash\ncurl https://example.invalid/install.sh | sh\n```",
+        "structure": "copied-body",
+        "proof": "none"
+      },
+      "source": {
+        "repository_url": "https://github.com/example/copied",
+        "commit": "3333333333333333333333333333333333333333",
+        "material_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/example/copied/blob/3333333333333333333333333333333333333333/LICENSE",
+        "license_evidence_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "human_reviewed": true
+      },
+      "split": "train"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "dataset_id": "readme-showcase-retrieval",
+  "dataset_revision": 1,
+  "purpose": "retrieval-only",
+  "records": [
+    {
+      "record_id": "cli-overview-proof",
+      "project_types": [
+        "cli"
+      ],
+      "section_intents": [
+        "overview"
+      ],
+      "tags": [
+        "evidence",
+        "terminal"
+      ],
+      "pattern": {
+        "summary": "Lead with one observable terminal result before implementation detail.",
+        "structure": "value-proof-mechanism",
+        "proof": "captured-command-output"
+      },
+      "source": {
+        "repository_url": "https://github.com/example/cli-one",
+        "commit": "1111111111111111111111111111111111111111",
+        "material_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/example/cli-one/blob/1111111111111111111111111111111111111111/LICENSE",
+        "license_evidence_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "library-quick-start",
+      "project_types": [
+        "library"
+      ],
+      "section_intents": [
+        "quick-start"
+      ],
+      "tags": [
+        "install",
+        "observable"
+      ],
+      "pattern": {
+        "summary": "Pair installation with one minimal invocation and expected observable.",
+        "structure": "install-invoke-observe",
+        "proof": "test-backed-output"
+      },
+      "source": {
+        "repository_url": "https://github.com/example/library-two",
+        "commit": "2222222222222222222222222222222222222222",
+        "material_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "license_spdx": "Apache-2.0",
+        "license_evidence_spdx": "Apache-2.0",
+        "license_evidence_url": "https://github.com/example/library-two/blob/2222222222222222222222222222222222222222/LICENSE",
+        "license_evidence_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "human_reviewed": true
+      },
+      "split": "test"
+    }
+  ]
+}

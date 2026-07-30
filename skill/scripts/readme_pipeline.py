@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
 from pathlib import Path
 from typing import Callable
 
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from skill.scripts.pipeline_contracts import (
-    ContractError,
-    canonical_json_bytes,
-    read_json_object,
-    validate_contract,
-)
+_PREFIX = "" if __package__ in (None, "") else "skill.scripts."
+_CONTRACTS = importlib.import_module(f"{_PREFIX}pipeline_contracts")
+_CORE = importlib.import_module(f"{_PREFIX}pipeline_core")
+ContractError = _CONTRACTS.ContractError
+canonical_json_bytes = _CONTRACTS.canonical_json_bytes
+read_json_object = _CONTRACTS.read_json_object
+validate_contract = _CONTRACTS.validate_contract
+validate_dataset_manifest = _CORE.validate_dataset_manifest
 
 
 Handler = Callable[[argparse.Namespace], dict[str, object]]
@@ -42,6 +42,10 @@ def _validate_bundle(arguments: argparse.Namespace) -> dict[str, object]:
     return {"schema_version": 1, "status": "pass"}
 
 
+def _validate_dataset(arguments: argparse.Namespace) -> dict[str, object]:
+    return validate_dataset_manifest(read_json_object(arguments.manifest))
+
+
 def _path_argument(
     parser: argparse.ArgumentParser,
     flag: str,
@@ -59,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate_dataset = subcommands.add_parser("validate-dataset")
     _path_argument(validate_dataset, "--manifest")
-    validate_dataset.set_defaults(handler=_pending("validate-dataset"))
+    validate_dataset.set_defaults(handler=_validate_dataset)
 
     scan = subcommands.add_parser("scan")
     _path_argument(scan, "--root")
