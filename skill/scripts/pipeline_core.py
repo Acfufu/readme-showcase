@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import importlib
 import hashlib
+import json
 import os
 import re
 import stat
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlparse
 
@@ -103,6 +104,64 @@ _BINARY_SUFFIXES = {
     ".woff",
     ".woff2",
     ".zip",
+}
+_REF_FIELDS = {"path", "sha256"}
+_BUNDLE_FIELDS = {"schema_version", "mode", "target", "candidate", "artifacts"}
+_TARGET_FIELDS = {"repository", "base_sha"}
+_CANDIDATE_FIELDS = {"readme", "assets"}
+_ARTIFACT_FIELDS = {"plan", "retrieval", "claim_map", "asset_manifest"}
+_PLAN_FIELDS = {
+    "schema_version",
+    "mode",
+    "languages",
+    "sections",
+    "visual_intent",
+    "diagram_route",
+    "commands",
+    "evidence_ids",
+}
+_CLAIM_MAP_FIELDS = {"schema_version", "markdown_blocks", "diagram_labels"}
+_CLAIM_FIELDS = {
+    "claim_id",
+    "content_sha256",
+    "claim_kind",
+    "evidence_sha256",
+    "truth_id",
+    "language_pair_id",
+}
+_ASSET_MANIFEST_FIELDS = {"schema_version", "assets"}
+_ASSET_FIELDS = {
+    "path",
+    "sha256",
+    "type",
+    "engine_kind",
+    "alt",
+    "caption",
+    "truth_ids",
+}
+_GLYPHIC_ASSET_FIELDS = _ASSET_FIELDS | {"semantic", "engine_metadata", "fallback"}
+_ENGINE_METADATA_FIELDS = {
+    "schema_version",
+    "engine_kind",
+    "source_commit",
+    "package_version",
+    "core_version",
+    "engine_schema_version",
+    "package_sha256",
+    "tree_sha256",
+    "sri",
+    "license_spdx",
+    "license_sha256",
+    "lock_sha256",
+    "node_version",
+    "platform",
+    "architecture",
+    "input_sha256",
+    "theme_sha256",
+    "output_sha256",
+    "run_hashes",
+    "validation",
+    "fallback_state",
 }
 
 
@@ -439,4 +498,308 @@ def scan_repository(root: Path) -> dict[str, object]:
         "files": files,
         "facts": facts,
         "warnings": warnings,
+    }
+
+
+def _relative_path(value: Any, context: str) -> PurePosixPath:
+    if not isinstance(value, str) or not value or "\\" in value:
+        _fail("E_PATH", f"{context} must be a nonempty POSIX path")
+    path = PurePosixPath(value)
+    if path.is_absolute() or "." in path.parts or ".." in path.parts or path.as_posix() != value:
+        _fail("E_PATH", f"{context} must be a normalized relative path")
+    return path
+
+
+def _reference(value: Any, context: str) -> dict[str, str]:
+    reference = _object(value, _REF_FIELDS, context)
+    path = _relative_path(reference["path"], f"{context}.path")
+    digest = reference["sha256"]
+    if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+        _fail("E_BUNDLE_HASH", f"{context}.sha256 must be a lowercase SHA-256")
+    return {"path": path.as_posix(), "sha256": digest}
+
+
+def _artifact_bytes(root: Path, reference: dict[str, str], context: str) -> bytes:
+    root = root.resolve(strict=True)
+    destination = root.joinpath(*PurePosixPath(reference["path"]).parts)
+    current = root
+    try:
+        for part in PurePosixPath(reference["path"]).parts:
+            current = current / part
+            if stat.S_ISLNK(current.lstat().st_mode):
+                _fail("E_PATH", f"{context} cannot reference a symlink")
+    except FileNotFoundError as exc:
+        raise ContractError("E_BUNDLE_MISSING", f"{context} not found: {reference['path']}") from exc
+    try:
+        destination.resolve(strict=True).relative_to(root)
+    except (OSError, ValueError) as exc:
+        raise ContractError("E_PATH", f"{context} escapes artifact root") from exc
+    file_stat = destination.lstat()
+    if not stat.S_ISREG(file_stat.st_mode):
+        _fail("E_PATH", f"{context} must reference a regular file")
+    raw = _read_scanned_file(destination, file_stat, reference["path"])
+    if hashlib.sha256(raw).hexdigest() != reference["sha256"]:
+        _fail("E_BUNDLE_HASH", f"{context} hash does not match {reference['path']}")
+    return raw
+
+
+def _artifact_json(root: Path, value: Any, context: str) -> tuple[dict[str, Any], dict[str, str]]:
+    reference = _reference(value, context)
+    raw = _artifact_bytes(root, reference, context)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractError("E_INPUT_JSON", f"{context} must be valid UTF-8 JSON") from exc
+    if not isinstance(payload, dict):
+        _fail("E_SCHEMA_TYPE", f"{context} must contain a JSON object")
+    return payload, reference
+
+
+def _string_list(value: Any, context: str, *, allow_empty: bool = True) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or (not allow_empty and not value)
+        or any(not isinstance(item, str) or not item for item in value)
+        or value != sorted(set(value))
+    ):
+        _fail("E_SCHEMA_TYPE", f"{context} must be a sorted unique string list")
+    return value
+
+
+def _validate_plan(payload: Any, mode: str) -> None:
+    plan = validate_contract(
+        payload,
+        required=_PLAN_FIELDS,
+        optional=set(),
+        context="README plan",
+    )
+    if plan["mode"] != mode:
+        _fail("E_BUNDLE_MODE", "README plan mode differs from bundle mode")
+    _string_list(plan["languages"], "README plan.languages", allow_empty=False)
+    _string_list(plan["sections"], "README plan.sections")
+    _string_list(plan["commands"], "README plan.commands")
+    _string_list(plan["evidence_ids"], "README plan.evidence_ids")
+    _text(plan["visual_intent"], "README plan.visual_intent")
+    if plan["diagram_route"] not in {"none", "static", "glyphic"}:
+        _fail("E_BUNDLE_PLAN", "README plan.diagram_route is unsupported")
+
+
+def _validate_claim_map(payload: Any) -> set[str]:
+    claim_map = validate_contract(
+        payload,
+        required=_CLAIM_MAP_FIELDS,
+        optional=set(),
+        context="claim map",
+    )
+    truth_ids: set[str] = set()
+    for collection_name in ("markdown_blocks", "diagram_labels"):
+        collection = claim_map[collection_name]
+        if not isinstance(collection, list):
+            _fail("E_SCHEMA_TYPE", f"claim map.{collection_name} must be a list")
+        for index, value in enumerate(collection):
+            context = f"claim map.{collection_name}[{index}]"
+            claim = _object(value, _CLAIM_FIELDS, context)
+            for field in ("claim_id", "truth_id"):
+                _text(claim[field], f"{context}.{field}")
+            for field in ("content_sha256", "evidence_sha256"):
+                digest = claim[field]
+                if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+                    _fail("E_BUNDLE_CLAIM", f"{context}.{field} must be a SHA-256")
+            if claim["claim_kind"] not in {"factual", "instruction", "decorative"}:
+                _fail("E_BUNDLE_CLAIM", f"{context}.claim_kind is unsupported")
+            language_pair = claim["language_pair_id"]
+            if language_pair is not None and (not isinstance(language_pair, str) or not language_pair):
+                _fail("E_BUNDLE_CLAIM", f"{context}.language_pair_id is invalid")
+            truth_id = claim["truth_id"]
+            if truth_id in truth_ids:
+                _fail("E_BUNDLE_CLAIM", f"duplicate truth_id: {truth_id}")
+            truth_ids.add(truth_id)
+    return truth_ids
+
+
+def _validate_engine_metadata(
+    payload: Any,
+    *,
+    asset_sha256: str,
+    semantic_sha256: str,
+) -> None:
+    metadata = validate_contract(
+        payload,
+        required=_ENGINE_METADATA_FIELDS,
+        optional=set(),
+        context="Glyphic engine metadata",
+    )
+    if metadata["engine_kind"] != "glyphic":
+        _fail("E_ENGINE_METADATA", "engine metadata must declare glyphic")
+    if not isinstance(metadata["source_commit"], str) or not _COMMIT.fullmatch(metadata["source_commit"]):
+        _fail("E_ENGINE_METADATA", "engine source_commit must be immutable")
+    for field in (
+        "package_sha256",
+        "tree_sha256",
+        "license_sha256",
+        "lock_sha256",
+        "input_sha256",
+        "theme_sha256",
+        "output_sha256",
+    ):
+        value = metadata[field]
+        if not isinstance(value, str) or not _SHA256.fullmatch(value):
+            _fail("E_ENGINE_METADATA", f"engine metadata {field} must be a SHA-256")
+    if metadata["input_sha256"] != semantic_sha256 or metadata["output_sha256"] != asset_sha256:
+        _fail("E_ENGINE_METADATA", "engine input/output hashes do not bind asset")
+    if metadata["run_hashes"] != [asset_sha256, asset_sha256]:
+        _fail("E_ENGINE_METADATA", "engine run hashes must prove equal raw bytes")
+    if metadata["validation"] != "pass" or metadata["fallback_state"] != "preserved":
+        _fail("E_ENGINE_METADATA", "engine validation and fallback state must pass")
+    for field in (
+        "package_version",
+        "core_version",
+        "engine_schema_version",
+        "sri",
+        "license_spdx",
+        "node_version",
+        "platform",
+        "architecture",
+    ):
+        _text(metadata[field], f"engine metadata.{field}")
+
+
+def _validate_asset_manifest(
+    payload: Any,
+    *,
+    root: Path,
+    candidate_assets: list[dict[str, str]],
+    truth_ids: set[str],
+) -> None:
+    manifest = validate_contract(
+        payload,
+        required=_ASSET_MANIFEST_FIELDS,
+        optional=set(),
+        context="asset manifest",
+    )
+    assets = manifest["assets"]
+    if not isinstance(assets, list):
+        _fail("E_SCHEMA_TYPE", "asset manifest.assets must be a list")
+    manifest_refs: list[dict[str, str]] = []
+    for index, value in enumerate(assets):
+        context = f"asset manifest.assets[{index}]"
+        if not isinstance(value, dict):
+            _fail("E_SCHEMA_TYPE", f"{context} must be an object")
+        engine_kind = value.get("engine_kind")
+        fields = _GLYPHIC_ASSET_FIELDS if engine_kind == "glyphic" else _ASSET_FIELDS
+        asset = _object(value, fields, context)
+        reference = _reference(
+            {"path": asset["path"], "sha256": asset["sha256"]},
+            context,
+        )
+        _artifact_bytes(root, reference, context)
+        manifest_refs.append(reference)
+        if asset["type"] not in {"svg", "png", "webp", "gif"}:
+            _fail("E_BUNDLE_ASSET", f"{context}.type is unsupported")
+        if engine_kind not in {"hand-authored", "glyphic"}:
+            _fail("E_BUNDLE_ASSET", f"{context}.engine_kind is unsupported")
+        _text(asset["alt"], f"{context}.alt")
+        _text(asset["caption"], f"{context}.caption")
+        bound_truth_ids = _string_list(asset["truth_ids"], f"{context}.truth_ids", allow_empty=False)
+        if not set(bound_truth_ids).issubset(truth_ids):
+            _fail("E_BUNDLE_CLAIM", f"{context} references unknown truth_id")
+        if engine_kind == "glyphic":
+            if asset["type"] != "svg" or not reference["path"].endswith(".svg"):
+                _fail("E_BUNDLE_ASSET", "Glyphic output must be standalone SVG")
+            semantic_payload, semantic_ref = _artifact_json(root, asset["semantic"], f"{context}.semantic")
+            validate_contract(
+                semantic_payload,
+                required={"schema_version", "diagram_type"},
+                optional=set(),
+                context="Glyphic semantic source",
+            )
+            if semantic_payload["diagram_type"] not in {"architecture", "flowchart", "c4"}:
+                _fail("E_BUNDLE_ASSET", "Glyphic diagram type is unsupported")
+            metadata_payload, _ = _artifact_json(
+                root,
+                asset["engine_metadata"],
+                f"{context}.engine_metadata",
+            )
+            _artifact_bytes(root, _reference(asset["fallback"], f"{context}.fallback"), f"{context}.fallback")
+            _validate_engine_metadata(
+                metadata_payload,
+                asset_sha256=reference["sha256"],
+                semantic_sha256=semantic_ref["sha256"],
+            )
+    if manifest_refs != candidate_assets:
+        _fail("E_BUNDLE_ASSET", "candidate assets and asset manifest differ")
+
+
+def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, object]:
+    bundle = validate_contract(
+        payload,
+        required=_BUNDLE_FIELDS,
+        optional=set(),
+        context="generated README bundle",
+    )
+    mode = bundle["mode"]
+    if mode not in {"readme", "asset-only", "audit-only"}:
+        _fail("E_BUNDLE_MODE", "bundle mode is unsupported")
+    target = _object(bundle["target"], _TARGET_FIELDS, "bundle target")
+    _text(target["repository"], "bundle target.repository")
+    if not isinstance(target["base_sha"], str) or not _COMMIT.fullmatch(target["base_sha"]):
+        _fail("E_BUNDLE_TARGET", "bundle target.base_sha must be immutable")
+
+    candidate = _object(bundle["candidate"], _CANDIDATE_FIELDS, "bundle candidate")
+    readme = candidate["readme"]
+    assets = candidate["assets"]
+    if not isinstance(assets, list):
+        _fail("E_SCHEMA_TYPE", "bundle candidate.assets must be a list")
+    candidate_assets = [
+        _reference(value, f"bundle candidate.assets[{index}]")
+        for index, value in enumerate(assets)
+    ]
+    if candidate_assets != sorted(candidate_assets, key=lambda item: item["path"]):
+        _fail("E_BUNDLE_ASSET", "bundle candidate.assets must be path-sorted")
+    for index, reference in enumerate(candidate_assets):
+        _artifact_bytes(artifact_root, reference, f"bundle candidate.assets[{index}]")
+
+    if mode == "readme":
+        readme_ref = _reference(readme, "bundle candidate.readme")
+        _artifact_bytes(artifact_root, readme_ref, "bundle candidate.readme")
+    elif readme is not None:
+        _fail("E_BUNDLE_MODE", f"{mode} mode cannot contain candidate README")
+    if mode == "asset-only" and not candidate_assets:
+        _fail("E_BUNDLE_MODE", "asset-only mode requires at least one asset")
+    if mode == "audit-only" and candidate_assets:
+        _fail("E_BUNDLE_MODE", "audit-only mode cannot contain candidate assets")
+
+    artifacts = _object(bundle["artifacts"], _ARTIFACT_FIELDS, "bundle artifacts")
+    plan, _ = _artifact_json(artifact_root, artifacts["plan"], "bundle artifacts.plan")
+    retrieval, _ = _artifact_json(
+        artifact_root,
+        artifacts["retrieval"],
+        "bundle artifacts.retrieval",
+    )
+    claims, _ = _artifact_json(
+        artifact_root,
+        artifacts["claim_map"],
+        "bundle artifacts.claim_map",
+    )
+    asset_manifest, _ = _artifact_json(
+        artifact_root,
+        artifacts["asset_manifest"],
+        "bundle artifacts.asset_manifest",
+    )
+    _validate_plan(plan, mode)
+    if retrieval.get("schema_version") != 1:
+        _fail("E_SCHEMA_VERSION", "retrieval packet requires schema_version 1")
+    truth_ids = _validate_claim_map(claims)
+    _validate_asset_manifest(
+        asset_manifest,
+        root=artifact_root,
+        candidate_assets=candidate_assets,
+        truth_ids=truth_ids,
+    )
+    return {
+        "schema_version": 1,
+        "status": "pass",
+        "mode": mode,
+        "bundle_sha256": canonical_sha256(bundle),
+        "candidate_count": (1 if readme is not None else 0) + len(candidate_assets),
     }

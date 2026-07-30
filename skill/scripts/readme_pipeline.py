@@ -18,6 +18,7 @@ read_json_object = _CONTRACTS.read_json_object
 validate_contract = _CONTRACTS.validate_contract
 validate_dataset_manifest = _CORE.validate_dataset_manifest
 scan_repository = _CORE.scan_repository
+validate_generated_bundle = _CORE.validate_generated_bundle
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
 
 
@@ -36,13 +37,7 @@ def _pending(command: str) -> Handler:
 
 def _validate_bundle(arguments: argparse.Namespace) -> dict[str, object]:
     payload = read_json_object(arguments.bundle)
-    validate_contract(
-        payload,
-        required={"schema_version"},
-        optional=set(),
-        context="generated README bundle",
-    )
-    return {"schema_version": 1, "status": "pass"}
+    return validate_generated_bundle(payload, arguments.bundle.parent.resolve())
 
 
 def _validate_dataset(arguments: argparse.Namespace) -> dict[str, object]:

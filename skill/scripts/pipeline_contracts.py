@@ -76,11 +76,11 @@ def validate_contract(
         )
 
     keys = set(payload)
-    missing = sorted(required - keys)
-    if missing:
+    version = payload.get("schema_version")
+    if type(version) is not int or version != SCHEMA_VERSION:
         raise ContractError(
-            "E_SCHEMA_MISSING_FIELD",
-            f"{context} is missing required field: {missing[0]}",
+            "E_SCHEMA_VERSION",
+            f"{context} requires schema_version {SCHEMA_VERSION}",
         )
 
     unknown = sorted(keys - required - optional)
@@ -90,11 +90,11 @@ def validate_contract(
             f"{context} contains unknown field: {unknown[0]}",
         )
 
-    version = payload.get("schema_version")
-    if type(version) is not int or version != SCHEMA_VERSION:
+    missing = sorted(required - keys)
+    if missing:
         raise ContractError(
-            "E_SCHEMA_VERSION",
-            f"{context} requires schema_version {SCHEMA_VERSION}",
+            "E_SCHEMA_MISSING_FIELD",
+            f"{context} is missing required field: {missing[0]}",
         )
 
     _validate_json_value(payload)
