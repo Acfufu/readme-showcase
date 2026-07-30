@@ -18,6 +18,7 @@ read_json_object = _CONTRACTS.read_json_object
 validate_contract = _CONTRACTS.validate_contract
 validate_dataset_manifest = _CORE.validate_dataset_manifest
 scan_repository = _CORE.scan_repository
+retrieve_patterns = _CORE.retrieve_patterns
 validate_generated_bundle = _CORE.validate_generated_bundle
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
 
@@ -55,6 +56,30 @@ def _scan(arguments: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _retrieve(arguments: argparse.Namespace) -> dict[str, object]:
+    evidence = read_json_object(arguments.evidence)
+    manifest = (
+        read_json_object(arguments.manifest)
+        if arguments.manifest is not None and arguments.manifest.exists()
+        else None
+    )
+    packet = retrieve_patterns(
+        evidence,
+        manifest,
+        project_type=arguments.project_type,
+        sections=arguments.section,
+        tags=arguments.tag,
+        mode=arguments.mode,
+    )
+    write_canonical_json_atomic(arguments.output, packet)
+    return {
+        "schema_version": 1,
+        "status": packet["status"],
+        "record_count": len(packet["records"]),
+        "retrieval_sha256": canonical_sha256(packet),
+    }
+
+
 def _path_argument(
     parser: argparse.ArgumentParser,
     flag: str,
@@ -82,14 +107,20 @@ def build_parser() -> argparse.ArgumentParser:
     retrieve = subcommands.add_parser("retrieve")
     _path_argument(retrieve, "--evidence")
     _path_argument(retrieve, "--manifest", required=False)
+    retrieve.add_argument(
+        "--project-type",
+        choices=("developer-tool", "library", "runtime-toolchain", "web-framework"),
+        required=True,
+    )
     retrieve.add_argument("--section", action="append", default=[])
+    retrieve.add_argument("--tag", action="append", default=[])
     retrieve.add_argument(
         "--mode",
         choices=("production", "benchmark"),
         default="production",
     )
     _path_argument(retrieve, "--output")
-    retrieve.set_defaults(handler=_pending("retrieve"))
+    retrieve.set_defaults(handler=_retrieve)
 
     validate_bundle = subcommands.add_parser("validate-bundle")
     _path_argument(validate_bundle, "--bundle")

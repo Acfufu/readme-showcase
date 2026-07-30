@@ -8,7 +8,7 @@ import re
 import stat
 import time
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 _CONTRACTS = importlib.import_module(
@@ -196,6 +196,21 @@ _GLYPHIC_NODE_FIELDS = {"id", "label", "group_id", "kind", "claim_id"}
 _GLYPHIC_EDGE_FIELDS = {"source", "target", "label", "claim_id"}
 _GLYPHIC_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 _HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}\Z")
+_RETRIEVAL_EVIDENCE_FIELDS = {
+    "schema_version",
+    "status",
+    "target",
+    "scan_limits",
+    "files",
+    "facts",
+    "warnings",
+}
+_RETRIEVAL_PROJECT_TYPES = {
+    "developer-tool",
+    "library",
+    "runtime-toolchain",
+    "web-framework",
+}
 
 
 def _fail(code: str, message: str) -> None:
@@ -337,6 +352,124 @@ def validate_dataset_manifest(payload: Any) -> dict[str, object]:
         "record_count": len(records),
         "split_counts": split_counts,
         "manifest_sha256": canonical_sha256(manifest),
+    }
+
+
+def _retrieval_query(
+    evidence: Any,
+    *,
+    project_type: str,
+    sections: list[str],
+    tags: list[str],
+    mode: str,
+) -> dict[str, object]:
+    packet = _object(evidence, _RETRIEVAL_EVIDENCE_FIELDS, "repository evidence")
+    if packet["schema_version"] != 1 or packet["status"] != "complete":
+        _fail("E_RETRIEVAL_EVIDENCE", "retrieval requires complete schema-v1 evidence")
+    for field in ("files", "facts", "warnings"):
+        if not isinstance(packet[field], list):
+            _fail("E_RETRIEVAL_EVIDENCE", f"repository evidence.{field} must be a list")
+    if project_type not in _RETRIEVAL_PROJECT_TYPES:
+        _fail("E_RETRIEVAL_QUERY", "project_type is unsupported")
+    if mode not in {"production", "benchmark"}:
+        _fail("E_RETRIEVAL_MODE", "mode must be production or benchmark")
+
+    def normalized(values: list[str], context: str) -> list[str]:
+        if not isinstance(values, list) or any(
+            not isinstance(value, str) or not _SLUG.fullmatch(value)
+            for value in values
+        ):
+            _fail("E_RETRIEVAL_QUERY", f"{context} must contain lowercase slugs")
+        return sorted(set(values))
+
+    return {
+        "project_type": project_type,
+        "sections": normalized(sections, "sections"),
+        "tags": normalized(tags, "tags"),
+        "evidence_sha256": canonical_sha256(packet),
+    }
+
+
+def retrieve_patterns(
+    evidence: Any,
+    manifest: Any | None,
+    *,
+    project_type: str,
+    sections: list[str],
+    tags: list[str],
+    mode: str,
+) -> dict[str, object]:
+    query = _retrieval_query(
+        evidence,
+        project_type=project_type,
+        sections=sections,
+        tags=tags,
+        mode=mode,
+    )
+    if manifest is None:
+        if mode == "benchmark":
+            _fail("E_RETRIEVAL_MANIFEST", "benchmark retrieval requires a valid manifest")
+        return {
+            "schema_version": 1,
+            "status": "unavailable",
+            "mode": mode,
+            "query": query,
+            "dataset": None,
+            "records": [],
+            "reason": "manifest-unavailable",
+        }
+
+    validate_dataset_manifest(manifest)
+    records = sorted(manifest["records"], key=lambda item: item["record_id"])
+    normalized_manifest = {**manifest, "records": records}
+    section_set = set(cast(list[str], query["sections"]))
+    tag_set = set(cast(list[str], query["tags"]))
+    ranked: list[dict[str, object]] = []
+    for record in records:
+        if record["split"] != "train":
+            continue
+        components = {
+            "project_type_match": int(project_type in record["project_types"]),
+            "section_overlap_count": len(section_set.intersection(record["section_intents"])),
+            "tag_overlap_count": len(tag_set.intersection(record["tags"])),
+        }
+        score = (
+            100 * components["project_type_match"]
+            + 30 * components["section_overlap_count"]
+            + 10 * components["tag_overlap_count"]
+        )
+        if score == 0:
+            continue
+        ranked.append(
+            {
+                "record_id": record["record_id"],
+                "score": score,
+                "components": components,
+                "project_types": record["project_types"],
+                "section_intents": record["section_intents"],
+                "tags": record["tags"],
+                "pattern": record["pattern"],
+                "source": record["source"],
+            }
+        )
+    ranked.sort(
+        key=lambda item: (
+            -cast(int, item["score"]),
+            cast(str, item["record_id"]),
+        )
+    )
+    return {
+        "schema_version": 1,
+        "status": "available",
+        "mode": mode,
+        "query": query,
+        "dataset": {
+            "dataset_id": manifest["dataset_id"],
+            "dataset_revision": manifest["dataset_revision"],
+            "manifest_sha256": canonical_sha256(normalized_manifest),
+        },
+        "records": ranked[:5],
+        "reason": None,
     }
 
 
