@@ -205,22 +205,22 @@ requires separate approval.
 git clone https://github.com/Acfufu/readme-showcase.git
 cd readme-showcase
 
-skill_target="${CODEX_HOME:-$HOME/.codex}/skills/readme-showcase"
-if [ -e "$skill_target" ]; then
-  printf 'Target already exists: %s\n' "$skill_target"
-else
-  cp -R skill "$skill_target"
-  cp -R dataset "$skill_target/dataset"
-  cp scripts/build_glyphic_engine_lock.py "$skill_target/scripts/"
-  printf 'Installed: %s\n' "$skill_target"
-fi
+python3 scripts/install_skill.py
+python3 scripts/install_skill.py --check
 ```
 
-Expected install result:
+Expected statuses:
 
 ```text
-Installed: .../skills/readme-showcase
+"status":"installed"
+"status":"current"
 ```
+
+Upgrade uses a verified sibling staging directory, atomically swaps the Skill,
+and keeps the prior tree at
+`.../skills/readme-showcase.backup.<UTC>.<hash>`. A failed copy, hash check, or
+swap restores the old target. The installed tree contains no Glyphic package,
+engine lock, `node_modules`, or credentials.
 
 Start a new Codex task so skill discovery reloads, then invoke:
 

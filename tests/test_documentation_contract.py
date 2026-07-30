@@ -28,6 +28,10 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("原始 README SHOWCASE", chinese)
         self.assertIn("仅此处使用 GLYPHIC", chinese)
         self.assertIn("带指纹 PR bundle", chinese)
+        for text in (english, chinese):
+            self.assertIn("python3 scripts/install_skill.py", text)
+            self.assertIn("readme-showcase.backup.<UTC>.<hash>", text)
+            self.assertNotIn("cp -R skill", text)
 
     def test_dataset_ledger_names_all_pinned_sources_and_split_boundary(self) -> None:
         text = (REPO_ROOT / "dataset/README.md").read_text(encoding="utf-8")
@@ -74,4 +78,4 @@ class DocumentationContractTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    _ = unittest.main()

@@ -199,22 +199,20 @@ Skill 遵循一条阅读顺序：
 git clone https://github.com/Acfufu/readme-showcase.git
 cd readme-showcase
 
-skill_target="${CODEX_HOME:-$HOME/.codex}/skills/readme-showcase"
-if [ -e "$skill_target" ]; then
-  printf 'Target already exists: %s\n' "$skill_target"
-else
-  cp -R skill "$skill_target"
-  cp -R dataset "$skill_target/dataset"
-  cp scripts/build_glyphic_engine_lock.py "$skill_target/scripts/"
-  printf 'Installed: %s\n' "$skill_target"
-fi
+python3 scripts/install_skill.py
+python3 scripts/install_skill.py --check
 ```
 
-预期安装结果：
+预期状态：
 
 ```text
-Installed: .../skills/readme-showcase
+"status":"installed"
+"status":"current"
 ```
+
+升级时先在同级目录验证 staging，再原子替换 Skill，并保留旧树：
+`.../skills/readme-showcase.backup.<UTC>.<hash>`。复制、哈希校验或替换失败时
+恢复旧目标。安装树不包含 Glyphic 包、engine lock、`node_modules` 或凭据。
 
 新建 Codex 任务，让 skill discovery 重新加载，然后显式调用：
 
