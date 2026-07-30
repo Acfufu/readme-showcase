@@ -48,9 +48,10 @@ guidance only. This project does not claim upstream Glyphic integration.
 | --- | ---: |
 | Reference packs mapped | `7/8 = 87.5%` |
 | Pinned upstream showcase assets copied | `0/29 = 0%` |
-| Upstream audit script lines retained | `93/93 = 100%` |
-| Upstream motion-renderer lines retained | `598/599 = 99.83%` |
-| Combined upstream script lines retained | `691/692 = 99.86%` |
+| Pinned upstream script source size | `93 + 599 = 692` |
+| Exact unchanged audit-script lines | `51/93 = 54.84%` |
+| Exact unchanged motion-renderer lines | `598/599 = 99.83%` |
+| Combined exact unchanged lines | `649/692 = 93.79%` |
 | Local adapted script lines after attribution/extensions | `992` |
 | Direct BGR Todo touchpoints | `7/19 = 36.84%` |
 | Additional safe-handoff Todos | `2/19 = 10.53%` |
@@ -59,5 +60,7 @@ guidance only. This project does not claim upstream Glyphic integration.
 The pinned source contains 16 top-level `assets/readme` files and 13 English
 variants. None are present here. Local README assets are project-owned.
 
-The two retained scripts are MIT-derived. Full upstream license text and source
-URL remain in `motion-production.md`; each adapted script carries a source note.
+Counts use `git diff --no-index --diff-algorithm=minimal` against the pinned
+files; additions do not count as retained source lines. Both scripts are
+MIT-derived. Full upstream license text and source URL remain in
+`motion-production.md`; each adapted script carries a source note.

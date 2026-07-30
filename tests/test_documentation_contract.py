@@ -18,6 +18,7 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn("7/19", text)
             self.assertIn("1/19", text)
             self.assertIn("0/29", text)
+            self.assertIn("649/692", text)
             self.assertIn("@glyphicjs/core@1.3.1", text)
             self.assertIn("schema 1.1.1", text)
             self.assertIn("showcase-contribution", text)
@@ -73,6 +74,8 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotIn("system font `Arial`", glyphic)
         self.assertIn("defined in the same SVG", flat_glyphic)
         self.assertIn("`992`", delta)
+        self.assertIn("`649/692 = 93.79%`", delta)
+        self.assertNotIn("`691/692", delta)
         self.assertNotIn("`711`", delta)
         self.assertIn("stop at a local PR bundle", metadata)
 

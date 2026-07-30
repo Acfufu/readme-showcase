@@ -153,7 +153,7 @@ flowchart TD
 | BGR reference packs mapped | `7/8 = 87.5%` |
 | BGR direct Todo touchpoints | `7/19 = 36.84%` |
 | Additional BGR safe-handoff Todos | `2/19 = 10.53%` |
-| BGR upstream script lines retained | `691/692 = 99.86%` |
+| BGR exact unchanged script lines | `649/692 = 93.79%` |
 | Current adapted audit + motion scripts | `992 lines` |
 | BGR showcase assets copied | `0/29 = 0%` |
 | Glyphic primary implementation | `1/19 = 5.26%` |
