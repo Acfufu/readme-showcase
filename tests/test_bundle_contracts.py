@@ -17,9 +17,24 @@ canonical_sha256 = _CONTRACTS.canonical_sha256
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
 validate_generated_bundle = _CORE.validate_generated_bundle
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_COMMIT = "ed79edb1624e2de78041611971a963efaea5e080"
 
 
 class BundleContractTests(unittest.TestCase):
+    def valid_svg(
+        self,
+        title: str = "Project architecture",
+        labels: list[str] | None = None,
+    ) -> bytes:
+        text = "".join(
+            f'<text x="10" y="{40 + index * 20}">{label}</text>'
+            for index, label in enumerate(labels or [])
+        )
+        return (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" '
+            f'viewBox="0 0 1200 480" role="img"><title>{title}</title>{text}</svg>\n'
+        ).encode()
+
     def write_json(self, root: Path, path: str, value: object) -> dict[str, str]:
         destination = root / path
         write_canonical_json_atomic(destination, value)
@@ -79,6 +94,15 @@ class BundleContractTests(unittest.TestCase):
         assets: list[dict[str, object]] = []
         candidate_assets: list[dict[str, str]] = []
         if mode != "audit-only":
+            semantic_value = (
+                json.loads(
+                    (REPO_ROOT / "tests/fixtures/glyphic/architecture.json").read_text(
+                        encoding="utf-8",
+                    )
+                )
+                if glyphic
+                else None
+            )
             if production_kind == "hybrid":
                 raw = self.write_bytes(root, "assets/readme/hero.png", b"\x89PNG\r\n\x1a\nhybrid")
                 asset_type = "png"
@@ -89,7 +113,20 @@ class BundleContractTests(unittest.TestCase):
                 raw = self.write_bytes(
                     root,
                     "assets/readme/diagram.svg",
-                    b'<svg xmlns="http://www.w3.org/2000/svg"></svg>\n',
+                    self.valid_svg(
+                        semantic_value["accessibility_title"] if semantic_value else "Project architecture",
+                        (
+                            [item["label"] for item in semantic_value["groups"]]
+                            + [item["label"] for item in semantic_value["nodes"]]
+                            + [
+                                item["label"]
+                                for item in semantic_value["edges"]
+                                if item["label"] is not None
+                            ]
+                            if semantic_value
+                            else None
+                        ),
+                    ),
                 )
                 asset_type = "svg"
             candidate_assets.append(raw)
@@ -103,11 +140,7 @@ class BundleContractTests(unittest.TestCase):
                 "truth_ids": ["file:README.md"],
             }
             if glyphic:
-                semantic_value = json.loads(
-                    (REPO_ROOT / "tests/fixtures/glyphic/architecture.json").read_text(
-                        encoding="utf-8",
-                    )
-                )
+                assert semantic_value is not None
                 semantic = self.write_json(
                     root,
                     "assets/readme/diagram.glyphic.json",
@@ -116,18 +149,18 @@ class BundleContractTests(unittest.TestCase):
                 fallback = self.write_bytes(
                     root,
                     "assets/readme/diagram.static.svg",
-                    b'<svg xmlns="http://www.w3.org/2000/svg"></svg>\n',
+                    self.valid_svg("Static architecture fallback"),
                 )
                 metadata_value = {
                     "schema_version": 1,
                     "engine_kind": "glyphic",
-                    "source_commit": "e" * 40,
+                    "source_commit": SOURCE_COMMIT,
                     "package_version": "1.3.1",
                     "core_version": "1.3.1",
                     "engine_schema_version": "1",
                     "package_sha256": "1" * 64,
                     "tree_sha256": "2" * 64,
-                    "sri": "sha512-example",
+                    "sri": "sha512-ZmZmZmZmZmZmZmZm",
                     "license_spdx": "FSL-1.1-ALv2",
                     "license_sha256": "3" * 64,
                     "lock_sha256": "4" * 64,
@@ -159,7 +192,7 @@ class BundleContractTests(unittest.TestCase):
                         "layout": self.write_bytes(
                             root,
                             "assets/readme/source/hero-layout.svg",
-                            b'<svg xmlns="http://www.w3.org/2000/svg"></svg>\n',
+                            self.valid_svg("Editable hero layout"),
                         ),
                         "subject": self.write_bytes(
                             root,
@@ -174,7 +207,7 @@ class BundleContractTests(unittest.TestCase):
                         "fallback": self.write_bytes(
                             root,
                             "assets/readme/hero-static.svg",
-                            b'<svg xmlns="http://www.w3.org/2000/svg"></svg>\n',
+                            self.valid_svg("Static hero fallback"),
                         ),
                     }
                 )
@@ -182,7 +215,7 @@ class BundleContractTests(unittest.TestCase):
                 fallback = self.write_bytes(
                     root,
                     "assets/readme/hero-static.svg",
-                    b'<svg xmlns="http://www.w3.org/2000/svg"></svg>\n',
+                    self.valid_svg("Static hero fallback"),
                 )
                 asset.update(
                     {
@@ -203,7 +236,19 @@ class BundleContractTests(unittest.TestCase):
             {"schema_version": 1, "assets": assets},
         )
         readme = (
-            self.write_bytes(root, "README.generated.md", b"# Generated\n")
+            self.write_bytes(
+                root,
+                "README.generated.md",
+                (
+                    b"# Generated\n\n"
+                    + (
+                        f"![Project architecture]({candidate_assets[0]['path']})\n\n"
+                        "Evidence-bound architecture.\n"
+                    ).encode()
+                    if candidate_assets
+                    else b"# Generated\n"
+                ),
+            )
             if mode == "readme"
             else None
         )
@@ -222,6 +267,29 @@ class BundleContractTests(unittest.TestCase):
         bundle_path = root / "generated-readme-bundle.json"
         write_canonical_json_atomic(bundle_path, bundle)
         return bundle, bundle_path
+
+    def replace_primary_asset(
+        self,
+        root: Path,
+        bundle: dict[str, Any],
+        raw: bytes,
+    ) -> None:
+        asset_path = bundle["candidate"]["assets"][0]["path"]
+        reference = self.write_bytes(root, asset_path, raw)
+        bundle["candidate"]["assets"][0] = reference
+        manifest_path = root / bundle["artifacts"]["asset_manifest"]["path"]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        asset = manifest["assets"][0]
+        asset.update(reference)
+        if asset["engine_kind"] == "glyphic":
+            metadata_path = root / asset["engine_metadata"]["path"]
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["output_sha256"] = reference["sha256"]
+            metadata["run_hashes"] = [reference["sha256"], reference["sha256"]]
+            write_canonical_json_atomic(metadata_path, metadata)
+            asset["engine_metadata"]["sha256"] = canonical_sha256(metadata)
+        write_canonical_json_atomic(manifest_path, manifest)
+        bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(manifest)
 
     def assert_code(self, root: Path, bundle: dict[str, Any], code: str) -> None:
         with self.assertRaises(ContractError) as raised:
@@ -283,6 +351,18 @@ class BundleContractTests(unittest.TestCase):
             bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(manifest)
             self.assert_code(root, bundle, "E_ENGINE_METADATA")
 
+            bundle, _ = self.make_bundle(root, "asset-only", glyphic=True)
+            metadata_path = root / "assets/readme/diagram.engine.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["license_spdx"] = "MIT"
+            write_canonical_json_atomic(metadata_path, metadata)
+            manifest_path = root / bundle["artifacts"]["asset_manifest"]["path"]
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["assets"][0]["engine_metadata"]["sha256"] = canonical_sha256(metadata)
+            write_canonical_json_atomic(manifest_path, manifest)
+            bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(manifest)
+            self.assert_code(root, bundle, "E_ENGINE_METADATA")
+
     def test_cli_validates_complete_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -302,6 +382,96 @@ class BundleContractTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)["status"], "pass")
+
+    def test_asset_type_command_language_and_alt_are_hard_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle, _ = self.make_bundle(root, "readme")
+            manifest_path = root / bundle["artifacts"]["asset_manifest"]["path"]
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["assets"][0]["type"] = "png"
+            write_canonical_json_atomic(manifest_path, manifest)
+            bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(manifest)
+            self.assert_code(root, bundle, "E_BUNDLE_ASSET")
+
+            bundle, _ = self.make_bundle(root, "readme")
+            plan_path = root / bundle["artifacts"]["plan"]["path"]
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["commands"] = ["python3 -m demo"]
+            write_canonical_json_atomic(plan_path, plan)
+            bundle["artifacts"]["plan"]["sha256"] = canonical_sha256(plan)
+            self.assert_code(root, bundle, "E_README_COMMAND")
+
+            bundle, _ = self.make_bundle(root, "readme")
+            plan_path = root / bundle["artifacts"]["plan"]["path"]
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            plan["languages"] = ["en", "zh"]
+            write_canonical_json_atomic(plan_path, plan)
+            bundle["artifacts"]["plan"]["sha256"] = canonical_sha256(plan)
+            self.assert_code(root, bundle, "E_README_LANGUAGE")
+
+            bundle, _ = self.make_bundle(root, "readme")
+            manifest_path = root / bundle["artifacts"]["asset_manifest"]["path"]
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["assets"][0]["alt"] = ""
+            write_canonical_json_atomic(manifest_path, manifest)
+            bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(manifest)
+            self.assert_code(root, bundle, "E_README_ACCESSIBILITY")
+
+    def test_generic_svg_safety_and_glyphic_visible_text_are_hard_gates(self) -> None:
+        unsafe = (
+            b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" '
+            b'viewBox="0 0 10 10" role="img"><title>Unsafe</title>'
+            b'<script>alert(1)</script></svg>'
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle, _ = self.make_bundle(root, "asset-only")
+            self.replace_primary_asset(root, bundle, unsafe)
+            self.assert_code(root, bundle, "E_SVG_UNSAFE")
+
+            bundle, _ = self.make_bundle(root, "asset-only")
+            unresolved = (
+                b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" '
+                b'viewBox="0 0 10 10" role="img" aria-labelledby="missing">'
+                b"<title>Project architecture</title></svg>"
+            )
+            self.replace_primary_asset(root, bundle, unresolved)
+            self.assert_code(root, bundle, "E_SVG_REFERENCE")
+
+            bundle, _ = self.make_bundle(root, "asset-only", glyphic=True)
+            semantic = json.loads(
+                (
+                    root
+                    / "assets/readme/diagram.glyphic.json"
+                ).read_text(encoding="utf-8")
+            )
+            labels = (
+                [item["label"] for item in semantic["groups"]]
+                + [item["label"] for item in semantic["nodes"]]
+                + [
+                    item["label"]
+                    for item in semantic["edges"]
+                    if item["label"] is not None
+                ]
+                + ["Engine invented claim"]
+            )
+            self.replace_primary_asset(
+                root,
+                bundle,
+                self.valid_svg(semantic["accessibility_title"], labels),
+            )
+            self.assert_code(root, bundle, "E_SVG_LABELS")
+
+            bundle, _ = self.make_bundle(root, "asset-only", glyphic=True)
+            manifest_path = root / bundle["artifacts"]["asset_manifest"]["path"]
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            fallback = manifest["assets"][0]["fallback"]
+            (root / fallback["path"]).write_bytes(unsafe)
+            fallback["sha256"] = __import__("hashlib").sha256(unsafe).hexdigest()
+            write_canonical_json_atomic(manifest_path, manifest)
+            bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(manifest)
+            self.assert_code(root, bundle, "E_SVG_UNSAFE")
 
 
 if __name__ == "__main__":

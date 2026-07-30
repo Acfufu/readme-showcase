@@ -16,9 +16,17 @@ _CONTRACTS = importlib.import_module(
     if __package__ in (None, "")
     else "skill.scripts.pipeline_contracts"
 )
+_AUDIT = importlib.import_module(
+    "audit_readme"
+    if __package__ in (None, "")
+    else "skill.scripts.audit_readme"
+)
 ContractError = _CONTRACTS.ContractError
 canonical_sha256 = _CONTRACTS.canonical_sha256
 validate_contract = _CONTRACTS.validate_contract
+audit_readme = _AUDIT.audit_readme
+audit_svg_bytes = _AUDIT.audit_svg_bytes
+image_references = _AUDIT.image_references
 
 
 _DATASET_FIELDS = {
@@ -197,6 +205,9 @@ _GLYPHIC_NODE_FIELDS = {"id", "label", "group_id", "kind", "claim_id"}
 _GLYPHIC_EDGE_FIELDS = {"source", "target", "label", "claim_id"}
 _GLYPHIC_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 _HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}\Z")
+_GLYPHIC_SOURCE_COMMIT = "ed79edb1624e2de78041611971a963efaea5e080"
+_GLYPHIC_VERSION = "1.3.1"
+_GLYPHIC_LICENSE = "FSL-1.1-ALv2"
 _RETRIEVAL_EVIDENCE_FIELDS = {
     "schema_version",
     "status",
@@ -733,7 +744,7 @@ def _string_list(value: Any, context: str, *, allow_empty: bool = True) -> list[
     return value
 
 
-def _validate_plan(payload: Any, mode: str) -> None:
+def _validate_plan(payload: Any, mode: str) -> dict[str, Any]:
     plan = validate_contract(
         payload,
         required=_PLAN_FIELDS,
@@ -742,13 +753,57 @@ def _validate_plan(payload: Any, mode: str) -> None:
     )
     if plan["mode"] != mode:
         _fail("E_BUNDLE_MODE", "README plan mode differs from bundle mode")
-    _string_list(plan["languages"], "README plan.languages", allow_empty=False)
+    languages = _string_list(plan["languages"], "README plan.languages", allow_empty=False)
+    if not set(languages).issubset({"en", "zh"}):
+        _fail("E_README_LANGUAGE", "README plan.languages must contain en and/or zh")
     _string_list(plan["sections"], "README plan.sections")
-    _string_list(plan["commands"], "README plan.commands")
+    commands = _string_list(plan["commands"], "README plan.commands")
+    for index, command in enumerate(commands):
+        _text(command, f"README plan.commands[{index}]")
     _string_list(plan["evidence_ids"], "README plan.evidence_ids")
     _text(plan["visual_intent"], "README plan.visual_intent")
     if plan["diagram_route"] not in {"none", "static", "glyphic"}:
         _fail("E_BUNDLE_PLAN", "README plan.diagram_route is unsupported")
+    return plan
+
+
+def _validate_svg(
+    raw: bytes,
+    context: str,
+    *,
+    expected_title: str | None = None,
+    expected_labels: list[str] | None = None,
+) -> None:
+    issues = audit_svg_bytes(
+        raw,
+        expected_title=expected_title,
+        expected_labels=expected_labels,
+    )
+    if issues:
+        code, message = issues[0]
+        _fail(code, f"{context}: {message}")
+
+
+def _validate_asset_bytes(raw: bytes, asset_type: str, path: str, context: str) -> None:
+    suffixes = {
+        "svg": {".svg"},
+        "png": {".png"},
+        "webp": {".webp"},
+        "gif": {".gif"},
+    }
+    suffix = PurePosixPath(path).suffix.lower()
+    if suffix not in suffixes.get(asset_type, set()):
+        _fail("E_BUNDLE_ASSET", f"{context}.type does not match path suffix")
+    if asset_type == "svg":
+        _validate_svg(raw, context)
+    elif asset_type == "png" and not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        _fail("E_BUNDLE_ASSET", f"{context} is not PNG bytes")
+    elif asset_type == "gif" and not raw.startswith((b"GIF87a", b"GIF89a")):
+        _fail("E_BUNDLE_ASSET", f"{context} is not GIF bytes")
+    elif asset_type == "webp" and not (
+        len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"
+    ):
+        _fail("E_BUNDLE_ASSET", f"{context} is not WebP bytes")
 
 
 def _validate_claim_map(payload: Any) -> set[str]:
@@ -926,8 +981,8 @@ def _validate_engine_metadata(
     )
     if metadata["engine_kind"] != "glyphic":
         _fail("E_ENGINE_METADATA", "engine metadata must declare glyphic")
-    if not isinstance(metadata["source_commit"], str) or not _COMMIT.fullmatch(metadata["source_commit"]):
-        _fail("E_ENGINE_METADATA", "engine source_commit must be immutable")
+    if metadata["source_commit"] != _GLYPHIC_SOURCE_COMMIT:
+        _fail("E_ENGINE_METADATA", "engine source_commit must match pinned Glyphic source")
     for field in (
         "package_sha256",
         "tree_sha256",
@@ -946,6 +1001,17 @@ def _validate_engine_metadata(
         _fail("E_ENGINE_METADATA", "engine run hashes must prove equal raw bytes")
     if metadata["validation"] != "pass" or metadata["fallback_state"] != "preserved":
         _fail("E_ENGINE_METADATA", "engine validation and fallback state must pass")
+    if (
+        metadata["package_version"] != _GLYPHIC_VERSION
+        or metadata["core_version"] != _GLYPHIC_VERSION
+        or metadata["engine_schema_version"] != "1"
+        or metadata["license_spdx"] != _GLYPHIC_LICENSE
+        or not isinstance(metadata["node_version"], str)
+        or not metadata["node_version"].startswith("22.")
+        or not isinstance(metadata["sri"], str)
+        or not re.fullmatch(r"sha512-[A-Za-z0-9+/]+={0,2}", metadata["sri"])
+    ):
+        _fail("E_ENGINE_METADATA", "engine version, runtime, SRI, or license is not pinned")
     for field in (
         "package_version",
         "core_version",
@@ -965,6 +1031,7 @@ def _validate_asset_manifest(
     root: Path,
     candidate_assets: list[dict[str, str]],
     truth_ids: set[str],
+    readme_text: str | None,
 ) -> None:
     manifest = validate_contract(
         payload,
@@ -995,7 +1062,7 @@ def _validate_asset_manifest(
             {"path": asset["path"], "sha256": asset["sha256"]},
             context,
         )
-        _artifact_bytes(root, reference, context)
+        raw_asset = _artifact_bytes(root, reference, context)
         manifest_refs.append(reference)
         if asset["type"] not in {"svg", "png", "webp", "gif"}:
             _fail("E_BUNDLE_ASSET", f"{context}.type is unsupported")
@@ -1003,8 +1070,11 @@ def _validate_asset_manifest(
             _fail("E_BUNDLE_ASSET", f"{context}.engine_kind is unsupported")
         if production_kind not in {"static", "hybrid", "motion"}:
             _fail("E_BUNDLE_ASSET", f"{context}.production_kind is unsupported")
-        _text(asset["alt"], f"{context}.alt")
-        _text(asset["caption"], f"{context}.caption")
+        if not isinstance(asset["alt"], str) or not asset["alt"].strip():
+            _fail("E_README_ACCESSIBILITY", f"{context}.alt must be useful text")
+        if not isinstance(asset["caption"], str) or not asset["caption"].strip():
+            _fail("E_README_ACCESSIBILITY", f"{context}.caption must be useful text")
+        _validate_asset_bytes(raw_asset, asset["type"], reference["path"], context)
         bound_truth_ids = _string_list(asset["truth_ids"], f"{context}.truth_ids", allow_empty=False)
         if not set(bound_truth_ids).issubset(truth_ids):
             _fail("E_BUNDLE_CLAIM", f"{context} references unknown truth_id")
@@ -1020,11 +1090,35 @@ def _validate_asset_manifest(
                 asset["engine_metadata"],
                 f"{context}.engine_metadata",
             )
-            _artifact_bytes(root, _reference(asset["fallback"], f"{context}.fallback"), f"{context}.fallback")
+            fallback_ref = _reference(asset["fallback"], f"{context}.fallback")
+            fallback_raw = _artifact_bytes(root, fallback_ref, f"{context}.fallback")
+            if not fallback_ref["path"].endswith(".svg"):
+                _fail("E_BUNDLE_ASSET", "Glyphic fallback must be static SVG")
+            if not semantic_ref["path"].endswith(".glyphic.json"):
+                _fail("E_BUNDLE_ASSET", "Glyphic semantic source must use .glyphic.json")
+            metadata_ref = _reference(asset["engine_metadata"], f"{context}.engine_metadata")
+            if not metadata_ref["path"].endswith(".engine.json"):
+                _fail("E_BUNDLE_ASSET", "Glyphic metadata must use .engine.json")
+            _validate_svg(fallback_raw, f"{context}.fallback")
             _validate_engine_metadata(
                 metadata_payload,
                 asset_sha256=reference["sha256"],
                 semantic_sha256=semantic_ref["sha256"],
+            )
+            labels = (
+                [item["label"] for item in semantic_payload["groups"]]
+                + [item["label"] for item in semantic_payload["nodes"]]
+                + [
+                    item["label"]
+                    for item in semantic_payload["edges"]
+                    if item["label"] is not None
+                ]
+            )
+            _validate_svg(
+                raw_asset,
+                context,
+                expected_title=semantic_payload["accessibility_title"],
+                expected_labels=labels,
             )
         elif production_kind == "hybrid":
             if asset["type"] not in {"png", "webp"}:
@@ -1040,9 +1134,11 @@ def _validate_asset_manifest(
                 "fallback": {".svg"},
             }
             for name, source_ref in hybrid_refs.items():
-                _artifact_bytes(root, source_ref, f"{context}.{name}")
+                source_raw = _artifact_bytes(root, source_ref, f"{context}.{name}")
                 if PurePosixPath(source_ref["path"]).suffix not in expected_suffixes[name]:
                     _fail("E_BUNDLE_ASSET", f"{context}.{name} has unsupported file type")
+                if source_ref["path"].endswith(".svg"):
+                    _validate_svg(source_raw, f"{context}.{name}")
             if len({item["path"] for item in hybrid_refs.values()}) != 4:
                 _fail("E_BUNDLE_ASSET", "hybrid editable sources and fallback must be distinct")
         elif production_kind == "motion":
@@ -1052,9 +1148,10 @@ def _validate_asset_manifest(
                 _fail("E_VISUAL_MOTION_APPROVAL", "motion requires explicit approval")
             for name in ("source", "fallback"):
                 source_ref = _reference(asset[name], f"{context}.{name}")
-                _artifact_bytes(root, source_ref, f"{context}.{name}")
+                source_raw = _artifact_bytes(root, source_ref, f"{context}.{name}")
                 if not source_ref["path"].endswith(".svg"):
                     _fail("E_BUNDLE_ASSET", f"{context}.{name} must be static SVG")
+                _validate_svg(source_raw, f"{context}.{name}")
             motion_spec, _ = _artifact_json(
                 root,
                 asset["motion_spec"],
@@ -1062,6 +1159,28 @@ def _validate_asset_manifest(
             )
             if motion_spec.get("schema_version") != 1:
                 _fail("E_SCHEMA_VERSION", "motion spec requires schema_version 1")
+        if readme_text is not None:
+            matching = [
+                (alt, line)
+                for source, alt, line in image_references(readme_text)
+                if source.removeprefix("./").split("#", 1)[0].split("?", 1)[0]
+                == reference["path"]
+            ]
+            if [alt for alt, _ in matching] != [asset["alt"]]:
+                _fail(
+                    "E_README_ACCESSIBILITY",
+                    f"{context} requires one README image with matching alt",
+                )
+            lines = readme_text.splitlines()
+            image_line = matching[0][1]
+            if not any(
+                asset["caption"] in line
+                for line in lines[image_line : image_line + 3]
+            ):
+                _fail(
+                    "E_README_ACCESSIBILITY",
+                    f"{context}.caption must immediately follow README image",
+                )
     if manifest_refs != candidate_assets:
         _fail("E_BUNDLE_ASSET", "candidate assets and asset manifest differ")
 
@@ -1095,9 +1214,18 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
     for index, reference in enumerate(candidate_assets):
         _artifact_bytes(artifact_root, reference, f"bundle candidate.assets[{index}]")
 
+    readme_text: str | None = None
     if mode == "readme":
         readme_ref = _reference(readme, "bundle candidate.readme")
-        _artifact_bytes(artifact_root, readme_ref, "bundle candidate.readme")
+        readme_raw = _artifact_bytes(artifact_root, readme_ref, "bundle candidate.readme")
+        try:
+            readme_text = readme_raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ContractError("E_INPUT_ENCODING", "candidate README must be UTF-8") from exc
+        readme_path = artifact_root.joinpath(*PurePosixPath(readme_ref["path"]).parts)
+        readme_issues, _, _ = audit_readme(readme_path, root=artifact_root)
+        if readme_issues:
+            _fail("E_README_AUDIT", readme_issues[0])
     elif readme is not None:
         _fail("E_BUNDLE_MODE", f"{mode} mode cannot contain candidate README")
     if mode == "asset-only" and not candidate_assets:
@@ -1122,7 +1250,18 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
         artifacts["asset_manifest"],
         "bundle artifacts.asset_manifest",
     )
-    _validate_plan(plan, mode)
+    validated_plan = _validate_plan(plan, mode)
+    if readme_text is not None:
+        for command in validated_plan["commands"]:
+            if command not in readme_text:
+                _fail("E_README_COMMAND", f"README omits planned command: {command}")
+        if set(validated_plan["languages"]) == {"en", "zh"}:
+            links = re.findall(
+                r"(?:href=[\"']|\]\()(\.?/?README(?:_zh)?\.md)(?:[\"')])",
+                readme_text,
+            )
+            if not links:
+                _fail("E_README_LANGUAGE", "bilingual README must link its language pair")
     if retrieval.get("schema_version") != 1:
         _fail("E_SCHEMA_VERSION", "retrieval packet requires schema_version 1")
     truth_ids = _validate_claim_map(claims)
@@ -1131,6 +1270,7 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
         root=artifact_root,
         candidate_assets=candidate_assets,
         truth_ids=truth_ids,
+        readme_text=readme_text,
     )
     return {
         "schema_version": 1,
