@@ -141,7 +141,7 @@ class BundleContractTests(unittest.TestCase):
                     "source_commit": SOURCE_COMMIT,
                     "package_version": "1.3.1",
                     "core_version": "1.3.1",
-                    "engine_schema_version": "1",
+                    "engine_schema_version": "1.3.1",
                     "package_sha256": "1" * 64,
                     "tree_sha256": "2" * 64,
                     "sri": "sha512-ZmZmZmZmZmZmZmZm",

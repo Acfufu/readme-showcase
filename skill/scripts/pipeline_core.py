@@ -1371,7 +1371,7 @@ def _validate_engine_metadata(
     if (
         metadata["package_version"] != _GLYPHIC_VERSION
         or metadata["core_version"] != _GLYPHIC_VERSION
-        or metadata["engine_schema_version"] != "1"
+        or metadata["engine_schema_version"] != _GLYPHIC_VERSION
         or metadata["license_spdx"] != _GLYPHIC_LICENSE
         or not isinstance(metadata["node_version"], str)
         or not metadata["node_version"].startswith("22.")
