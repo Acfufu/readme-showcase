@@ -221,6 +221,15 @@ _RETRIEVAL_EVIDENCE_FIELDS = {
 _EVIDENCE_TARGET_FIELDS = {"name", "base_sha"}
 _EVIDENCE_FILE_FIELDS = {"path", "bytes", "lines", "sha256", "content"}
 _EVIDENCE_FACT_FIELDS = {"fact_id", "kind", "path", "evidence_sha256"}
+_ADVISORY_METRICS = (
+    "claim_coverage",
+    "diagram_label_coverage",
+    "evidence_sources",
+    "language_truth_pairs",
+    "observable_commands",
+    "section_intents",
+    "visual_provenance",
+)
 _RETRIEVAL_PROJECT_TYPES = {
     "developer-tool",
     "library",
@@ -1626,4 +1635,145 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
         "mode": mode,
         "bundle_sha256": canonical_sha256(bundle),
         "candidate_count": (1 if readme is not None else 0) + len(candidate_assets),
+    }
+
+
+def _empty_advisory_metrics() -> dict[str, dict[str, int]]:
+    return {
+        name: {"covered": 0, "total": 0}
+        for name in _ADVISORY_METRICS
+    }
+
+
+def evaluate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, object]:
+    bundle_sha256 = canonical_sha256(payload)
+    try:
+        validate_generated_bundle(payload, artifact_root)
+    except ContractError as exc:
+        return {
+            "schema_version": 1,
+            "status": "fail",
+            "decision_basis": "hard-gates-only",
+            "bundle_sha256": bundle_sha256,
+            "hard_gate": {
+                "status": "fail",
+                "findings": [{"code": exc.code, "message": str(exc)}],
+            },
+            "advisory": _empty_advisory_metrics(),
+        }
+
+    bundle = cast(dict[str, Any], payload)
+    candidate = cast(dict[str, Any], bundle["candidate"])
+    artifacts = cast(dict[str, Any], bundle["artifacts"])
+    plan, _ = _artifact_json(
+        artifact_root,
+        artifacts["plan"],
+        "bundle artifacts.plan",
+    )
+    retrieval, _ = _artifact_json(
+        artifact_root,
+        artifacts["retrieval"],
+        "bundle artifacts.retrieval",
+    )
+    claims, _ = _artifact_json(
+        artifact_root,
+        artifacts["claim_map"],
+        "bundle artifacts.claim_map",
+    )
+    asset_manifest, _ = _artifact_json(
+        artifact_root,
+        artifacts["asset_manifest"],
+        "bundle artifacts.asset_manifest",
+    )
+
+    readme_text = ""
+    if candidate["readme"] is not None:
+        readme_ref = _reference(candidate["readme"], "bundle candidate.readme")
+        readme_text = _artifact_bytes(
+            artifact_root,
+            readme_ref,
+            "bundle candidate.readme",
+        ).decode("utf-8")
+
+    markdown_claims = cast(list[dict[str, Any]], claims["markdown_blocks"])
+    diagram_claims = cast(list[dict[str, Any]], claims["diagram_labels"])
+    claim_entries = [*markdown_claims, *diagram_claims]
+    assets = cast(list[dict[str, Any]], asset_manifest["assets"])
+    expected_diagram_labels = _diagram_claim_inputs(
+        asset_manifest,
+        root=artifact_root,
+        default_language=cast(list[str], plan["languages"])[0],
+    )
+
+    planned_evidence = set(cast(list[str], plan["evidence_ids"]))
+    used_evidence = {
+        cast(str, claim["truth_id"])
+        for claim in claim_entries
+    }
+    for asset in assets:
+        used_evidence.update(cast(list[str], asset["truth_ids"]))
+
+    pair_counts: dict[str, int] = {}
+    for claim in claim_entries:
+        pair_id = claim["language_pair_id"]
+        if isinstance(pair_id, str):
+            pair_counts[pair_id] = pair_counts.get(pair_id, 0) + 1
+    language_count = len(cast(list[str], plan["languages"]))
+
+    retrieved_sections: set[str] = set()
+    records = retrieval.get("records", [])
+    if isinstance(records, list):
+        for record in records:
+            if isinstance(record, dict) and isinstance(record.get("section_intents"), list):
+                retrieved_sections.update(
+                    item
+                    for item in record["section_intents"]
+                    if isinstance(item, str)
+                )
+    planned_sections = set(cast(list[str], plan["sections"]))
+    commands = cast(list[str], plan["commands"])
+
+    advisory = {
+        "claim_coverage": {
+            "covered": len(claim_entries),
+            "total": (
+                len(segment_markdown_blocks(readme_text))
+                + len(expected_diagram_labels)
+            ),
+        },
+        "diagram_label_coverage": {
+            "covered": len(diagram_claims),
+            "total": len(expected_diagram_labels),
+        },
+        "evidence_sources": {
+            "covered": len(planned_evidence.intersection(used_evidence)),
+            "total": len(planned_evidence),
+        },
+        "language_truth_pairs": {
+            "covered": sum(
+                count == language_count
+                for count in pair_counts.values()
+            ),
+            "total": len(pair_counts),
+        },
+        "observable_commands": {
+            "covered": sum(command in readme_text for command in commands),
+            "total": len(commands),
+        },
+        "section_intents": {
+            "covered": len(planned_sections.intersection(retrieved_sections)),
+            "total": len(planned_sections),
+        },
+        "visual_provenance": {
+            "covered": len(assets),
+            "total": len(assets),
+        },
+    }
+    return {
+        "schema_version": 1,
+        "status": "pass",
+        "decision_basis": "hard-gates-only",
+        "bundle_sha256": bundle_sha256,
+        "hard_gate": {"status": "pass", "findings": []},
+        "advisory": advisory,
     }

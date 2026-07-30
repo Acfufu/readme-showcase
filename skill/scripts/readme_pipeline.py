@@ -21,6 +21,7 @@ validate_dataset_manifest = _CORE.validate_dataset_manifest
 scan_repository = _CORE.scan_repository
 retrieve_patterns = _CORE.retrieve_patterns
 validate_generated_bundle = _CORE.validate_generated_bundle
+evaluate_generated_bundle = _CORE.evaluate_generated_bundle
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
 import_benchmark = _BENCHMARK.import_benchmark
 
@@ -90,6 +91,15 @@ def _import_benchmark(arguments: argparse.Namespace) -> dict[str, object]:
     )
 
 
+def _evaluate(arguments: argparse.Namespace) -> dict[str, object]:
+    report = evaluate_generated_bundle(
+        read_json_object(arguments.bundle),
+        arguments.bundle.parent.resolve(),
+    )
+    write_canonical_json_atomic(arguments.output, report)
+    return report
+
+
 def _path_argument(
     parser: argparse.ArgumentParser,
     flag: str,
@@ -139,7 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate = subcommands.add_parser("evaluate")
     _path_argument(evaluate, "--bundle")
     _path_argument(evaluate, "--output")
-    evaluate.set_defaults(handler=_pending("evaluate"))
+    evaluate.set_defaults(handler=_evaluate)
 
     import_benchmark = subcommands.add_parser("import-benchmark")
     _path_argument(import_benchmark, "--input")
