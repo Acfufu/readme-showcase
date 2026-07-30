@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "accessibility_title": "Application architecture",
+  "accessibility_claim_id": "claim-title",
+  "direction": "LR",
+  "palette": {
+    "background": "#ffffff",
+    "node_background": "#f8fafc",
+    "node_border": "#334155",
+    "node_text": "#0f172a",
+    "edge_color": "#475569",
+    "edge_label_color": "#1e293b"
+  },
+  "groups": [
+    {
+      "id": "services",
+      "label": "Services",
+      "parent_id": null,
+      "claim_id": "claim-boundary"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "api",
+      "label": "API",
+      "group_id": "services",
+      "kind": "service",
+      "claim_id": "claim-api"
+    },
+    {
+      "id": "db",
+      "label": "Database",
+      "group_id": "services",
+      "kind": "database",
+      "claim_id": "claim-db"
+    }
+  ],
+  "edges": [
+    {
+      "source": "api",
+      "target": "db",
+      "label": "SQL",
+      "claim_id": "claim-edge"
+    }
+  ],
+  "claim_ids": [
+    "claim-api",
+    "claim-boundary",
+    "claim-db",
+    "claim-edge",
+    "claim-title"
+  ]
+}

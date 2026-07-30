@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "accessibility_title": "Invalid coordinates",
+  "accessibility_claim_id": "claim-title",
+  "direction": "LR",
+  "palette": {
+    "background": "#ffffff",
+    "node_background": "#f8fafc",
+    "node_border": "#334155",
+    "node_text": "#0f172a",
+    "edge_color": "#475569",
+    "edge_label_color": "#1e293b"
+  },
+  "groups": [],
+  "nodes": [
+    {
+      "id": "api",
+      "label": "API",
+      "group_id": null,
+      "kind": "service",
+      "claim_id": "claim-api",
+      "x": 120
+    }
+  ],
+  "edges": [],
+  "claim_ids": [
+    "claim-api",
+    "claim-title"
+  ]
+}

@@ -103,10 +103,15 @@ class BundleContractTests(unittest.TestCase):
                 "truth_ids": ["file:README.md"],
             }
             if glyphic:
+                semantic_value = json.loads(
+                    (REPO_ROOT / "tests/fixtures/glyphic/architecture.json").read_text(
+                        encoding="utf-8",
+                    )
+                )
                 semantic = self.write_json(
                     root,
                     "assets/readme/diagram.glyphic.json",
-                    {"schema_version": 1, "diagram_type": "architecture"},
+                    semantic_value,
                 )
                 fallback = self.write_bytes(
                     root,

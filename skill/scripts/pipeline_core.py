@@ -171,6 +171,31 @@ _ENGINE_METADATA_FIELDS = {
     "validation",
     "fallback_state",
 }
+_GLYPHIC_SEMANTIC_FIELDS = {
+    "schema_version",
+    "diagram_type",
+    "accessibility_title",
+    "accessibility_claim_id",
+    "direction",
+    "palette",
+    "groups",
+    "nodes",
+    "edges",
+    "claim_ids",
+}
+_GLYPHIC_PALETTE_FIELDS = {
+    "background",
+    "node_background",
+    "node_border",
+    "node_text",
+    "edge_color",
+    "edge_label_color",
+}
+_GLYPHIC_GROUP_FIELDS = {"id", "label", "parent_id", "claim_id"}
+_GLYPHIC_NODE_FIELDS = {"id", "label", "group_id", "kind", "claim_id"}
+_GLYPHIC_EDGE_FIELDS = {"source", "target", "label", "claim_id"}
+_GLYPHIC_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
+_HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}\Z")
 
 
 def _fail(code: str, message: str) -> None:
@@ -625,6 +650,134 @@ def _validate_claim_map(payload: Any) -> set[str]:
     return truth_ids
 
 
+def _validate_glyphic_semantic(payload: Any) -> None:
+    semantic = _object(payload, _GLYPHIC_SEMANTIC_FIELDS, "Glyphic semantic source")
+    if semantic["schema_version"] != 1:
+        _fail("E_GLYPHIC_SEMANTIC", "Glyphic semantic schema_version must be 1")
+    if semantic["diagram_type"] not in {"architecture", "flowchart", "c4"}:
+        _fail("E_GLYPHIC_SEMANTIC", "Glyphic diagram type is unsupported")
+    if semantic["direction"] not in {"TB", "BT", "LR", "RL"}:
+        _fail("E_GLYPHIC_SEMANTIC", "Glyphic direction is unsupported")
+
+    def glyphic_id(value: Any, context: str, *, nullable: bool = False) -> str | None:
+        if nullable and value is None:
+            return None
+        if not isinstance(value, str) or not _GLYPHIC_ID.fullmatch(value):
+            _fail("E_GLYPHIC_SEMANTIC", f"{context} must be a bounded identifier")
+        return value
+
+    def glyphic_text(value: Any, context: str, *, nullable: bool = False) -> str | None:
+        if nullable and value is None:
+            return None
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value) > 120
+            or "\n" in value
+            or "\r" in value
+        ):
+            _fail("E_GLYPHIC_SEMANTIC", f"{context} must be single-line text within 120 characters")
+        return value
+
+    glyphic_text(semantic["accessibility_title"], "Glyphic accessibility_title")
+    glyphic_id(semantic["accessibility_claim_id"], "Glyphic accessibility_claim_id")
+    palette = _object(semantic["palette"], _GLYPHIC_PALETTE_FIELDS, "Glyphic palette")
+    for field in sorted(_GLYPHIC_PALETTE_FIELDS):
+        if not isinstance(palette[field], str) or not _HEX_COLOR.fullmatch(palette[field]):
+            _fail("E_GLYPHIC_SEMANTIC", f"Glyphic palette.{field} must be a six-digit hex color")
+
+    groups_raw = semantic["groups"]
+    nodes_raw = semantic["nodes"]
+    edges_raw = semantic["edges"]
+    if not isinstance(groups_raw, list) or len(groups_raw) > 50:
+        _fail("E_GLYPHIC_SEMANTIC", "Glyphic groups must contain at most 50 entries")
+    if not isinstance(nodes_raw, list) or not nodes_raw or len(nodes_raw) > 100:
+        _fail("E_GLYPHIC_SEMANTIC", "Glyphic nodes must contain 1-100 entries")
+    if not isinstance(edges_raw, list) or len(edges_raw) > 200:
+        _fail("E_GLYPHIC_SEMANTIC", "Glyphic edges must contain at most 200 entries")
+
+    groups: list[dict[str, Any]] = []
+    for index, raw in enumerate(groups_raw):
+        context = f"Glyphic groups[{index}]"
+        item = _object(raw, _GLYPHIC_GROUP_FIELDS, context)
+        glyphic_id(item["id"], f"{context}.id")
+        glyphic_text(item["label"], f"{context}.label")
+        glyphic_id(item["parent_id"], f"{context}.parent_id", nullable=True)
+        glyphic_id(item["claim_id"], f"{context}.claim_id")
+        groups.append(item)
+
+    nodes: list[dict[str, Any]] = []
+    for index, raw in enumerate(nodes_raw):
+        context = f"Glyphic nodes[{index}]"
+        item = _object(raw, _GLYPHIC_NODE_FIELDS, context)
+        glyphic_id(item["id"], f"{context}.id")
+        glyphic_text(item["label"], f"{context}.label")
+        glyphic_id(item["group_id"], f"{context}.group_id", nullable=True)
+        glyphic_id(item["claim_id"], f"{context}.claim_id")
+        if item["kind"] not in {
+            "component",
+            "service",
+            "database",
+            "person",
+            "system",
+            "external",
+            "container",
+        }:
+            _fail("E_GLYPHIC_SEMANTIC", f"{context}.kind is unsupported")
+        nodes.append(item)
+
+    edges: list[dict[str, Any]] = []
+    for index, raw in enumerate(edges_raw):
+        context = f"Glyphic edges[{index}]"
+        item = _object(raw, _GLYPHIC_EDGE_FIELDS, context)
+        glyphic_id(item["source"], f"{context}.source")
+        glyphic_id(item["target"], f"{context}.target")
+        glyphic_text(item["label"], f"{context}.label", nullable=True)
+        glyphic_id(item["claim_id"], f"{context}.claim_id", nullable=True)
+        if (item["label"] is None) != (item["claim_id"] is None):
+            _fail("E_GLYPHIC_SEMANTIC", f"{context} label and claim_id must both be null or text")
+        edges.append(item)
+
+    group_ids = {item["id"] for item in groups}
+    node_ids = {item["id"] for item in nodes}
+    all_ids = [item["id"] for item in groups] + [item["id"] for item in nodes]
+    if len(set(all_ids)) != len(all_ids):
+        _fail("E_GLYPHIC_SEMANTIC", "Glyphic group and node ids must be unique")
+    parent_by_group = {item["id"]: item["parent_id"] for item in groups}
+    for group in groups:
+        parent_id = group["parent_id"]
+        if parent_id is not None and parent_id not in group_ids:
+            _fail("E_GLYPHIC_SEMANTIC", f"Glyphic group {group['id']} references unknown parent")
+        seen = {group["id"]}
+        while parent_id is not None:
+            if parent_id in seen:
+                _fail("E_GLYPHIC_SEMANTIC", "Glyphic group hierarchy contains a cycle")
+            seen.add(parent_id)
+            parent_id = parent_by_group[parent_id]
+    for node in nodes:
+        if node["group_id"] is not None and node["group_id"] not in group_ids:
+            _fail("E_GLYPHIC_SEMANTIC", f"Glyphic node {node['id']} references unknown group")
+    for edge in edges:
+        if edge["source"] not in node_ids or edge["target"] not in node_ids:
+            _fail("E_GLYPHIC_SEMANTIC", "Glyphic edge references unknown node")
+
+    claim_ids = semantic["claim_ids"]
+    if (
+        not isinstance(claim_ids, list)
+        or any(not isinstance(item, str) or not _GLYPHIC_ID.fullmatch(item) for item in claim_ids)
+        or claim_ids != sorted(set(claim_ids))
+    ):
+        _fail("E_GLYPHIC_SEMANTIC", "Glyphic claim_ids must be a sorted unique identifier list")
+    used_claim_ids = sorted(
+        [semantic["accessibility_claim_id"]]
+        + [item["claim_id"] for item in groups]
+        + [item["claim_id"] for item in nodes]
+        + [item["claim_id"] for item in edges if item["claim_id"] is not None]
+    )
+    if claim_ids != used_claim_ids:
+        _fail("E_GLYPHIC_SEMANTIC", "Glyphic claim_ids must exactly match semantic claims")
+
+
 def _validate_engine_metadata(
     payload: Any,
     *,
@@ -727,14 +880,7 @@ def _validate_asset_manifest(
             if asset["type"] != "svg" or not reference["path"].endswith(".svg"):
                 _fail("E_BUNDLE_ASSET", "Glyphic output must be standalone SVG")
             semantic_payload, semantic_ref = _artifact_json(root, asset["semantic"], f"{context}.semantic")
-            validate_contract(
-                semantic_payload,
-                required={"schema_version", "diagram_type"},
-                optional=set(),
-                context="Glyphic semantic source",
-            )
-            if semantic_payload["diagram_type"] not in {"architecture", "flowchart", "c4"}:
-                _fail("E_BUNDLE_ASSET", "Glyphic diagram type is unsupported")
+            _validate_glyphic_semantic(semantic_payload)
             metadata_payload, _ = _artifact_json(
                 root,
                 asset["engine_metadata"],

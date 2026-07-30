@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "diagram_type": "flowchart",
+  "accessibility_title": "Release flow",
+  "accessibility_claim_id": "claim-title",
+  "direction": "TB",
+  "palette": {
+    "background": "#ffffff",
+    "node_background": "#f8fafc",
+    "node_border": "#334155",
+    "node_text": "#0f172a",
+    "edge_color": "#475569",
+    "edge_label_color": "#1e293b"
+  },
+  "groups": [],
+  "nodes": [
+    {
+      "id": "build",
+      "label": "Build",
+      "group_id": null,
+      "kind": "component",
+      "claim_id": "claim-build"
+    },
+    {
+      "id": "release",
+      "label": "Release",
+      "group_id": null,
+      "kind": "component",
+      "claim_id": "claim-release"
+    }
+  ],
+  "edges": [
+    {
+      "source": "build",
+      "target": "release",
+      "label": "Pass",
+      "claim_id": "claim-pass"
+    }
+  ],
+  "claim_ids": [
+    "claim-build",
+    "claim-pass",
+    "claim-release",
+    "claim-title"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "diagram_type": "c4",
+  "accessibility_title": "System context",
+  "accessibility_claim_id": "claim-title",
+  "direction": "LR",
+  "palette": {
+    "background": "#ffffff",
+    "node_background": "#f8fafc",
+    "node_border": "#334155",
+    "node_text": "#0f172a",
+    "edge_color": "#475569",
+    "edge_label_color": "#1e293b"
+  },
+  "groups": [
+    {
+      "id": "platform",
+      "label": "Platform",
+      "parent_id": null,
+      "claim_id": "claim-platform"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "user",
+      "label": "User",
+      "group_id": null,
+      "kind": "person",
+      "claim_id": "claim-user"
+    },
+    {
+      "id": "app",
+      "label": "Application",
+      "group_id": "platform",
+      "kind": "system",
+      "claim_id": "claim-app"
+    }
+  ],
+  "edges": [
+    {
+      "source": "user",
+      "target": "app",
+      "label": "Uses",
+      "claim_id": "claim-uses"
+    }
+  ],
+  "claim_ids": [
+    "claim-app",
+    "claim-platform",
+    "claim-title",
+    "claim-user",
+    "claim-uses"
+  ]
+}
