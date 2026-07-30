@@ -14,7 +14,7 @@ export async function processSVG(input) {
     input.style !== "compact"
     || input.aspectRatio !== "none"
     || input.exportFormat.join(",") !== "svg"
-    || input.theme.fontFamily !== "Arial"
+    || "fontFamily" in input.theme
     || "customFontUrl" in input.theme
     || "customIcons" in input.theme
   ) {
@@ -35,6 +35,6 @@ export async function processSVG(input) {
     .map((label, index) => `<text x="20" y="${60 + index * 24}">${escapeXml(label)}</text>`)
     .join("");
   return {
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480" role="img"><title>${escapeXml(input.title)}</title>${text}</svg>`,
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480" role="img"><title>${escapeXml(input.title)}</title><defs><filter id="glyphic-shadow"></filter></defs><rect width="1" height="1" filter="url(#glyphic-shadow)" />${text}</svg>`,
   };
 }

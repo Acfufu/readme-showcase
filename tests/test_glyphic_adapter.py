@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,23 +15,19 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = REPO_ROOT / "tests/fixtures/glyphic"
 ADAPTER = REPO_ROOT / "skill/scripts/render_glyphic.mjs"
+BUILDER = REPO_ROOT / "scripts/build_glyphic_engine_lock.py"
 SOURCE_COMMIT = "ed79edb1624e2de78041611971a963efaea5e080"
+CORE_SRI = (
+    "sha512-+wWBhFXOkgS6ZtGk4cHPooIueXt01g3meuHHcZnapBtgPW8IXy8nDFPO1lZX"
+    "eETVK+NZ6BeCu+blmD3QGr5hDw=="
+)
 
 
+@unittest.skipIf(
+    os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+    "Node/Glyphic tests run in isolated Node 22 lane",
+)
 class GlyphicAdapterTests(unittest.TestCase):
-    def tree_sha256(self, root: Path) -> str:
-        digest = hashlib.sha256()
-        for path in sorted(item for item in root.rglob("*") if item.is_file()):
-            relative = path.relative_to(root).as_posix()
-            raw = path.read_bytes()
-            digest.update(relative.encode("utf-8"))
-            digest.update(b"\0")
-            digest.update(str(len(raw)).encode("ascii"))
-            digest.update(b"\0")
-            digest.update(raw)
-            digest.update(b"\0")
-        return digest.hexdigest()
-
     def build_engine(
         self,
         root: Path,
@@ -46,34 +42,30 @@ class GlyphicAdapterTests(unittest.TestCase):
         shutil.copyfile(FIXTURES / "schema-package.json", schema / "package.json")
         shutil.copyfile(FIXTURES / "LICENSE", core / "LICENSE")
         shutil.copyfile(FIXTURES / f"modules/{variant}.mjs", core / "dist/index.js")
-        package_raw = (core / "package.json").read_bytes()
-        license_raw = (core / "LICENSE").read_bytes()
         node_version = subprocess.check_output(
             ["node", "-p", "process.versions.node"],
             text=True,
         ).strip()
-        lock: dict[str, Any] = {
-            "schema_version": 1,
-            "package_name": "@glyphicjs/core",
-            "package_version": "1.3.1",
-            "core_version": "1.3.1",
-            "schema_package_name": "@glyphicjs/schema",
-            "schema_package_version": "1.3.1",
-            "npm_sri": "sha512-" + base64.b64encode(b"f" * 64).decode("ascii"),
-            "source_repository": "https://github.com/MS-Teja/Glyphic",
-            "source_commit": SOURCE_COMMIT,
-            "license_spdx": "FSL-1.1-ALv2",
-            "license_file": "LICENSE",
-            "license_sha256": hashlib.sha256(license_raw).hexdigest(),
-            "package_json_sha256": hashlib.sha256(package_raw).hexdigest(),
-            "tree_sha256": self.tree_sha256(node_modules),
-            "node_version": node_version,
-        }
         lock_path = root / "glyphic-engine-lock.json"
-        lock_path.write_text(
-            json.dumps(lock, sort_keys=True, separators=(",", ":")) + "\n",
-            encoding="utf-8",
+        built = subprocess.run(
+            [
+                sys.executable,
+                str(BUILDER),
+                "--install-root",
+                str(root / "install"),
+                "--npm-sri",
+                CORE_SRI,
+                "--node-version",
+                node_version,
+                "--output",
+                str(lock_path),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
         )
+        self.assertEqual(built.returncode, 0, built.stderr)
         return core, lock_path
 
     def run_adapter(

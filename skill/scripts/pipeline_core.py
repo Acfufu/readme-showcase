@@ -209,6 +209,7 @@ _GLYPHIC_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 _HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}\Z")
 _GLYPHIC_SOURCE_COMMIT = "ed79edb1624e2de78041611971a963efaea5e080"
 _GLYPHIC_VERSION = "1.3.1"
+_GLYPHIC_SCHEMA_VERSION = "1.1.1"
 _GLYPHIC_LICENSE = "FSL-1.1-ALv2"
 _RETRIEVAL_EVIDENCE_FIELDS = {
     "schema_version",
@@ -1425,7 +1426,7 @@ def _validate_engine_metadata(
     if (
         metadata["package_version"] != _GLYPHIC_VERSION
         or metadata["core_version"] != _GLYPHIC_VERSION
-        or metadata["engine_schema_version"] != _GLYPHIC_VERSION
+        or metadata["engine_schema_version"] != _GLYPHIC_SCHEMA_VERSION
         or metadata["license_spdx"] != _GLYPHIC_LICENSE
         or not isinstance(metadata["node_version"], str)
         or not metadata["node_version"].startswith("22.")

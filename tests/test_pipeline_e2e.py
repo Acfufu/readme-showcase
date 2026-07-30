@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -235,6 +236,10 @@ class OfflinePipelineE2ETests(unittest.TestCase):
             )
             self.assertEqual((target / ".git/index").read_bytes(), index_before)
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "fake Glyphic flow runs in isolated Node 22 lane",
+    )
     def test_fake_glyphic_readme_preserves_raw_bytes_and_semantic_source(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
@@ -277,6 +282,10 @@ class OfflinePipelineE2ETests(unittest.TestCase):
                 ["assets/readme/diagram.glyphic.json"],
             )
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "fake Glyphic flow runs in isolated Node 22 lane",
+    )
     def test_missing_and_unsafe_engine_fall_back_to_static_asset_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)

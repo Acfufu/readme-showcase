@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      README_SHOWCASE_SKIP_NODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m py_compile skill/scripts/*.py scripts/*.py
+      - run: python -m unittest discover -s tests -v
+      - run: python skill/scripts/readme_pipeline.py validate-dataset --manifest dataset/retrieval/manifest.json
+      - run: python skill/scripts/audit_readme.py README.md
+      - run: python skill/scripts/audit_readme.py README_zh.md
+
+  fake-glyphic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --check skill/scripts/render_glyphic.mjs
+      - run: python -m unittest tests.test_glyphic_adapter tests.test_pipeline_e2e -v
+
+  motion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg librsvg2-bin
+      - run: python -m pip install --disable-pip-version-check Pillow==11.3.0
+      - run: >-
+          python skill/scripts/render_motion_gif.py
+          assets/readme/hero.svg
+          "${RUNNER_TEMP}/hero.gif"
+          --spec assets/readme/hero-motion.json
+      - run: test -s "${RUNNER_TEMP}/hero.gif"
+
+  real-glyphic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Provision pinned packages and immutable runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENGINE_ROOT="${RUNNER_TEMP}/glyphic-engine"
+          EVIDENCE_ROOT="${RUNNER_TEMP}/glyphic-evidence"
+          CORE_SRI="sha512-+wWBhFXOkgS6ZtGk4cHPooIueXt01g3meuHHcZnapBtgPW8IXy8nDFPO1lZXeETVK+NZ6BeCu+blmD3QGr5hDw=="
+          mkdir -p "${ENGINE_ROOT}" "${EVIDENCE_ROOT}"
+          test "$(npm view @glyphicjs/core@1.3.1 dist.integrity)" = "${CORE_SRI}"
+          docker pull node:22-bookworm-slim
+          IMAGE_ID="$(docker image inspect node:22-bookworm-slim --format '{{.Id}}')"
+          NODE_VERSION="$(docker run --rm --network none "${IMAGE_ID}" node -p 'process.versions.node')"
+          docker run --rm \
+            -v "${ENGINE_ROOT}:/engine:rw" \
+            "${IMAGE_ID}" \
+            npm install \
+              --prefix /engine \
+              --ignore-scripts \
+              --no-save \
+              --no-package-lock \
+              --omit=dev \
+              @glyphicjs/core@1.3.1 \
+              @glyphicjs/schema@1.1.1
+          python scripts/build_glyphic_engine_lock.py \
+            --install-root "${ENGINE_ROOT}" \
+            --npm-sri "${CORE_SRI}" \
+            --node-version "${NODE_VERSION}" \
+            --output "${ENGINE_ROOT}/glyphic-engine-lock.json"
+          cp "${ENGINE_ROOT}/glyphic-engine-lock.json" "${EVIDENCE_ROOT}/"
+          printf 'image_id=%s\nnode_version=%s\n' "${IMAGE_ID}" "${NODE_VERSION}" \
+            > "${EVIDENCE_ROOT}/runtime.txt"
+          for kind in architecture flowchart c4; do
+            cp "tests/fixtures/glyphic/${kind}.json" \
+              "${EVIDENCE_ROOT}/${kind}.glyphic.json"
+            docker run --rm \
+              --network none \
+              --read-only \
+              --cap-drop ALL \
+              --security-opt no-new-privileges \
+              --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+              -v "${GITHUB_WORKSPACE}:/repo:ro" \
+              -v "${ENGINE_ROOT}:/engine:ro" \
+              -v "${EVIDENCE_ROOT}:/evidence:rw" \
+              "${IMAGE_ID}" \
+              node /repo/skill/scripts/render_glyphic.mjs \
+                --module-root /engine/node_modules/@glyphicjs/core \
+                --engine-lock /engine/glyphic-engine-lock.json \
+                --input "/evidence/${kind}.glyphic.json" \
+                --output "/evidence/${kind}.svg" \
+                --metadata "/evidence/${kind}.engine.json"
+          done
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glyphic-real-engine-evidence
+          path: ${{ runner.temp }}/glyphic-evidence

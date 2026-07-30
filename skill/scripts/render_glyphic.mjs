@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 const SOURCE_COMMIT = "ed79edb1624e2de78041611971a963efaea5e080";
 const SOURCE_REPOSITORY = "https://github.com/MS-Teja/Glyphic";
 const CORE_VERSION = "1.3.1";
+const SCHEMA_VERSION = "1.1.1";
 const LICENSE = "FSL-1.1-ALv2";
 const TIMEOUT_MS = 30_000;
 const MAX_INPUT_BYTES = 256 * 1024;
@@ -276,7 +277,6 @@ function projectInput(input) {
     nodeText: input.palette.node_text,
     edgeColor: input.palette.edge_color,
     edgeLabelColor: input.palette.edge_label_color,
-    fontFamily: "Arial",
   };
   if (input.diagram_type === "c4") {
     const c4Kind = {
@@ -454,7 +454,7 @@ async function verifyEngine(moduleRoot, lockPath) {
     package_version: CORE_VERSION,
     core_version: CORE_VERSION,
     schema_package_name: "@glyphicjs/schema",
-    schema_package_version: CORE_VERSION,
+    schema_package_version: SCHEMA_VERSION,
     source_repository: SOURCE_REPOSITORY,
     source_commit: SOURCE_COMMIT,
     license_spdx: LICENSE,
@@ -495,7 +495,7 @@ async function verifyEngine(moduleRoot, lockPath) {
     || packageValue.type !== "module"
     || packageValue.exports?.["."]?.import !== "./dist/index.js"
     || schemaValue.name !== "@glyphicjs/schema"
-    || schemaValue.version !== CORE_VERSION
+    || schemaValue.version !== SCHEMA_VERSION
   ) {
     fail("E_ENGINE_IDENTITY", "installed Glyphic package identity mismatch", 2);
   }
@@ -546,11 +546,31 @@ function validateSvg(raw, input, semantic = false) {
   ]) {
     if (lower.includes(marker)) fail("E_SVG_UNSAFE", `SVG contains forbidden ${marker}`);
   }
-  if (/\son[a-z]+\s*=/i.test(svg) || /(?:@import|url\s*\()/i.test(svg)) {
+  if (/\son[a-z]+\s*=/i.test(svg) || /@import/i.test(svg)) {
     fail("E_SVG_UNSAFE", "SVG contains active content");
   }
   if (/\b(?:href|xlink:href)\s*=\s*["'](?!#)[^"']*["']/i.test(svg)) {
     fail("E_SVG_UNSAFE", "SVG contains external reference");
+  }
+  const ids = [...svg.matchAll(/\bid\s*=\s*["']([^"']+)["']/gi)]
+    .map((match) => match[1]);
+  if (
+    ids.some((id) => !ID_PATTERN.test(id))
+    || new Set(ids).size !== ids.length
+  ) {
+    fail("E_SVG_UNSAFE", "SVG ids must be unique bounded identifiers");
+  }
+  const idSet = new Set(ids);
+  for (const match of svg.matchAll(/url\s*\(\s*([^)]*?)\s*\)/gi)) {
+    const reference = match[1].match(/^["']?#([A-Za-z0-9][A-Za-z0-9_-]{0,63})["']?$/);
+    if (reference === null || !idSet.has(reference[1])) {
+      fail("E_SVG_UNSAFE", "SVG URL must reference a defined local id");
+    }
+  }
+  for (const match of svg.matchAll(/\b(?:href|xlink:href)\s*=\s*["']#([^"']+)["']/gi)) {
+    if (!ID_PATTERN.test(match[1]) || !idSet.has(match[1])) {
+      fail("E_SVG_UNSAFE", "SVG href must reference a defined local id");
+    }
   }
   const openTag = svg.match(/<svg\b([^>]*)>/i);
   if (!openTag) fail("E_SVG_UNSAFE", "SVG root is missing");
@@ -828,7 +848,7 @@ async function runController(args) {
       source_commit: SOURCE_COMMIT,
       package_version: CORE_VERSION,
       core_version: CORE_VERSION,
-      engine_schema_version: CORE_VERSION,
+      engine_schema_version: SCHEMA_VERSION,
       package_sha256: engine.lock.package_json_sha256,
       tree_sha256: engine.lock.tree_sha256,
       sri: engine.lock.npm_sri,
