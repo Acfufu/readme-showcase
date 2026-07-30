@@ -51,7 +51,7 @@ guidance only. This project does not claim upstream Glyphic integration.
 | Upstream audit script lines retained | `93/93 = 100%` |
 | Upstream motion-renderer lines retained | `598/599 = 99.83%` |
 | Combined upstream script lines retained | `691/692 = 99.86%` |
-| Local adapted script lines after attribution/extensions | `711` |
+| Local adapted script lines after attribution/extensions | `992` |
 | Direct BGR Todo touchpoints | `7/19 = 36.84%` |
 | Additional safe-handoff Todos | `2/19 = 10.53%` |
 | Original product ownership | `19/19 = 100%` |

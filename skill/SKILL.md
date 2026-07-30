@@ -32,20 +32,37 @@ another Agent, retrieval record, visual engine, or evaluator. Retrieval
 patterns are not target facts; every factual claim still requires current
 repository evidence.
 
+Ownership stays fixed:
+
+| Layer | Owns |
+| --- | --- |
+| This Skill | Dataset, target evidence, retrieval, claims, modes, routing, evaluation, fallback, local PR bundle, approval gate |
+| Adapted `beautify-github-readme` rules | Story order, project-native title/palette/art direction/composition, visual and motion QA |
+| Optional verified Glyphic | `architecture` / `flowchart` / `c4` body layout, routing, wrapping, unchanged raw SVG bytes only |
+
+Dataset revision 2 contains 10 production `train` patterns and two isolated
+`test` patterns. Records are newly authored abstractions bound to pinned public
+repository commits and per-source license evidence; they contain no copied
+README text, code, assets, or benchmark answers.
+
 Run one visible, ordered artifact flow in a temporary run directory outside
 candidate paths:
+
+```bash
+README_SHOWCASE_SKILL="${CODEX_HOME:-$HOME/.codex}/skills/readme-showcase"
+```
 
 1. Validate licensed retrieval patterns:
 
    ```bash
-   python3 skill/scripts/readme_pipeline.py validate-dataset \
-     --manifest dataset/retrieval/manifest.json
+   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" validate-dataset \
+     --manifest "$README_SHOWCASE_SKILL/dataset/retrieval/manifest.json"
    ```
 
 2. Scan target repository:
 
    ```bash
-   python3 skill/scripts/readme_pipeline.py scan \
+   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" scan \
      --root "$TARGET" \
      --output "$RUN/repository-evidence.json"
    ```
@@ -53,9 +70,9 @@ candidate paths:
 3. Retrieve up to five train-only patterns for evidence-bound query dimensions:
 
    ```bash
-   python3 skill/scripts/readme_pipeline.py retrieve \
+   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" retrieve \
      --evidence "$RUN/repository-evidence.json" \
-     --manifest dataset/retrieval/manifest.json \
+     --manifest "$README_SHOWCASE_SKILL/dataset/retrieval/manifest.json" \
      --project-type developer-tool \
      --section overview \
      --section quick-start \
@@ -70,7 +87,7 @@ candidate paths:
    retries:
 
    ```bash
-   node skill/scripts/render_glyphic.mjs \
+   node "$README_SHOWCASE_SKILL/scripts/render_glyphic.mjs" \
      --module-root "$GLYPHIC_CORE_ROOT" \
      --engine-lock "$GLYPHIC_ENGINE_LOCK" \
      --input "$RUN/diagram.glyphic.json" \
@@ -81,14 +98,14 @@ candidate paths:
 5. Assemble `generated-readme-bundle.json`, then validate it:
 
    ```bash
-   python3 skill/scripts/readme_pipeline.py validate-bundle \
+   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" validate-bundle \
      --bundle "$RUN/generated-readme-bundle.json"
    ```
 
 6. Evaluate hard gates and revise only surfaced findings:
 
    ```bash
-   python3 skill/scripts/readme_pipeline.py evaluate \
+   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" evaluate \
      --bundle "$RUN/generated-readme-bundle.json" \
      --output "$RUN/evaluation-report.json"
    ```
@@ -96,7 +113,7 @@ candidate paths:
 7. After Pass, build local fingerprinted handoff only:
 
    ```bash
-   python3 skill/scripts/readme_pipeline.py build-pr-bundle \
+   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" build-pr-bundle \
      --bundle "$RUN/generated-readme-bundle.json" \
      --evaluation "$RUN/evaluation-report.json" \
      --output "$RUN/pr-bundle.json"
@@ -106,7 +123,7 @@ candidate paths:
    exact publish state:
 
    ```bash
-   python3 skill/scripts/readme_pipeline.py check-publish-gate \
+   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" check-publish-gate \
      --pr-bundle "$RUN/pr-bundle.json" \
      --remote-state "$RUN/remote-state.json" \
      --approval "$RUN/approval-envelope.json" \
@@ -186,12 +203,14 @@ Animation is an output variant, not a third mode. Offer it only when motion expl
 - Start from an approved static SVG.
 - Require explicit opt-in before generating GIF.
 - Keep the SVG and motion JSON as editable sources and the GIF as a derived artifact.
-- Read [references/motion-production.md](references/motion-production.md) and use `scripts/render_motion_gif.py`.
+- Read [references/motion-production.md](references/motion-production.md) and use
+  `"$README_SHOWCASE_SKILL/scripts/render_motion_gif.py"`.
 - If dependencies, legibility, loop quality, or file-size limits fail, deliver the static SVG instead.
 
 ## Verify
 
-- Run `python3 scripts/audit_readme.py /path/to/README.md` in README mode or after approved embedding.
+- Run `python3 "$README_SHOWCASE_SKILL/scripts/audit_readme.py" /path/to/README.md`
+  in README mode or after approved embedding.
 - Verify claims, commands, releases, badges, links, anchors, local image paths, alt text, SVG basics, language switches, and observable success steps.
 - Inspect assets at approximately `900px` desktop width and `360px` mobile width.
 - Report what changed, what stayed intentionally plain, what was not verified, and which files were deliberately left untouched.

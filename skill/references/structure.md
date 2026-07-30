@@ -9,12 +9,13 @@ Value → Proof → Mechanism → First use → Detail
 ## Contents
 
 1. [Evidence map](#evidence-map)
-2. [First-screen test](#first-screen-test)
-3. [Narrative architecture](#narrative-architecture)
-4. [Project-type selection](#project-type-selection)
-5. [Content rules](#content-rules)
-6. [Language layout](#language-layout)
-7. [Validation](#validation)
+2. [Retrieval dataset boundary](#retrieval-dataset-boundary)
+3. [First-screen test](#first-screen-test)
+4. [Narrative architecture](#narrative-architecture)
+5. [Project-type selection](#project-type-selection)
+6. [Content rules](#content-rules)
+7. [Language layout](#language-layout)
+8. [Validation](#validation)
 
 ## Evidence Map
 
@@ -32,6 +33,24 @@ Record the source for every public claim before drafting:
 | Why should users trust it? | CI, releases, license, security policy, reproducible checks |
 
 If a claim has no source, remove it or label it explicitly as a limitation or future idea.
+
+## Retrieval Dataset Boundary
+
+Revision 2 contains 12 project-owned abstract pattern records: 10 production
+`train` records and two isolated `test` records. Sources are pinned public
+repository commits with material SHA-256 plus commit-pinned SPDX/license
+evidence. Human review rewrites only `summary`, `structure`, and `proof`;
+source README text, code, badges, logos, images, animation, and benchmark
+answers are never copied.
+
+Production retrieval scores up to five `train` patterns by declared project
+type, section intent, and tags. `test` identities are unreachable in production.
+Retrieved patterns guide editorial structure only. Every target claim, command,
+label, compatibility statement, and visual still binds to current target
+repository evidence.
+
+Read the installed `dataset/README.md` for the 12-source ledger and assembly
+flow. Validate the manifest before scanning or retrieval.
 
 ## First-screen Test
 

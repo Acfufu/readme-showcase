@@ -31,7 +31,8 @@ Input, output, metadata share one directory. Adapter imports only pinned `proces
 
 Lock binds:
 
-- `@glyphicjs/core` and `@glyphicjs/schema` version `1.3.1`
+- `@glyphicjs/core@1.3.1`
+- `@glyphicjs/schema@1.1.1`
 - source commit `ed79edb1624e2de78041611971a963efaea5e080`
 - npm SRI, package JSON hash, complete isolated `node_modules` tree hash
 - `FSL-1.1-ALv2` license file and hash
@@ -39,11 +40,30 @@ Lock binds:
 
 FSL terms apply to pinned package. Adapter does not relabel current package as Apache-2.0 or MIT.
 
+Build the lock outside `node_modules` after installing exact packages in the
+same OS/architecture/runtime image that will render:
+
+```sh
+README_SHOWCASE_SKILL="${CODEX_HOME:-$HOME/.codex}/skills/readme-showcase"
+GLYPHIC_NODE_VERSION="$(node -p 'process.versions.node')"
+python3 "$README_SHOWCASE_SKILL/scripts/build_glyphic_engine_lock.py" \
+  --install-root /absolute/install \
+  --npm-sri "sha512-+wWBhFXOkgS6ZtGk4cHPooIueXt01g3meuHHcZnapBtgPW8IXy8nDFPO1lZXeETVK+NZ6BeCu+blmD3QGr5hDw==" \
+  --node-version "$GLYPHIC_NODE_VERSION" \
+  --output /absolute/install/glyphic-engine-lock.json
+```
+
+Native optional packages make a lock platform-specific. Never install on macOS
+and reuse that tree in Linux, or switch glibc/musl images after locking.
+
 ## Semantic envelope
 
 Envelope is strict JSON: schema version, allowed diagram type, accessibility title/claim, direction, six-color palette, groups, nodes, edges, and exact sorted claim IDs. Unknown fields fail. Coordinates, icons, fonts, URLs, resources, and free-form metadata fail.
 
-`readme-showcase` projects envelope into fixed Glyphic fields and system font `Arial`. Glyphic output remains exact raw bytes. Adapter never sanitizes or repairs output.
+`readme-showcase` projects the envelope into fixed Glyphic fields and supplies
+no font name or font URL. Glyphic therefore emits its local/system fallback
+stack without a remote `@import`. Output remains exact raw bytes. Adapter never
+sanitizes or repairs output.
 
 ## Reject-only gate and fallback
 
@@ -52,8 +72,15 @@ Each render must:
 1. Match verified install tree and runtime.
 2. Complete twice in fresh processes with identical raw bytes.
 3. Produce standalone UTF-8 SVG with positive dimensions, `viewBox`, `role="img"`, exact `<title>`, and exact semantic labels.
-4. Contain no scripts, styles, event handlers, animation, foreign objects, images, external references, imports, or resource URLs.
+4. Contain no scripts, styles, event handlers, animation, foreign objects,
+   images, external references, imports, or external resource URLs. Only
+   bounded `url(#id)` / `href="#id"` references to unique IDs defined in the
+   same SVG are allowed.
 
 Any unavailable engine, identity mismatch, timeout, nondeterminism, unsafe SVG, or schema failure leaves existing SVG and metadata untouched. Caller retains static fallback and decides whether to use it. Adapter never mutates README, last-good assets, GitHub, branches, or pull requests.
 
-This adapter reduces network exposure by providing no network feature and scrubbing child environment. Universal network isolation still belongs to caller/CI sandbox.
+This adapter reduces network exposure by providing no network feature and
+scrubbing child environment. CI installs inside one immutable Linux image,
+then renders the same locked tree with `--network none`, read-only mounts,
+dropped capabilities, and no-new-privileges. Universal network isolation still
+belongs to caller/CI sandbox.
