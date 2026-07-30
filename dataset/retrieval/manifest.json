@@ -1,7 +1,384 @@
 {
   "dataset_id": "readme-showcase-retrieval",
-  "dataset_revision": 1,
+  "dataset_revision": 2,
   "purpose": "retrieval-only",
-  "records": [],
+  "records": [
+    {
+      "record_id": "cli-installation-matrix",
+      "project_types": [
+        "developer-tool"
+      ],
+      "section_intents": [
+        "compatibility",
+        "installation"
+      ],
+      "tags": [
+        "platforms",
+        "prerequisites",
+        "release-artifacts"
+      ],
+      "pattern": {
+        "summary": "Present supported installation routes by platform, then separate required authentication or environment setup.",
+        "structure": "Start with recommended package route, list alternatives by operating system, then link verification and upgrade guidance.",
+        "proof": "Use one version command and one authenticated status command as distinct observable checks."
+      },
+      "source": {
+        "repository_url": "https://github.com/cli/cli",
+        "commit": "b1c84bb939db25cf38ec3fe277e08a060c255365",
+        "material_sha256": "20474882784215acbf79a66729083dad40173e7bfaa7939537bb48735f6bc335",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/cli/cli/blob/b1c84bb939db25cf38ec3fe277e08a060c255365/LICENSE",
+        "license_evidence_sha256": "6da4adc42392c8485e40b4251c7e332fc3352df1947c9ffade71dd60b14a7a4f",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "deno-runtime-first-run",
+      "project_types": [
+        "runtime-toolchain"
+      ],
+      "section_intents": [
+        "installation",
+        "quick-start"
+      ],
+      "tags": [
+        "cross-platform",
+        "first-run",
+        "runtime"
+      ],
+      "pattern": {
+        "summary": "Pair a one-line runtime identity with platform-specific installation and an immediate first execution.",
+        "structure": "State runtime scope, show primary installers, run a minimal local example, then point to deeper tooling.",
+        "proof": "Use version output plus a self-contained local command that requires no account or hosted service."
+      },
+      "source": {
+        "repository_url": "https://github.com/denoland/deno",
+        "commit": "39f402ebd5e4f86c1e579597c4fce4a91665e7db",
+        "material_sha256": "83a959d62dea940f94ce1b50024928e34afb447de35197b7ea1d944fd6dbbcf7",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/denoland/deno/blob/39f402ebd5e4f86c1e579597c4fce4a91665e7db/LICENSE.md",
+        "license_evidence_sha256": "f62497fffecc0852960c8d3e6934b9db86d16396e9b604072e923892cae3a588",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "fastapi-proof-first-overview",
+      "project_types": [
+        "web-framework"
+      ],
+      "section_intents": [
+        "overview",
+        "quick-start"
+      ],
+      "tags": [
+        "api",
+        "developer-experience",
+        "observable-output"
+      ],
+      "pattern": {
+        "summary": "Lead with framework value, follow with a tiny complete application, then show observable generated behavior.",
+        "structure": "Value statement, installation, minimal file, run command, expected local endpoints, then feature links.",
+        "proof": "Tie capability claims to local server output and generated interface behavior visible after first run."
+      },
+      "source": {
+        "repository_url": "https://github.com/fastapi/fastapi",
+        "commit": "95f8322ee1dcda7ceace7b1c4f6c9915b36d748f",
+        "material_sha256": "b765d1bb8a76106a5bff83fdae798a12150b03ef9cc99f37d68d1e5d8dc2938a",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/fastapi/fastapi/blob/95f8322ee1dcda7ceace7b1c4f6c9915b36d748f/LICENSE",
+        "license_evidence_sha256": "4ec89ffc81485b97fec584b2d4a961032eeffe834453894fd9c1274906cc744e",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "flask-progressive-entry",
+      "project_types": [
+        "web-framework"
+      ],
+      "section_intents": [
+        "overview",
+        "quick-start"
+      ],
+      "tags": [
+        "minimal-example",
+        "progressive-disclosure",
+        "web"
+      ],
+      "pattern": {
+        "summary": "Use a compact identity statement and smallest runnable application before exposing the wider documentation map.",
+        "structure": "Project identity, minimal application, execution instruction, observed result, then installation and documentation routes.",
+        "proof": "A reader can create one file, run one command, and verify one local response before learning advanced concepts."
+      },
+      "source": {
+        "repository_url": "https://github.com/pallets/flask",
+        "commit": "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+        "material_sha256": "1f2de14735b1ee9d3a342fa7c5d5e87b95727276c0a56c8a9d77221f37880602",
+        "license_spdx": "BSD-3-Clause",
+        "license_evidence_spdx": "BSD-3-Clause",
+        "license_evidence_url": "https://github.com/pallets/flask/blob/36e4a824f340fdee7ed50937ba8e7f6bc7d17f81/LICENSE.txt",
+        "license_evidence_sha256": "489a8e1108509ed98a37bb983e11e0f7e1d31f0bd8f99a79c8448e7ff37d07ea",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "httpx-dual-interface",
+      "project_types": [
+        "library"
+      ],
+      "section_intents": [
+        "compatibility",
+        "quick-start"
+      ],
+      "tags": [
+        "api-shape",
+        "async",
+        "migration"
+      ],
+      "pattern": {
+        "summary": "Introduce a familiar basic interface, then surface the distinct advanced execution mode without mixing examples.",
+        "structure": "Identity, installation, synchronous first use, asynchronous alternative, compatibility notes, then documentation.",
+        "proof": "Show one observable response for each interface and state runtime requirements beside the relevant path."
+      },
+      "source": {
+        "repository_url": "https://github.com/encode/httpx",
+        "commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+        "material_sha256": "d58f476c1273c9c06c978467c6596620d3840ea8c99ba9d32300ab3286f0e0c3",
+        "license_spdx": "BSD-3-Clause",
+        "license_evidence_spdx": "BSD-3-Clause",
+        "license_evidence_url": "https://github.com/encode/httpx/blob/b5addb64f0161ff6bfe94c124ef76f6a1fba5254/LICENSE.md",
+        "license_evidence_sha256": "4ec59d544f12b5f539a3a716fd321ac58ccd8030b465221f2c880200cdf28d8d",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "nextjs-route-map",
+      "project_types": [
+        "web-framework"
+      ],
+      "section_intents": [
+        "architecture",
+        "deployment",
+        "overview"
+      ],
+      "tags": [
+        "ecosystem",
+        "routing",
+        "web"
+      ],
+      "pattern": {
+        "summary": "Orient readers with product scope, primary creation path, and a route map for learning, examples, and deployment.",
+        "structure": "Identity and status, create command, local run, documentation map, deployment route, then contribution and governance links.",
+        "proof": "Keep first-run verification local while treating hosted deployment as a separate optional path."
+      },
+      "source": {
+        "repository_url": "https://github.com/vercel/next.js",
+        "commit": "8c609c3ecb8c815792517fca3d74d95bfaf10690",
+        "material_sha256": "4d9da0db1d2883ae6dfa15535d81eca4dfbad493040cb512bf830a22595ce9f6",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/vercel/next.js/blob/8c609c3ecb8c815792517fca3d74d95bfaf10690/license.md",
+        "license_evidence_sha256": "ee765244e2d59f5234d474f62e0766fa0c8b99af967fdd4c0cb8dcb0c76ea224",
+        "human_reviewed": true
+      },
+      "split": "test"
+    },
+    {
+      "record_id": "pydantic-capability-to-proof",
+      "project_types": [
+        "library"
+      ],
+      "section_intents": [
+        "overview",
+        "verification"
+      ],
+      "tags": [
+        "data-model",
+        "examples",
+        "validation"
+      ],
+      "pattern": {
+        "summary": "Connect each major capability to a compact example and its resulting validated or serialized output.",
+        "structure": "Scope statement, install command, model example, observable output, capability list, then integration and documentation routes.",
+        "proof": "Prefer input and resulting output pairs over unsupported speed, adoption, or correctness claims."
+      },
+      "source": {
+        "repository_url": "https://github.com/pydantic/pydantic",
+        "commit": "e8b6ff8dbaca8d41bc009864db24f7576237e3a2",
+        "material_sha256": "b5e7970366d994018b9add19d4eae4b75e6830cde25d279aa3e1907ed8970c6b",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/pydantic/pydantic/blob/e8b6ff8dbaca8d41bc009864db24f7576237e3a2/LICENSE",
+        "license_evidence_sha256": "a9e186f3ca16b5eef84318e7a701721351a00cb7b8ae3a4394b67b49e3529ef3",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "pytest-outcome-first",
+      "project_types": [
+        "developer-tool"
+      ],
+      "section_intents": [
+        "quick-start",
+        "verification"
+      ],
+      "tags": [
+        "automation",
+        "test-output",
+        "workflow"
+      ],
+      "pattern": {
+        "summary": "Demonstrate the smallest test file and show the command outcome before documenting advanced workflow features.",
+        "structure": "Purpose, installation, minimal test, execution, interpreted result, then fixtures, plugins, and contribution routes.",
+        "proof": "Use deterministic local command output as primary proof and keep ecosystem breadth as linked follow-up."
+      },
+      "source": {
+        "repository_url": "https://github.com/pytest-dev/pytest",
+        "commit": "56b196e921acec0259d84622a570fde6032e15b5",
+        "material_sha256": "37c713f12b48774c77c40accfe3a6a28c25d7e763c9c5e34266261cf738713b5",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/pytest-dev/pytest/blob/56b196e921acec0259d84622a570fde6032e15b5/LICENSE",
+        "license_evidence_sha256": "ca836a5f9ecca3b2f350230faa20a48fb8b145653b5568d784862df864706b9b",
+        "human_reviewed": true
+      },
+      "split": "test"
+    },
+    {
+      "record_id": "requests-minimal-session",
+      "project_types": [
+        "library"
+      ],
+      "section_intents": [
+        "installation",
+        "quick-start"
+      ],
+      "tags": [
+        "http",
+        "minimal-example",
+        "response"
+      ],
+      "pattern": {
+        "summary": "Move from installation to one short request and immediately expose the response fields readers can inspect.",
+        "structure": "Identity, installation, request, status and data inspection, then feature list and complete documentation link.",
+        "proof": "Treat returned status and parsed data as observable proof; avoid replacing execution with popularity badges."
+      },
+      "source": {
+        "repository_url": "https://github.com/psf/requests",
+        "commit": "414f0513c33883adf6f2b46901d4f0b38a455851",
+        "material_sha256": "2a9268c9be5f4dc9abe9105740be7c5234babc3dd2b25eb11ca376c538a0c67b",
+        "license_spdx": "Apache-2.0",
+        "license_evidence_spdx": "Apache-2.0",
+        "license_evidence_url": "https://github.com/psf/requests/blob/414f0513c33883adf6f2b46901d4f0b38a455851/LICENSE",
+        "license_evidence_sha256": "09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "ruff-command-and-editor-paths",
+      "project_types": [
+        "developer-tool"
+      ],
+      "section_intents": [
+        "installation",
+        "integration",
+        "quick-start"
+      ],
+      "tags": [
+        "cli",
+        "editor",
+        "tooling"
+      ],
+      "pattern": {
+        "summary": "Separate command-line first use from editor and automation integrations while keeping one shared project identity.",
+        "structure": "Value and scope, install, direct command, configuration, editor path, automation path, then reference links.",
+        "proof": "Use local command findings and exit behavior as proof; keep performance or compatibility claims evidence-bound."
+      },
+      "source": {
+        "repository_url": "https://github.com/astral-sh/ruff",
+        "commit": "7da4b8b8d78fd6df2b3e06d8466d9cd49822900d",
+        "material_sha256": "20be65a9759fa6a929d3257c1b92ef62467bb36708611ad53060dc8a45cbd705",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/astral-sh/ruff/blob/7da4b8b8d78fd6df2b3e06d8466d9cd49822900d/LICENSE",
+        "license_evidence_sha256": "2597d854122b77ddc71971564ca2350a37608575ce324adc5650a2b2051c8f18",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "tokio-feature-bounded-start",
+      "project_types": [
+        "runtime-toolchain"
+      ],
+      "section_intents": [
+        "architecture",
+        "installation",
+        "quick-start"
+      ],
+      "tags": [
+        "async",
+        "feature-flags",
+        "runtime"
+      ],
+      "pattern": {
+        "summary": "Explain runtime role and feature selection before a minimal asynchronous program and its execution command.",
+        "structure": "Scope, dependency configuration, minimal runtime entry, run command, architecture boundary, then ecosystem links.",
+        "proof": "Bind setup claims to declared features and local program output; distinguish core runtime from adjacent libraries."
+      },
+      "source": {
+        "repository_url": "https://github.com/tokio-rs/tokio",
+        "commit": "adc2ae7af2caaea83985fbdfbc7884c159c486f2",
+        "material_sha256": "f210aaee886ac25f85bb2e7fc6a7c7b8cd836d6f86cad90f119a34596d36875a",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/tokio-rs/tokio/blob/adc2ae7af2caaea83985fbdfbc7884c159c486f2/LICENSE",
+        "license_evidence_sha256": "253cd04c6714889df2d32f3f64d669179a1c95c76ac43c40882c52eb06bc3552",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "vite-scaffold-to-build",
+      "project_types": [
+        "runtime-toolchain"
+      ],
+      "section_intents": [
+        "compatibility",
+        "quick-start",
+        "verification"
+      ],
+      "tags": [
+        "build",
+        "scaffold",
+        "toolchain"
+      ],
+      "pattern": {
+        "summary": "Connect project scaffolding, development run, and production build as three explicit observable stages.",
+        "structure": "Identity, runtime prerequisite, scaffold command, development command, build command, compatibility notes, then documentation.",
+        "proof": "Use created files, local server availability, and successful build artifact as separate stage checks."
+      },
+      "source": {
+        "repository_url": "https://github.com/vitejs/vite",
+        "commit": "94fc91be25005db8bb38c43d5c8e86cd381f61a7",
+        "material_sha256": "588718673f32a3691b8e75b93fb4c2f8e8bc9a6dc0bf61794ba7b6c006594111",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/vitejs/vite/blob/94fc91be25005db8bb38c43d5c8e86cd381f61a7/LICENSE",
+        "license_evidence_sha256": "692057af3d664cbb79ac38293eb50aa3c4987f8182e2a440136e59e08f1b4a54",
+        "human_reviewed": true
+      },
+      "split": "train"
+    }
+  ],
   "schema_version": 1
 }
