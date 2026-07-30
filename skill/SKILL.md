@@ -9,12 +9,13 @@ Turn verified repository behavior into a clear project homepage. Keep Markdown a
 
 ## Choose the scope
 
-Use exactly one editing mode:
+Use exactly one operating mode:
 
 - **README mode** — improve the README's reading order, copy, proof, Markdown, and any justified visual system.
 - **Asset-only mode** — create only the requested hero, section header, workflow, diagram, badge, or coordinated asset set. Do not edit, reorder, or embed anything in the README without separate approval.
+- **Audit-only mode** — inspect and report findings without generating or changing README or asset candidates.
 
-If the request is ambiguous, inspect read-only context and ask whether the user wants the whole README or assets only. A read-only audit does not require choosing an editing mode.
+If the request is ambiguous, inspect read-only context and ask whether the user wants the whole README, assets only, or an audit.
 
 ## Inspect before writing
 
@@ -23,6 +24,119 @@ If the request is ambiguous, inspect read-only context and ask whether the user 
 3. Preserve unrelated changes. Do not commit, push, publish, or modify a remote repository without explicit authorization.
 
 Read [references/structure.md](references/structure.md) for evidence mapping, narrative selection, project-type sections, localization, and content validation.
+
+## One README Agent pipeline
+
+Use one README Agent: this Agent. Never delegate README truth or writing to
+another Agent, retrieval record, visual engine, or evaluator. Retrieval
+patterns are not target facts; every factual claim still requires current
+repository evidence.
+
+Run one visible, ordered artifact flow in a temporary run directory outside
+candidate paths:
+
+1. Validate licensed retrieval patterns:
+
+   ```bash
+   python3 skill/scripts/readme_pipeline.py validate-dataset \
+     --manifest dataset/retrieval/manifest.json
+   ```
+
+2. Scan target repository:
+
+   ```bash
+   python3 skill/scripts/readme_pipeline.py scan \
+     --root "$TARGET" \
+     --output "$RUN/repository-evidence.json"
+   ```
+
+3. Retrieve up to five train-only patterns for evidence-bound query dimensions:
+
+   ```bash
+   python3 skill/scripts/readme_pipeline.py retrieve \
+     --evidence "$RUN/repository-evidence.json" \
+     --manifest dataset/retrieval/manifest.json \
+     --project-type developer-tool \
+     --section overview \
+     --section quick-start \
+     --tag workflow \
+     --mode production \
+     --output "$RUN/retrieval-packet.json"
+   ```
+
+4. Write `readme-plan.json`, candidate files, `claim-map.json`, and
+   `asset-manifest.json` directly from target evidence. If route is `glyphic`,
+   invoke optional adapter once; its two fresh runs are validation, not hidden
+   retries:
+
+   ```bash
+   node skill/scripts/render_glyphic.mjs \
+     --module-root "$GLYPHIC_CORE_ROOT" \
+     --engine-lock "$GLYPHIC_ENGINE_LOCK" \
+     --input "$RUN/diagram.glyphic.json" \
+     --output "$RUN/diagram.svg" \
+     --metadata "$RUN/diagram.engine.json"
+   ```
+
+5. Assemble `generated-readme-bundle.json`, then validate it:
+
+   ```bash
+   python3 skill/scripts/readme_pipeline.py validate-bundle \
+     --bundle "$RUN/generated-readme-bundle.json"
+   ```
+
+6. Evaluate hard gates and revise only surfaced findings:
+
+   ```bash
+   python3 skill/scripts/readme_pipeline.py evaluate \
+     --bundle "$RUN/generated-readme-bundle.json" \
+     --output "$RUN/evaluation-report.json"
+   ```
+
+7. After Pass, build local fingerprinted handoff only:
+
+   ```bash
+   python3 skill/scripts/readme_pipeline.py build-pr-bundle \
+     --bundle "$RUN/generated-readme-bundle.json" \
+     --evaluation "$RUN/evaluation-report.json" \
+     --output "$RUN/pr-bundle.json"
+   ```
+
+8. Only after explicit approval and fresh read-only remote preflight, check
+   exact publish state:
+
+   ```bash
+   python3 skill/scripts/readme_pipeline.py check-publish-gate \
+     --pr-bundle "$RUN/pr-bundle.json" \
+     --remote-state "$RUN/remote-state.json" \
+     --approval "$RUN/approval-envelope.json" \
+     --output "$RUN/publish-gate.json"
+   ```
+
+Never publish from evaluation success alone. GitHub branch, commit, push, and PR
+writes require separate explicit approval bound to current fingerprint, target,
+branch, and base SHA.
+
+### Diagram route
+
+| Route | Select when | Result |
+| --- | --- | --- |
+| `none` | Diagram adds no material proof or comprehension | Keep facts and instructions in Markdown |
+| `static` | Project identity/composition matters more than automatic layout; diagram is compact; type is unsupported by Glyphic | Skill-authored project-native static SVG |
+| `glyphic` | Allowed `architecture`, `flowchart`, or `c4` body diagram has relationship-heavy grouping, routing, or label wrapping and verified engine is available | Strict semantic JSON plus unchanged standalone raw SVG |
+
+Glyphic never owns hero/title bar, palette choice, claims, README copy,
+surrounding composition, alt/caption, acceptance, fallback, or publishing.
+Reference raw SVG as a separate relative Markdown image with evidence-bound alt
+text and adjacent Markdown caption. Do not inline, wrap, sanitize, or post-edit
+engine bytes.
+
+Missing, mismatched, unsafe, oversized, timed-out, or nondeterministic engine
+results select `static`; preserve README, semantic source, raw SVG, metadata,
+and last-known-good asset bytes. Do not require Glyphic for README,
+asset-only, or audit-only mode. Read
+[references/glyphic-structure.md](references/glyphic-structure.md) before any
+Glyphic route.
 
 ## README mode
 
@@ -45,6 +159,13 @@ Read [references/visual-production.md](references/visual-production.md) before c
 4. Store project assets under `assets/readme/` unless the repository already has another convention.
 5. Render and inspect every requested asset at wide and narrow GitHub widths.
 6. Leave the README byte-for-byte unchanged unless the user separately approves embedding.
+
+## Audit-only mode
+
+1. Scan and inspect evidence without creating candidate README or asset files.
+2. Use retrieval only as editorial comparison; never convert retrieved patterns into target claims.
+3. Report hard findings and advisory observations separately.
+4. Do not run visual generation, motion, PR bundle, publish gate, or remote writes.
 
 ## Optional hybrid composition
 
