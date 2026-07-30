@@ -13,9 +13,12 @@ _CONTRACTS = importlib.import_module(f"{_PREFIX}pipeline_contracts")
 _CORE = importlib.import_module(f"{_PREFIX}pipeline_core")
 ContractError = _CONTRACTS.ContractError
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
+canonical_sha256 = _CONTRACTS.canonical_sha256
 read_json_object = _CONTRACTS.read_json_object
 validate_contract = _CONTRACTS.validate_contract
 validate_dataset_manifest = _CORE.validate_dataset_manifest
+scan_repository = _CORE.scan_repository
+write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
 
 
 Handler = Callable[[argparse.Namespace], dict[str, object]]
@@ -46,6 +49,17 @@ def _validate_dataset(arguments: argparse.Namespace) -> dict[str, object]:
     return validate_dataset_manifest(read_json_object(arguments.manifest))
 
 
+def _scan(arguments: argparse.Namespace) -> dict[str, object]:
+    evidence = scan_repository(arguments.root)
+    write_canonical_json_atomic(arguments.output, evidence)
+    return {
+        "schema_version": 1,
+        "status": evidence["status"],
+        "file_count": len(evidence["files"]),
+        "evidence_sha256": canonical_sha256(evidence),
+    }
+
+
 def _path_argument(
     parser: argparse.ArgumentParser,
     flag: str,
@@ -68,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan = subcommands.add_parser("scan")
     _path_argument(scan, "--root")
     _path_argument(scan, "--output")
-    scan.set_defaults(handler=_pending("scan"))
+    scan.set_defaults(handler=_scan)
 
     retrieve = subcommands.add_parser("retrieve")
     _path_argument(retrieve, "--evidence")
@@ -126,7 +140,7 @@ def main(arguments: list[str] | None = None) -> int:
         return 2
 
     _ = sys.stdout.buffer.write(canonical_json_bytes(result))
-    return 0
+    return 1 if result.get("status") in {"fail", "incomplete"} else 0
 
 
 if __name__ == "__main__":
