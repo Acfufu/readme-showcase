@@ -11,6 +11,7 @@ from typing import Callable
 _PREFIX = "" if __package__ in (None, "") else "skill.scripts."
 _CONTRACTS = importlib.import_module(f"{_PREFIX}pipeline_contracts")
 _CORE = importlib.import_module(f"{_PREFIX}pipeline_core")
+_BENCHMARK = importlib.import_module(f"{_PREFIX}benchmark_adapter")
 ContractError = _CONTRACTS.ContractError
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
 canonical_sha256 = _CONTRACTS.canonical_sha256
@@ -21,6 +22,7 @@ scan_repository = _CORE.scan_repository
 retrieve_patterns = _CORE.retrieve_patterns
 validate_generated_bundle = _CORE.validate_generated_bundle
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
+import_benchmark = _BENCHMARK.import_benchmark
 
 
 Handler = Callable[[argparse.Namespace], dict[str, object]]
@@ -80,6 +82,14 @@ def _retrieve(arguments: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _import_benchmark(arguments: argparse.Namespace) -> dict[str, object]:
+    return import_benchmark(
+        arguments.input,
+        arguments.license_sidecar,
+        arguments.output_dir,
+    )
+
+
 def _path_argument(
     parser: argparse.ArgumentParser,
     flag: str,
@@ -135,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     _path_argument(import_benchmark, "--input")
     _path_argument(import_benchmark, "--license-sidecar")
     _path_argument(import_benchmark, "--output-dir")
-    import_benchmark.set_defaults(handler=_pending("import-benchmark"))
+    import_benchmark.set_defaults(handler=_import_benchmark)
 
     build_pr_bundle = subcommands.add_parser("build-pr-bundle")
     _path_argument(build_pr_bundle, "--bundle")

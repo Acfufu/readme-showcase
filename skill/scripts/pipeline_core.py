@@ -73,6 +73,7 @@ _EXCLUDED_DIRECTORIES = {
     "__pycache__",
     "build",
     "dist",
+    "evaluation-only",
     "node_modules",
     "vendor",
     "venv",
