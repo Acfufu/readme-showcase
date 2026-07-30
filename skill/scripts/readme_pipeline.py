@@ -23,6 +23,7 @@ retrieve_patterns = _CORE.retrieve_patterns
 validate_generated_bundle = _CORE.validate_generated_bundle
 evaluate_generated_bundle = _CORE.evaluate_generated_bundle
 build_pr_bundle = _CORE.build_pr_bundle
+check_publish_gate = _CORE.check_publish_gate
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
 import_benchmark = _BENCHMARK.import_benchmark
 
@@ -109,6 +110,13 @@ def _within(path: Path, root: Path) -> bool:
     return True
 
 
+def _read_canonical_input(path: Path, code: str) -> dict[str, object]:
+    payload = read_json_object(path)
+    if path.read_bytes() != canonical_json_bytes(payload):
+        raise ContractError(code, f"input is not canonical JSON: {path.name}")
+    return payload
+
+
 def _build_pr_bundle(arguments: argparse.Namespace) -> dict[str, object]:
     target_root = Path.cwd().resolve()
     for path in (arguments.bundle, arguments.evaluation, arguments.output):
@@ -117,19 +125,36 @@ def _build_pr_bundle(arguments: argparse.Namespace) -> dict[str, object]:
                 "E_PR_PATH",
                 "pipeline inputs and outputs must stay outside target repository",
             )
-    bundle = read_json_object(arguments.bundle)
-    evaluation = read_json_object(arguments.evaluation)
-    for path, payload in (
-        (arguments.bundle, bundle),
-        (arguments.evaluation, evaluation),
-    ):
-        if path.read_bytes() != canonical_json_bytes(payload):
-            raise ContractError("E_PR_INPUT", f"input is not canonical JSON: {path.name}")
+    bundle = _read_canonical_input(arguments.bundle, "E_PR_INPUT")
+    evaluation = _read_canonical_input(arguments.evaluation, "E_PR_INPUT")
     result = build_pr_bundle(
         bundle,
         evaluation,
         arguments.bundle.parent.resolve(),
         target_root,
+    )
+    write_canonical_json_atomic(arguments.output, result)
+    return result
+
+
+def _check_publish_gate(arguments: argparse.Namespace) -> dict[str, object]:
+    target_root = Path.cwd().resolve()
+    paths = (
+        arguments.pr_bundle,
+        arguments.remote_state,
+        arguments.approval,
+        arguments.output,
+    )
+    if any(_within(path, target_root) for path in paths):
+        raise ContractError(
+            "E_PUBLISH_PATH",
+            "publish-gate inputs and output must stay outside target repository",
+        )
+    result = check_publish_gate(
+        _read_canonical_input(arguments.pr_bundle, "E_PUBLISH_INPUT"),
+        _read_canonical_input(arguments.remote_state, "E_PUBLISH_INPUT"),
+        _read_canonical_input(arguments.approval, "E_PUBLISH_INPUT"),
+        arguments.pr_bundle.parent.resolve(),
     )
     write_canonical_json_atomic(arguments.output, result)
     return result
@@ -203,7 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
     _path_argument(publish_gate, "--remote-state")
     _path_argument(publish_gate, "--approval")
     _path_argument(publish_gate, "--output")
-    publish_gate.set_defaults(handler=_pending("check-publish-gate"))
+    publish_gate.set_defaults(handler=_check_publish_gate)
 
     return parser
 
