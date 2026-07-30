@@ -7,8 +7,9 @@ Read this reference before creating or revising README assets. Visuals must comm
 1. [Derive the visual system](#derive-the-visual-system)
 2. [Choose the opening](#choose-the-opening)
 3. [Use GitHub-safe assets](#use-github-safe-assets)
-4. [Produce SVG](#produce-svg)
-5. [Preview and validate](#preview-and-validate)
+4. [Choose a structure implementation](#choose-a-structure-implementation)
+5. [Produce SVG](#produce-svg)
+6. [Preview and validate](#preview-and-validate)
 
 ## Derive the Visual System
 
@@ -99,6 +100,22 @@ assets/readme/
 
 Do not add unused variants or generic templates.
 
+## Choose a Structure Implementation
+
+Hand-author compact SVGs, title systems, and diagrams whose project-specific
+composition matters more than automatic layout.
+
+An optional structured engine may place only relationship-heavy body diagrams
+where grouping, edge routing, and label wrapping dominate the work. Keep strict
+project-owned semantic source beside its exported asset. Engine output must be
+static, self-contained, system-font-based, palette-bound, and GitHub-safe.
+
+The Skill still owns project title and title bar, palette choice, factual
+claims, surrounding composition, alt/caption, visual acceptance, fallback, and
+publishing. Engine failure must leave the current README and static fallback
+byte-for-byte unchanged. Never make an engine a default dependency merely to
+draw a few boxes.
+
 ## Produce SVG
 
 Use a `1200`-unit-wide `viewBox` for full-width modules. Starting heights:
@@ -157,3 +174,7 @@ Render every asset and inspect:
 - accidental remote resources or sanitizer-sensitive SVG features.
 
 When two versions communicate equally well, keep the simpler one.
+
+For a user-requested attribution mark, derive one compact signature from the
+project's existing visual system and preview it before embedding. Never add an
+unsolicited backlink or make attribution a condition of delivery.

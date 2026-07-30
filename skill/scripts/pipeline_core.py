@@ -135,11 +135,19 @@ _ASSET_FIELDS = {
     "sha256",
     "type",
     "engine_kind",
+    "production_kind",
     "alt",
     "caption",
     "truth_ids",
 }
 _GLYPHIC_ASSET_FIELDS = _ASSET_FIELDS | {"semantic", "engine_metadata", "fallback"}
+_HYBRID_ASSET_FIELDS = _ASSET_FIELDS | {"layout", "subject", "prompt", "fallback"}
+_MOTION_ASSET_FIELDS = _ASSET_FIELDS | {
+    "source",
+    "motion_spec",
+    "fallback",
+    "motion_approved",
+}
 _ENGINE_METADATA_FIELDS = {
     "schema_version",
     "engine_kind",
@@ -686,7 +694,15 @@ def _validate_asset_manifest(
         if not isinstance(value, dict):
             _fail("E_SCHEMA_TYPE", f"{context} must be an object")
         engine_kind = value.get("engine_kind")
-        fields = _GLYPHIC_ASSET_FIELDS if engine_kind == "glyphic" else _ASSET_FIELDS
+        production_kind = value.get("production_kind")
+        if engine_kind == "glyphic":
+            fields = _GLYPHIC_ASSET_FIELDS
+        elif production_kind == "hybrid":
+            fields = _HYBRID_ASSET_FIELDS
+        elif production_kind == "motion":
+            fields = _MOTION_ASSET_FIELDS
+        else:
+            fields = _ASSET_FIELDS
         asset = _object(value, fields, context)
         reference = _reference(
             {"path": asset["path"], "sha256": asset["sha256"]},
@@ -698,12 +714,16 @@ def _validate_asset_manifest(
             _fail("E_BUNDLE_ASSET", f"{context}.type is unsupported")
         if engine_kind not in {"hand-authored", "glyphic"}:
             _fail("E_BUNDLE_ASSET", f"{context}.engine_kind is unsupported")
+        if production_kind not in {"static", "hybrid", "motion"}:
+            _fail("E_BUNDLE_ASSET", f"{context}.production_kind is unsupported")
         _text(asset["alt"], f"{context}.alt")
         _text(asset["caption"], f"{context}.caption")
         bound_truth_ids = _string_list(asset["truth_ids"], f"{context}.truth_ids", allow_empty=False)
         if not set(bound_truth_ids).issubset(truth_ids):
             _fail("E_BUNDLE_CLAIM", f"{context} references unknown truth_id")
         if engine_kind == "glyphic":
+            if production_kind != "static":
+                _fail("E_BUNDLE_ASSET", "Glyphic output must use static production")
             if asset["type"] != "svg" or not reference["path"].endswith(".svg"):
                 _fail("E_BUNDLE_ASSET", "Glyphic output must be standalone SVG")
             semantic_payload, semantic_ref = _artifact_json(root, asset["semantic"], f"{context}.semantic")
@@ -726,6 +746,42 @@ def _validate_asset_manifest(
                 asset_sha256=reference["sha256"],
                 semantic_sha256=semantic_ref["sha256"],
             )
+        elif production_kind == "hybrid":
+            if asset["type"] not in {"png", "webp"}:
+                _fail("E_BUNDLE_ASSET", "hybrid output must publish PNG or WebP")
+            hybrid_refs = {
+                name: _reference(asset[name], f"{context}.{name}")
+                for name in ("layout", "subject", "prompt", "fallback")
+            }
+            expected_suffixes = {
+                "layout": {".svg"},
+                "subject": {".png", ".webp"},
+                "prompt": {".txt"},
+                "fallback": {".svg"},
+            }
+            for name, source_ref in hybrid_refs.items():
+                _artifact_bytes(root, source_ref, f"{context}.{name}")
+                if PurePosixPath(source_ref["path"]).suffix not in expected_suffixes[name]:
+                    _fail("E_BUNDLE_ASSET", f"{context}.{name} has unsupported file type")
+            if len({item["path"] for item in hybrid_refs.values()}) != 4:
+                _fail("E_BUNDLE_ASSET", "hybrid editable sources and fallback must be distinct")
+        elif production_kind == "motion":
+            if asset["type"] != "gif":
+                _fail("E_BUNDLE_ASSET", "motion output must publish GIF")
+            if asset["motion_approved"] is not True:
+                _fail("E_VISUAL_MOTION_APPROVAL", "motion requires explicit approval")
+            for name in ("source", "fallback"):
+                source_ref = _reference(asset[name], f"{context}.{name}")
+                _artifact_bytes(root, source_ref, f"{context}.{name}")
+                if not source_ref["path"].endswith(".svg"):
+                    _fail("E_BUNDLE_ASSET", f"{context}.{name} must be static SVG")
+            motion_spec, _ = _artifact_json(
+                root,
+                asset["motion_spec"],
+                f"{context}.motion_spec",
+            )
+            if motion_spec.get("schema_version") != 1:
+                _fail("E_SCHEMA_VERSION", "motion spec requires schema_version 1")
     if manifest_refs != candidate_assets:
         _fail("E_BUNDLE_ASSET", "candidate assets and asset manifest differ")
 

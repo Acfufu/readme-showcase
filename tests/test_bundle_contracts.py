@@ -37,6 +37,7 @@ class BundleContractTests(unittest.TestCase):
         mode: str,
         *,
         glyphic: bool = False,
+        production_kind: str = "static",
     ) -> tuple[dict[str, Any], Path]:
         plan = self.write_json(
             root,
@@ -78,16 +79,25 @@ class BundleContractTests(unittest.TestCase):
         assets: list[dict[str, object]] = []
         candidate_assets: list[dict[str, str]] = []
         if mode != "audit-only":
-            raw = self.write_bytes(
-                root,
-                "assets/readme/diagram.svg",
-                b'<svg xmlns="http://www.w3.org/2000/svg"></svg>\n',
-            )
+            if production_kind == "hybrid":
+                raw = self.write_bytes(root, "assets/readme/hero.png", b"\x89PNG\r\n\x1a\nhybrid")
+                asset_type = "png"
+            elif production_kind == "motion":
+                raw = self.write_bytes(root, "assets/readme/hero.gif", b"GIF89a-motion")
+                asset_type = "gif"
+            else:
+                raw = self.write_bytes(
+                    root,
+                    "assets/readme/diagram.svg",
+                    b'<svg xmlns="http://www.w3.org/2000/svg"></svg>\n',
+                )
+                asset_type = "svg"
             candidate_assets.append(raw)
             asset: dict[str, object] = {
                 **raw,
-                "type": "svg",
+                "type": asset_type,
                 "engine_kind": "glyphic" if glyphic else "hand-authored",
+                "production_kind": production_kind,
                 "alt": "Project architecture",
                 "caption": "Evidence-bound architecture.",
                 "truth_ids": ["file:README.md"],
@@ -136,6 +146,49 @@ class BundleContractTests(unittest.TestCase):
                         "semantic": semantic,
                         "engine_metadata": metadata,
                         "fallback": fallback,
+                    }
+                )
+            elif production_kind == "hybrid":
+                asset.update(
+                    {
+                        "layout": self.write_bytes(
+                            root,
+                            "assets/readme/source/hero-layout.svg",
+                            b'<svg xmlns="http://www.w3.org/2000/svg"></svg>\n',
+                        ),
+                        "subject": self.write_bytes(
+                            root,
+                            "assets/readme/source/hero-subject.png",
+                            b"\x89PNG\r\n\x1a\nsubject",
+                        ),
+                        "prompt": self.write_bytes(
+                            root,
+                            "assets/readme/source/hero-prompt.txt",
+                            b"Project-specific subject without text.\n",
+                        ),
+                        "fallback": self.write_bytes(
+                            root,
+                            "assets/readme/hero-static.svg",
+                            b'<svg xmlns="http://www.w3.org/2000/svg"></svg>\n',
+                        ),
+                    }
+                )
+            elif production_kind == "motion":
+                fallback = self.write_bytes(
+                    root,
+                    "assets/readme/hero-static.svg",
+                    b'<svg xmlns="http://www.w3.org/2000/svg"></svg>\n',
+                )
+                asset.update(
+                    {
+                        "source": fallback,
+                        "motion_spec": self.write_json(
+                            root,
+                            "assets/readme/hero-motion.json",
+                            {"schema_version": 1, "duration_ms": 5000},
+                        ),
+                        "fallback": fallback,
+                        "motion_approved": True,
                     }
                 )
             assets.append(asset)
