@@ -194,6 +194,32 @@ class PublishGateTests(unittest.TestCase):
             self.assertIsNone(evaluation_drift["write_authority"])
             evaluation_path.write_bytes(evaluation_before)
 
+    def test_self_consistent_excluded_candidate_never_authorizes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, pr, remote, approval = self.fixture(root)
+            candidate = pr["candidate_files"][0]
+            original_path = candidate["path"]
+            unsafe_path = ".github/workflows/release.yml"
+            candidate["path"] = unsafe_path
+            source = root / "run" / original_path
+            destination = root / "run" / unsafe_path
+            destination.parent.mkdir(parents=True)
+            destination.write_bytes(source.read_bytes())
+            projection = {
+                key: value
+                for key, value in pr.items()
+                if key not in {"fingerprint", "status"}
+            }
+            pr["fingerprint"] = canonical_sha256(projection)
+            approval["fingerprint"] = pr["fingerprint"]
+            approval["candidate_hashes"][0]["path"] = unsafe_path
+
+            with self.assertRaises(ContractError) as raised:
+                check_publish_gate(pr, remote, approval, root / "run")
+
+            self.assertEqual(raised.exception.code, "E_PR_PATH")
+
     def test_cli_authorizes_matching_input_and_rejects_secret_field_atomically(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

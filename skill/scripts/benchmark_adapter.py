@@ -18,7 +18,8 @@ _CONTRACTS = importlib.import_module(
 ContractError = _CONTRACTS.ContractError
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
 canonical_sha256 = _CONTRACTS.canonical_sha256
-read_json_object = _CONTRACTS.read_json_object
+read_json_object_bytes = _CONTRACTS.read_json_object_bytes
+read_regular_bytes = _CONTRACTS.read_regular_bytes
 validate_contract = _CONTRACTS.validate_contract
 
 
@@ -26,6 +27,7 @@ DATASET_ID = "patched-codes/generate-readme-eval"
 DATASET_REVISION = "375c19fe9f1112017252bf400d32d86c5118aef1"
 DATASET_LICENSE_SPDX = "Apache-2.0"
 MAX_INPUT_BYTES = 64 * 1024 * 1024
+MAX_SIDECAR_BYTES = 2 * 1024 * 1024
 MAX_ROWS = 200
 MAX_REPO_CONTENT_BYTES = 1024 * 1024
 MAX_README_BYTES = 512 * 1024
@@ -87,15 +89,17 @@ def _exact_object(value: Any, fields: set[str], context: str) -> dict[str, Any]:
 
 def _read_input(path: Path, input_format: str) -> tuple[bytes, list[dict[str, Any]]]:
     try:
-        if path.is_symlink() or not path.is_file():
-            _fail("E_BENCHMARK_INPUT", "benchmark input must be a regular file")
-        size = path.stat().st_size
-        if size == 0 or size > MAX_INPUT_BYTES:
+        raw = read_regular_bytes(
+            path,
+            maximum=MAX_INPUT_BYTES,
+            path_code="E_BENCHMARK_INPUT",
+            size_code="E_BENCHMARK_INPUT_SIZE",
+        )
+        if not raw:
             _fail(
                 "E_BENCHMARK_INPUT_SIZE",
                 f"benchmark input must be 1..{MAX_INPUT_BYTES} bytes",
             )
-        raw = path.read_bytes()
         text = raw.decode("utf-8")
     except FileNotFoundError as exc:
         raise ContractError("E_INPUT_NOT_FOUND", f"input not found: {path}") from exc
@@ -217,8 +221,12 @@ def _validated_payload(
     input_path: Path,
     sidecar_path: Path,
 ) -> tuple[list[dict[str, str]], list[dict[str, object]], bytes, bytes]:
+    raw_sidecar, sidecar_payload = read_json_object_bytes(
+        sidecar_path,
+        maximum=MAX_SIDECAR_BYTES,
+    )
     sidecar = validate_contract(
-        read_json_object(sidecar_path),
+        sidecar_payload,
         required=_SIDECAR_FIELDS,
         optional=set(),
         context="benchmark license sidecar",
@@ -266,7 +274,7 @@ def _validated_payload(
             "E_BENCHMARK_LICENSE_COVERAGE",
             "license sidecar must cover every row exactly once",
         )
-    return rows, licenses, raw_input, sidecar_path.read_bytes()
+    return rows, licenses, raw_input, raw_sidecar
 
 
 def _validate_paths(input_path: Path, sidecar_path: Path, output_dir: Path) -> None:

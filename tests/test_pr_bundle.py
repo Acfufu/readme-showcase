@@ -69,8 +69,52 @@ class PrBundleTests(unittest.TestCase):
         }
         evidence_path = root / "repository-evidence.json"
         evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
-        evidence["target"]["base_sha"] = base_sha
+        target_readme = root.parent / "target" / "README.md"
+        target_content = target_readme.read_text(encoding="utf-8")
+        target_digest = hashlib.sha256(target_content.encode()).hexdigest()
+        evidence = {
+            **evidence,
+            "target": {"name": "target", "base_sha": base_sha},
+            "files": [
+                {
+                    "path": "README.md",
+                    "bytes": len(target_content.encode()),
+                    "lines": len(target_content.splitlines()),
+                    "sha256": target_digest,
+                    "content": target_content,
+                }
+            ],
+            "facts": [
+                {
+                    "fact_id": "file:README.md",
+                    "kind": "repository-file",
+                    "path": "README.md",
+                    "evidence_sha256": target_digest,
+                }
+            ],
+        }
         write_canonical_json_atomic(evidence_path, evidence)
+        plan_path = root / bundle["artifacts"]["plan"]["path"]
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        plan["evidence_ids"] = ["file:README.md"]
+        write_canonical_json_atomic(plan_path, plan)
+        bundle["artifacts"]["plan"]["sha256"] = canonical_sha256(plan)
+        claims_path = root / bundle["artifacts"]["claim_map"]["path"]
+        claims = json.loads(claims_path.read_text(encoding="utf-8"))
+        for collection in ("markdown_blocks", "diagram_labels"):
+            for claim in claims[collection]:
+                claim["truth_id"] = "file:README.md"
+                claim["evidence_sha256"] = target_digest
+        write_canonical_json_atomic(claims_path, claims)
+        bundle["artifacts"]["claim_map"]["sha256"] = canonical_sha256(claims)
+        manifest_path = root / bundle["artifacts"]["asset_manifest"]["path"]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for asset in manifest["assets"]:
+            asset["truth_ids"] = ["file:README.md"]
+        write_canonical_json_atomic(manifest_path, manifest)
+        bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(
+            manifest
+        )
         if not glyphic:
             source = root / bundle["candidate"]["readme"]["path"]
             destination = root / "README.md"
@@ -216,6 +260,66 @@ class PrBundleTests(unittest.TestCase):
             )
 
             self.assertEqual((target / ".git/index").read_bytes(), index_before)
+
+    def test_git_inspection_disables_repository_fsmonitor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            target, base_sha = self.target(base)
+            run_root = base / "run"
+            run_root.mkdir()
+            bundle, evaluation = self.run_bundle(run_root, base_sha)
+            marker = base / "fsmonitor-ran"
+            hook = base / "fsmonitor.sh"
+            hook.write_text(
+                f"#!/bin/sh\nprintf called > '{marker}'\nprintf '\\n'\n",
+                encoding="utf-8",
+            )
+            hook.chmod(0o700)
+            self.git(target, "config", "core.fsmonitor", str(hook))
+
+            _ = build_pr_bundle(bundle, evaluation, run_root, target)
+
+            self.assertFalse(marker.exists())
+
+    def test_evidence_bytes_must_match_clean_target_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            target, base_sha = self.target(base)
+            run_root = base / "run"
+            run_root.mkdir()
+            bundle, _ = self.run_bundle(run_root, base_sha)
+            evidence_path = run_root / "repository-evidence.json"
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+            fabricated = "fabricated target evidence\n"
+            digest = hashlib.sha256(fabricated.encode()).hexdigest()
+            evidence["files"][0].update(
+                {
+                    "bytes": len(fabricated.encode()),
+                    "lines": 1,
+                    "sha256": digest,
+                    "content": fabricated,
+                }
+            )
+            evidence["facts"][0]["evidence_sha256"] = digest
+            write_canonical_json_atomic(evidence_path, evidence)
+            claims_path = run_root / bundle["artifacts"]["claim_map"]["path"]
+            claims = json.loads(claims_path.read_text(encoding="utf-8"))
+            for collection in ("markdown_blocks", "diagram_labels"):
+                for claim in claims[collection]:
+                    claim["evidence_sha256"] = digest
+            write_canonical_json_atomic(claims_path, claims)
+            bundle["artifacts"]["claim_map"]["sha256"] = canonical_sha256(
+                claims
+            )
+            evaluation = evaluate_generated_bundle(bundle, run_root)
+
+            self.assert_code(
+                "E_PR_EVIDENCE",
+                bundle,
+                evaluation,
+                run_root,
+                target,
+            )
 
     def test_cli_outputs_repeat_without_staging(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

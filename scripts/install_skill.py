@@ -1,20 +1,52 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, cast
+from typing import Callable, Iterator, cast
 
 
 class InstallError(RuntimeError):
     pass
+
+
+_THREAD_LOCK = threading.Lock()
+
+
+@contextmanager
+def _install_lock(codex_home: Path) -> Iterator[None]:
+    parent = codex_home / "skills"
+    parent.mkdir(parents=True, exist_ok=True)
+    lock_path = parent / ".readme-showcase.install.lock"
+    descriptor = os.open(
+        lock_path,
+        os.O_RDWR
+        | os.O_CREAT
+        | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise InstallError(f"invalid install lock: {lock_path}")
+        with _THREAD_LOCK:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
 
 
 def _file_sha256(path: Path) -> str:
@@ -127,7 +159,7 @@ def _result(
     }
 
 
-def install(
+def _install_unlocked(
     repo_root: Path,
     codex_home: Path,
     *,
@@ -198,6 +230,23 @@ def install(
     finally:
         if stage.exists():
             shutil.rmtree(stage)
+
+
+def install(
+    repo_root: Path,
+    codex_home: Path,
+    *,
+    after_stage: Callable[[Path], None] | None = None,
+    after_backup: Callable[[Path], None] | None = None,
+) -> dict[str, object]:
+    codex_home = codex_home.expanduser().resolve()
+    with _install_lock(codex_home):
+        return _install_unlocked(
+            repo_root,
+            codex_home,
+            after_stage=after_stage,
+            after_backup=after_backup,
+        )
 
 
 def check_install(repo_root: Path, codex_home: Path) -> dict[str, object]:

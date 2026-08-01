@@ -3,12 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import tempfile
+import secrets
+import stat
 from pathlib import Path
 from typing import Any
 
 
 SCHEMA_VERSION = 1
+MAX_JSON_BYTES = 16 * 1024 * 1024
 
 
 class ContractError(ValueError):
@@ -101,14 +103,123 @@ def validate_contract(
     return payload
 
 
-def read_json_object(path: Path) -> dict[str, Any]:
+def _absolute(path: Path) -> Path:
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    if len(absolute.parts) > 1:
+        first = Path(absolute.anchor) / absolute.parts[1]
+        private_alias = Path(absolute.anchor) / "private" / absolute.parts[1]
+        try:
+            if first.is_symlink() and first.resolve(strict=True) == private_alias:
+                return private_alias.joinpath(*absolute.parts[2:])
+        except OSError:
+            pass
+    return absolute
+
+
+def _open_directory(path: Path, *, create: bool, code: str) -> int:
+    absolute = _absolute(path)
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(absolute.anchor, flags)
     try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise ContractError(
-            "E_INPUT_NOT_FOUND",
-            f"input not found: {path}",
-        ) from exc
+        for part in absolute.parts[1:]:
+            if create:
+                try:
+                    os.mkdir(part, mode=0o755, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+            child = os.open(
+                part,
+                flags | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=descriptor,
+            )
+            os.close(descriptor)
+            descriptor = child
+            if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                raise OSError(f"not a directory: {part}")
+        return descriptor
+    except OSError as exc:
+        os.close(descriptor)
+        raise ContractError(code, f"path contains unavailable or linked directory: {path}") from exc
+
+
+def read_regular_bytes(
+    path: Path,
+    *,
+    maximum: int,
+    path_code: str = "E_INPUT_PATH",
+    size_code: str = "E_INPUT_SIZE",
+) -> bytes:
+    absolute = _absolute(path)
+    if not absolute.name:
+        raise ContractError(path_code, f"input must name a regular file: {path}")
+    parent = _open_directory(absolute.parent, create=False, code=path_code)
+    descriptor = -1
+    try:
+        try:
+            expected = os.stat(absolute.name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise ContractError(
+                "E_INPUT_NOT_FOUND",
+                f"input not found: {path}",
+            ) from exc
+        if not stat.S_ISREG(expected.st_mode):
+            raise ContractError(path_code, f"input must be a regular file: {path}")
+        if expected.st_size > maximum:
+            raise ContractError(size_code, f"input exceeds {maximum} bytes: {path}")
+        descriptor = os.open(
+            absolute.name,
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0),
+            dir_fd=parent,
+        )
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
+            != (
+                expected.st_dev,
+                expected.st_ino,
+                expected.st_size,
+                expected.st_mtime_ns,
+            )
+        ):
+            raise ContractError(path_code, f"input changed before read: {path}")
+        chunks: list[bytes] = []
+        remaining = maximum + 1
+        while remaining:
+            chunk = os.read(descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if len(raw) > maximum:
+            raise ContractError(size_code, f"input exceeds {maximum} bytes: {path}")
+        if (
+            len(raw) != opened.st_size
+            or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            != (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
+        ):
+            raise ContractError(path_code, f"input changed during read: {path}")
+        return raw
+    except OSError as exc:
+        raise ContractError(path_code, f"cannot read regular input: {path}") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        os.close(parent)
+
+
+def read_json_object_bytes(
+    path: Path,
+    *,
+    maximum: int = MAX_JSON_BYTES,
+) -> tuple[bytes, dict[str, Any]]:
+    raw = read_regular_bytes(path, maximum=maximum)
+    try:
+        text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ContractError(
             "E_INPUT_ENCODING",
@@ -127,25 +238,69 @@ def read_json_object(path: Path) -> dict[str, Any]:
             "E_SCHEMA_TYPE",
             f"input must be a JSON object: {path}",
         )
-    return payload
+    return raw, payload
+
+
+def read_json_object(path: Path) -> dict[str, Any]:
+    return read_json_object_bytes(path)[1]
 
 
 def write_bytes_atomic(destination: Path, data: bytes) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{destination.name}.",
-        suffix=".tmp",
-        dir=destination.parent,
+    absolute = _absolute(destination)
+    if not absolute.name:
+        raise ContractError("E_OUTPUT_PATH", f"output must name a file: {destination}")
+    parent = _open_directory(
+        absolute.parent,
+        create=True,
+        code="E_OUTPUT_PATH",
     )
-    temporary = Path(temporary_name)
+    temporary_name = f".{absolute.name}.{secrets.token_hex(8)}.tmp"
+    descriptor = -1
     try:
-        with os.fdopen(descriptor, "wb") as output:
-            _ = output.write(data)
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temporary, destination)
+        try:
+            existing = os.stat(
+                absolute.name,
+                dir_fd=parent,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and not stat.S_ISREG(existing.st_mode):
+            raise ContractError(
+                "E_OUTPUT_PATH",
+                f"output must be absent or a regular file: {destination}",
+            )
+        descriptor = os.open(
+            temporary_name,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            dir_fd=parent,
+        )
+        view = memoryview(data)
+        written = 0
+        while written < len(view):
+            written += os.write(descriptor, view[written:])
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(
+            temporary_name,
+            absolute.name,
+            src_dir_fd=parent,
+            dst_dir_fd=parent,
+        )
+        os.fsync(parent)
     finally:
-        temporary.unlink(missing_ok=True)
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            os.unlink(temporary_name, dir_fd=parent)
+        except FileNotFoundError:
+            pass
+        os.close(parent)
 
 
 def write_canonical_json_atomic(destination: Path, value: Any) -> None:

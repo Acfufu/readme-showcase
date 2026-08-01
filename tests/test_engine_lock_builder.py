@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -8,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Protocol, cast
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +19,21 @@ CORE_SRI = (
     "sha512-+wWBhFXOkgS6ZtGk4cHPooIueXt01g3meuHHcZnapBtgPW8IXy8nDFPO1lZX"
     "eETVK+NZ6BeCu+blmD3QGr5hDw=="
 )
+
+
+class BuilderModule(Protocol):
+    def tree_sha256(self, root: Path) -> str: ...
+
+
+builder_spec = importlib.util.spec_from_file_location(
+    "readme_showcase_engine_lock_builder",
+    BUILDER,
+)
+if builder_spec is None or builder_spec.loader is None:
+    raise RuntimeError(f"cannot load builder: {BUILDER}")
+builder_module = importlib.util.module_from_spec(builder_spec)
+builder_spec.loader.exec_module(builder_module)
+builder = cast(BuilderModule, cast(object, builder_module))
 
 
 class EngineLockBuilderTests(unittest.TestCase):
@@ -38,6 +55,7 @@ class EngineLockBuilderTests(unittest.TestCase):
         output: Path,
         *,
         sri: str = CORE_SRI,
+        expected_tree_sha256: str,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
@@ -49,6 +67,8 @@ class EngineLockBuilderTests(unittest.TestCase):
                 sri,
                 "--node-version",
                 "22.22.3",
+                "--expected-tree-sha256",
+                expected_tree_sha256,
                 "--output",
                 str(output),
             ],
@@ -64,9 +84,16 @@ class EngineLockBuilderTests(unittest.TestCase):
             install_root = self.install(root)
             first = root / "first.json"
             second = root / "second.json"
+            expected_tree_sha256 = builder.tree_sha256(
+                install_root / "node_modules"
+            )
 
             results = [
-                self.run_builder(install_root, output)
+                self.run_builder(
+                    install_root,
+                    output,
+                    expected_tree_sha256=expected_tree_sha256,
+                )
                 for output in (first, second)
             ]
 
@@ -95,6 +122,9 @@ class EngineLockBuilderTests(unittest.TestCase):
                 with self.subTest(name=name):
                     case = root / name
                     install_root = self.install(case)
+                    expected_tree_sha256 = builder.tree_sha256(
+                        install_root / "node_modules"
+                    )
                     output = case / "lock.json"
                     output.write_bytes(b"last-good")
                     sri = CORE_SRI
@@ -115,11 +145,39 @@ class EngineLockBuilderTests(unittest.TestCase):
                             / "node_modules/@glyphicjs/core/linked-package.json",
                         )
 
-                    result = self.run_builder(install_root, output, sri=sri)
+                    result = self.run_builder(
+                        install_root,
+                        output,
+                        sri=sri,
+                        expected_tree_sha256=expected_tree_sha256,
+                    )
 
                     self.assertEqual(result.returncode, 2)
                     self.assertEqual(output.read_bytes(), b"last-good")
                     self.assertNotIn("last-good", result.stderr)
+
+    def test_empty_directories_change_digest_and_depth_is_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            install_root = self.install(root)
+            node_modules = install_root / "node_modules"
+            before = builder.tree_sha256(node_modules)
+            (node_modules / "empty").mkdir()
+            after = builder.tree_sha256(node_modules)
+            self.assertNotEqual(before, after)
+
+            current = node_modules
+            for index in range(65):
+                current = current / f"d{index}"
+                current.mkdir()
+            output = root / "lock.json"
+            result = self.run_builder(
+                install_root,
+                output,
+                expected_tree_sha256=after,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

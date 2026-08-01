@@ -11,9 +11,11 @@ from pathlib import Path
 from unittest import mock
 
 from skill.scripts.pipeline_contracts import (
+    MAX_JSON_BYTES,
     ContractError,
     canonical_json_bytes,
     canonical_sha256,
+    read_json_object,
     validate_contract,
     write_bytes_atomic,
 )
@@ -95,6 +97,39 @@ class PipelineContractTests(unittest.TestCase):
                 list(destination.parent.glob(f".{destination.name}.*.tmp")),
                 [],
             )
+
+    def test_json_reader_rejects_symlinks_and_oversized_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            target = root / "target.json"
+            target.write_text('{"schema_version":1}\n', encoding="utf-8")
+            link = root / "link.json"
+            link.symlink_to(target)
+
+            with self.assertRaises(ContractError) as linked:
+                read_json_object(link)
+            self.assertEqual(linked.exception.code, "E_INPUT_PATH")
+
+            oversized = root / "oversized.json"
+            oversized.write_bytes(b" " * (MAX_JSON_BYTES + 1))
+            with self.assertRaises(ContractError) as bounded:
+                read_json_object(oversized)
+            self.assertEqual(bounded.exception.code, "E_INPUT_SIZE")
+
+    def test_atomic_write_rejects_symlinked_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            outside = root / "outside"
+            outside.mkdir()
+            linked_parent = root / "run"
+            linked_parent.symlink_to(outside, target_is_directory=True)
+            destination = linked_parent / "result.json"
+
+            with self.assertRaises(ContractError) as raised:
+                write_bytes_atomic(destination, b"candidate\n")
+
+            self.assertEqual(raised.exception.code, "E_OUTPUT_PATH")
+            self.assertFalse((outside / "result.json").exists())
 
 
 class PipelineCliTests(unittest.TestCase):

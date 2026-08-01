@@ -16,6 +16,7 @@ ContractError = _CONTRACTS.ContractError
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
 canonical_sha256 = _CONTRACTS.canonical_sha256
 read_json_object = _CONTRACTS.read_json_object
+read_json_object_bytes = _CONTRACTS.read_json_object_bytes
 validate_contract = _CONTRACTS.validate_contract
 validate_dataset_manifest = _CORE.validate_dataset_manifest
 scan_repository = _CORE.scan_repository
@@ -104,15 +105,15 @@ def _evaluate(arguments: argparse.Namespace) -> dict[str, object]:
 
 def _within(path: Path, root: Path) -> bool:
     try:
-        path.resolve().relative_to(root.resolve())
+        path.absolute().relative_to(root.absolute())
     except ValueError:
         return False
     return True
 
 
 def _read_canonical_input(path: Path, code: str) -> dict[str, object]:
-    payload = read_json_object(path)
-    if path.read_bytes() != canonical_json_bytes(payload):
+    raw, payload = read_json_object_bytes(path)
+    if raw != canonical_json_bytes(payload):
         raise ContractError(code, f"input is not canonical JSON: {path.name}")
     return payload
 

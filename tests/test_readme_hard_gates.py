@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from skill.scripts.audit_readme import audit_svg_bytes, visible_svg_text
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AUDIT = REPO_ROOT / "skill/scripts/audit_readme.py"
@@ -29,13 +31,22 @@ class ReadmeHardGateTests(unittest.TestCase):
     def test_local_links_anchors_alt_and_svg_pass(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "diagram.svg").write_text(VALID_SVG, encoding="utf-8")
+            (root / "diagram.svg").write_text(
+                VALID_SVG.replace(
+                    "<text>",
+                    '<text font-family="Inter, system-ui, sans-serif">',
+                ),
+                encoding="utf-8",
+            )
             (root / "guide.md").write_text("# Quick Start\n", encoding="utf-8")
             readme = root / "README.md"
             readme.write_text(
                 "# Demo\n\n"
                 "![Architecture](diagram.svg)\n\n"
-                "[Guide](guide.md#quick-start)\n",
+                "[Guide](guide.md#quick-start)\n\n"
+                "<a id=spot></a>\n\n"
+                "[Spot](#spot)\n\n"
+                "<a href=guide.md#quick-start>Guide HTML</a>\n",
                 encoding="utf-8",
             )
 
@@ -116,6 +127,30 @@ class ReadmeHardGateTests(unittest.TestCase):
                 "<text>",
                 " " * (2 * 1024 * 1024) + "<text>",
             ),
+            "animate-transform": VALID_SVG.replace(
+                "<text>",
+                '<animateTransform attributeName="transform"/><text>',
+            ),
+            "discard": VALID_SVG.replace(
+                "<text>",
+                "<discard/><text>",
+            ),
+            "xml-stylesheet": VALID_SVG.replace(
+                "<svg ",
+                '<?xml-stylesheet href="https://example.com/x.css"?><svg ',
+            ),
+            "xml-base": VALID_SVG.replace(
+                "<svg ",
+                '<svg xml:base="https://example.com/" ',
+            ),
+            "nan-viewbox": VALID_SVG.replace(
+                'viewBox="0 0 1200 480"',
+                'viewBox="0 0 NaN 480"',
+            ),
+            "hidden-label": VALID_SVG.replace(
+                "<text>",
+                '<text style="display:none">',
+            ),
         }
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
@@ -134,6 +169,97 @@ class ReadmeHardGateTests(unittest.TestCase):
 
                     self.assertEqual(result.returncode, 1)
                     self.assertIn("diagram.svg:", result.stdout)
+
+    def test_zero_equivalent_opacity_never_binds_visible_labels(self) -> None:
+        variants = {
+            "decimal": '<text opacity="0.000">Agent</text>',
+            "leading-zero": '<text fill-opacity="00">Agent</text>',
+            "leading-dot": '<text style="opacity:.0">Agent</text>',
+            "negative-zero": '<text style="fill-opacity:-0">Agent</text>',
+            "exponent": '<text opacity="0e3">Agent</text>',
+            "negative": '<text opacity="-1">Agent</text>',
+            "negative-percent": '<text opacity="-10%">Agent</text>',
+            "inherited": '<g opacity="0.000"><text>Agent</text></g>',
+        }
+        for name, body in variants.items():
+            with self.subTest(name=name):
+                raw = VALID_SVG.replace("<text>Agent</text>", body).encode()
+
+                issues = audit_svg_bytes(
+                    raw,
+                    expected_title="Architecture",
+                    expected_labels=["Agent"],
+                )
+
+                self.assertIn(
+                    ("E_SVG_UNSAFE", "contains hidden semantic text"),
+                    issues,
+                )
+                self.assertEqual(visible_svg_text(raw), [])
+
+    def test_invalid_opacity_fails_closed(self) -> None:
+        for value in ("bogus", "NaN", "calc(0)", "0 1"):
+            with self.subTest(value=value):
+                raw = VALID_SVG.replace(
+                    "<text>",
+                    f'<text opacity="{value}">',
+                ).encode()
+
+                issues = audit_svg_bytes(raw)
+
+                self.assertIn(
+                    ("E_SVG_UNSAFE", "contains invalid opacity"),
+                    issues,
+                )
+                self.assertEqual(visible_svg_text(raw), [])
+
+    def test_nonzero_opacity_remains_visible(self) -> None:
+        for value in ("0.5", "50%", "1e-1"):
+            with self.subTest(value=value):
+                raw = VALID_SVG.replace(
+                    "<text>",
+                    f'<text opacity="{value}">',
+                ).encode()
+
+                issues = audit_svg_bytes(
+                    raw,
+                    expected_title="Architecture",
+                    expected_labels=["Agent"],
+                )
+
+                self.assertEqual(issues, [])
+                self.assertEqual(visible_svg_text(raw), ["Agent"])
+
+    def test_reference_images_unquoted_html_and_indented_fence_are_audited(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "unsafe.svg").write_text(
+                VALID_SVG.replace("<text>", "<script/><text>"),
+                encoding="utf-8",
+            )
+            cases = {
+                "reference": (
+                    "# Demo\n\n![Architecture][diagram]\n\n"
+                    "[diagram]: unsafe.svg\n"
+                ),
+                "unquoted": "# Demo\n\n<img src=unsafe.svg alt=Architecture>\n",
+                "indented-fence": (
+                    "# Demo\n\n    ```\n"
+                    "![Architecture](unsafe.svg)\n"
+                    "    ```\n"
+                ),
+            }
+            for name, content in cases.items():
+                with self.subTest(name=name):
+                    readme = root / f"{name}.md"
+                    readme.write_text(content, encoding="utf-8")
+
+                    result = self.run_audit(readme)
+
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn("unsafe.svg:", result.stdout)
 
     def test_repository_readmes_keep_existing_cli_contract(self) -> None:
         for name in ("README.md", "README_zh.md"):

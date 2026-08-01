@@ -6,6 +6,8 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from typing import Protocol, cast
@@ -213,6 +215,63 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("unverified existing target", result.stderr)
             self.assertEqual(file_map(target), before)
+
+    def test_concurrent_installs_are_serialized(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            codex_home = Path(temporary) / "codex"
+            target = codex_home / "skills" / "readme-showcase"
+            target.mkdir(parents=True)
+            _ = (target / "SKILL.md").write_text(
+                "---\nname: readme-showcase\n---\nold\n",
+                encoding="utf-8",
+            )
+            _ = (target / "old.txt").write_text("keep\n", encoding="utf-8")
+            backup_ready = threading.Event()
+            second_entered = threading.Event()
+            results: list[dict[str, object]] = []
+            errors: list[BaseException] = []
+
+            def pause_after_backup(_: Path) -> None:
+                backup_ready.set()
+                self.assertTrue(second_entered.wait(2))
+                time.sleep(0.1)
+
+            def first() -> None:
+                try:
+                    results.append(
+                        install_skill.install(
+                            REPO_ROOT,
+                            codex_home,
+                            after_backup=pause_after_backup,
+                        )
+                    )
+                except BaseException as exc:
+                    errors.append(exc)
+
+            def second() -> None:
+                self.assertTrue(backup_ready.wait(2))
+                second_entered.set()
+                try:
+                    results.append(install_skill.install(REPO_ROOT, codex_home))
+                except BaseException as exc:
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=first), threading.Thread(target=second)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(5)
+
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+            self.assertEqual(errors, [])
+            self.assertEqual(
+                sorted(str(result["status"]) for result in results),
+                ["installed", "unchanged"],
+            )
+            self.assertEqual(
+                install_skill.check_install(REPO_ROOT, codex_home)["status"],
+                "current",
+            )
 
 
 if __name__ == "__main__":

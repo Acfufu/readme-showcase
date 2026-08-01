@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import importlib
+import io
+import math
 import re
 import sys
 import unicodedata
@@ -18,12 +21,17 @@ MARKDOWN_IMAGE = re.compile(
 MARKDOWN_LINK = re.compile(
     r"(?<!!)\[([^\]]+)\]\(\s*([^\s)]+)(?:\s+[\"'][^\"']*[\"'])?\s*\)"
 )
-HTML_IMAGE = re.compile(r"<img\b[^>]*\bsrc=[\"']([^\"']+)[\"'][^>]*>", re.I)
-HTML_ALT = re.compile(r"\balt=[\"']([^\"']*)[\"']", re.I)
-HTML_LINK = re.compile(r"<a\b[^>]*\bhref=[\"']([^\"']+)[\"'][^>]*>", re.I)
-HTML_ANCHOR = re.compile(r"<a\b[^>]*\b(?:id|name)=[\"']([^\"']+)[\"'][^>]*>", re.I)
+REFERENCE_DEFINITION = re.compile(
+    r"(?m)^[ ]{0,3}\[([^\]]+)\]:[ \t]*(?:<([^>\r\n]+)>|([^\s\r\n]+))"
+)
+MARKDOWN_IMAGE_REFERENCE = re.compile(r"!\[([^\]]*)\]\[([^\]]*)\]")
+MARKDOWN_LINK_REFERENCE = re.compile(r"(?<!!)\[([^\]]+)\]\[([^\]]*)\]")
 UNSAFE_SVG_TAGS = {
     "animate",
+    "animatecolor",
+    "animatemotion",
+    "animatetransform",
+    "discard",
     "foreignobject",
     "image",
     "mpath",
@@ -32,11 +40,15 @@ UNSAFE_SVG_TAGS = {
     "style",
 }
 MAX_SVG_BYTES = 2 * 1024 * 1024
+MAX_README_BYTES = 4 * 1024 * 1024
 MAX_SVG_ELEMENTS = 5000
 MAX_SVG_PATHS = 2000
 MAX_SVG_DEPTH = 64
 MAX_SVG_DIMENSION = 20000
 _SVG_ID = re.compile(r"[A-Za-z_][A-Za-z0-9_.:-]{0,127}\Z")
+_OPACITY_VALUE = re.compile(
+    r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?%?\Z"
+)
 _FONT_NAMES = {
     "-apple-system",
     "arial",
@@ -51,6 +63,13 @@ _FONT_NAMES = {
     "system-ui",
     "ui-monospace",
 }
+_CONTRACTS = importlib.import_module(
+    "pipeline_contracts"
+    if __package__ in (None, "")
+    else "skill.scripts.pipeline_contracts"
+)
+ContractError = _CONTRACTS.ContractError
+read_regular_bytes = _CONTRACTS.read_regular_bytes
 SvgIssue = tuple[str, str]
 
 
@@ -60,7 +79,7 @@ def _line(text: str, position: int) -> int:
 
 def _masked_markdown(text: str) -> str:
     return re.sub(
-        r"(?ms)^[ \t]*(?:```|~~~).*?^[ \t]*(?:```|~~~)[ \t]*$",
+        r"(?ms)^[ ]{0,3}(?:```|~~~).*?^[ ]{0,3}(?:```|~~~)[ \t]*$",
         lambda match: "".join("\n" if char == "\n" else " " for char in match.group()),
         text,
     )
@@ -90,7 +109,85 @@ def _positive_number(value: str | None) -> float | None:
 
 def _font_issues(value: str) -> bool:
     names = [name.strip().strip("\"'").lower() for name in value.split(",")]
-    return not names or any(name not in _FONT_NAMES for name in names)
+    return not names or (
+        names != ["inter", "system-ui", "sans-serif"]
+        and any(name not in _FONT_NAMES for name in names)
+    )
+
+
+def _bounded_svg_root(text: str) -> tuple[ET.Element | None, list[SvgIssue]]:
+    depth = 0
+    elements = 0
+    paths = 0
+    root: ET.Element | None = None
+    try:
+        iterator = ET.iterparse(io.StringIO(text), events=("start", "end"))
+        for event, node in iterator:
+            if event == "start":
+                if root is None:
+                    root = node
+                depth += 1
+                elements += 1
+                paths += _xml_name(node.tag) == "path"
+                if elements > MAX_SVG_ELEMENTS:
+                    return None, [
+                        ("E_SVG_LIMIT", f"contains more than {MAX_SVG_ELEMENTS} elements")
+                    ]
+                if paths > MAX_SVG_PATHS:
+                    return None, [
+                        ("E_SVG_LIMIT", f"contains more than {MAX_SVG_PATHS} paths")
+                    ]
+                if depth > MAX_SVG_DEPTH:
+                    return None, [
+                        ("E_SVG_LIMIT", f"nesting exceeds {MAX_SVG_DEPTH}")
+                    ]
+            else:
+                depth -= 1
+    except ET.ParseError as exc:
+        return None, [("E_SVG_UNSAFE", f"invalid SVG XML: {exc}")]
+    return root, []
+
+
+def _svg_presentation(node: ET.Element) -> dict[str, str]:
+    attributes = {
+        _xml_name(name): value.strip().lower()
+        for name, value in node.attrib.items()
+    }
+    style = {
+        name.strip().lower(): value.strip().lower()
+        for name, value in (
+            declaration.split(":", 1)
+            for declaration in attributes.get("style", "").split(";")
+            if ":" in declaration
+        )
+    }
+    return {**attributes, **style}
+
+
+def _opacity_number(value: str | None) -> float | None:
+    if value is None or _OPACITY_VALUE.fullmatch(value) is None:
+        return None
+    try:
+        number = float(value.removesuffix("%"))
+    except (OverflowError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _hidden_svg_node(node: ET.Element, inherited: bool) -> bool:
+    values = _svg_presentation(node)
+    opacities = [
+        _opacity_number(values[name])
+        for name in ("opacity", "fill-opacity")
+        if name in values
+    ]
+    return inherited or (
+        values.get("display") == "none"
+        or values.get("visibility") in {"collapse", "hidden"}
+        or any(value is None or value <= 0 for value in opacities)
+        or values.get("clip-path", "none") != "none"
+        or values.get("mask", "none") != "none"
+    )
 
 
 def audit_svg_bytes(
@@ -108,15 +205,16 @@ def audit_svg_bytes(
         return [("E_SVG_UNSAFE", "SVG must be valid UTF-8")]
     lower = text.lower()
     if "<!doctype" in lower or "<!entity" in lower:
-        issues.append(("E_SVG_UNSAFE", "contains DOCTYPE or ENTITY"))
+        return [("E_SVG_UNSAFE", "contains DOCTYPE or ENTITY")]
+    if re.search(r"<\?xml-stylesheet\b", text, flags=re.I):
+        return [("E_SVG_UNSAFE", "contains xml-stylesheet processing instruction")]
     if re.search(r"\son[a-z]+\s*=", text, flags=re.I):
         issues.append(("E_SVG_UNSAFE", "contains event handler"))
     if re.search(r"(?:@import|url\s*\(\s*[\"']?(?!#))", text, flags=re.I):
         issues.append(("E_SVG_UNSAFE", "contains external CSS resource"))
-    try:
-        root = ET.fromstring(text)
-    except ET.ParseError as exc:
-        return issues + [("E_SVG_UNSAFE", f"invalid SVG XML: {exc}")]
+    root, parse_issues = _bounded_svg_root(text)
+    if root is None:
+        return issues + parse_issues
     if _xml_name(root.tag) != "svg":
         issues.append(("E_SVG_UNSAFE", "root element must be <svg>"))
 
@@ -136,6 +234,7 @@ def audit_svg_bytes(
         values = []
     if (
         len(values) != 4
+        or any(not math.isfinite(value) for value in values)
         or values[2] <= 0
         or values[3] <= 0
         or values[2] > MAX_SVG_DIMENSION
@@ -145,31 +244,28 @@ def audit_svg_bytes(
     if root.attrib.get("role") != "img":
         issues.append(("E_SVG_ACCESSIBILITY", "missing role=img"))
 
-    elements = list(root.iter())
-    if len(elements) > MAX_SVG_ELEMENTS:
-        issues.append(("E_SVG_LIMIT", f"contains more than {MAX_SVG_ELEMENTS} elements"))
-    if sum(_xml_name(node.tag) == "path" for node in elements) > MAX_SVG_PATHS:
-        issues.append(("E_SVG_LIMIT", f"contains more than {MAX_SVG_PATHS} paths"))
-    stack = [(root, 1)]
-    while stack:
-        node, depth = stack.pop()
-        if depth > MAX_SVG_DEPTH:
-            issues.append(("E_SVG_LIMIT", f"nesting exceeds {MAX_SVG_DEPTH}"))
-            break
-        stack.extend((child, depth + 1) for child in node)
-
     ids: set[str] = set()
     references: set[str] = set()
     titles: list[str] = []
     labels: list[str] = []
-    for node in elements:
+    stack = [(root, False)]
+    while stack:
+        node, inherited_hidden = stack.pop()
         tag = _xml_name(node.tag)
+        hidden = _hidden_svg_node(node, inherited_hidden)
+        presentation = _svg_presentation(node)
+        for name in ("opacity", "fill-opacity"):
+            if name in presentation and _opacity_number(presentation[name]) is None:
+                issues.append(("E_SVG_UNSAFE", f"contains invalid {name}"))
         if tag in UNSAFE_SVG_TAGS:
             issues.append(("E_SVG_UNSAFE", f"contains unsupported <{tag}>"))
         if tag == "title":
             titles.append(" ".join("".join(node.itertext()).split()))
         if tag == "text":
-            labels.append(" ".join("".join(node.itertext()).split()))
+            if hidden:
+                issues.append(("E_SVG_UNSAFE", "contains hidden semantic text"))
+            else:
+                labels.append(" ".join("".join(node.itertext()).split()))
         identifier = node.attrib.get("id")
         if identifier is not None:
             if not _SVG_ID.fullmatch(identifier):
@@ -179,6 +275,8 @@ def audit_svg_bytes(
             ids.add(identifier)
         for raw_name, value in node.attrib.items():
             name = _xml_name(raw_name)
+            if raw_name == "{http://www.w3.org/XML/1998/namespace}base":
+                issues.append(("E_SVG_UNSAFE", "contains xml:base"))
             if name.startswith("on"):
                 issues.append(("E_SVG_UNSAFE", f"contains event attribute: {name}"))
             if name == "href":
@@ -197,6 +295,7 @@ def audit_svg_bytes(
                 match = re.search(r"font-family\s*:\s*([^;]+)", value, flags=re.I)
                 if match and _font_issues(match.group(1)):
                     issues.append(("E_SVG_UNSAFE", "contains non-system font"))
+        stack.extend((child, hidden) for child in reversed(list(node)))
 
     if len(titles) != 1 or not titles[0]:
         issues.append(("E_SVG_ACCESSIBILITY", "requires exactly one nonempty <title>"))
@@ -211,28 +310,50 @@ def audit_svg_bytes(
 
 def audit_svg(path: Path) -> list[str]:
     try:
-        raw = path.read_bytes()
-    except OSError as exc:
+        raw = read_regular_bytes(
+            path,
+            maximum=MAX_SVG_BYTES,
+            path_code="E_SVG_UNSAFE",
+            size_code="E_SVG_LIMIT",
+        )
+    except (ContractError, OSError) as exc:
         return [f"E_SVG_UNSAFE: cannot read SVG: {exc}"]
     return [f"{code}: {message}" for code, message in audit_svg_bytes(raw)]
 
 
 def visible_svg_text(raw: bytes) -> list[str]:
-    root = ET.fromstring(raw.decode("utf-8"))
-    labels = [
-        " ".join("".join(node.itertext()).split())
-        for node in root.iter()
-        if _xml_name(node.tag) == "text"
-    ]
+    root, _ = _bounded_svg_root(raw.decode("utf-8"))
+    if root is None:
+        return []
+    labels: list[str] = []
+    stack = [(root, False)]
+    while stack:
+        node, inherited_hidden = stack.pop()
+        hidden = _hidden_svg_node(node, inherited_hidden)
+        if _xml_name(node.tag) == "text" and not hidden:
+            labels.append(" ".join("".join(node.itertext()).split()))
+        stack.extend((child, hidden) for child in reversed(list(node)))
     return [label for label in labels if label]
 
 
 def _anchors(path: Path) -> set[str]:
     try:
-        text = _masked_markdown(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError):
+        text = _masked_markdown(
+            read_regular_bytes(
+                path,
+                maximum=MAX_README_BYTES,
+                path_code="E_README_PATH",
+                size_code="E_README_LIMIT",
+            ).decode("utf-8")
+        )
+    except (ContractError, OSError, UnicodeDecodeError):
         return set()
-    anchors = set(HTML_ANCHOR.findall(text))
+    anchors = {
+        value
+        for match in re.finditer(r"<a\b[^>]*>", text, flags=re.I)
+        for name in ("id", "name")
+        if (value := _html_attribute(match.group(), name)) is not None
+    }
     counts: dict[str, int] = {}
     for line in text.splitlines():
         match = re.match(r"^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$", line)
@@ -280,23 +401,47 @@ def _resolve_local(
 
 def image_references(text: str) -> list[tuple[str, str, int]]:
     masked = _masked_markdown(text)
+    definitions = {
+        " ".join(match.group(1).split()).casefold(): (
+            match.group(2) or match.group(3)
+        )
+        for match in REFERENCE_DEFINITION.finditer(masked)
+    }
     references = [
         (match.group(2), match.group(1).strip(), _line(masked, match.start()))
         for match in MARKDOWN_IMAGE.finditer(masked)
     ]
+    for match in MARKDOWN_IMAGE_REFERENCE.finditer(masked):
+        label = match.group(2) or match.group(1)
+        source = definitions.get(" ".join(label.split()).casefold())
+        if source is not None:
+            references.append(
+                (source, match.group(1).strip(), _line(masked, match.start()))
+            )
     for match in re.finditer(r"<img\b[^>]*>", masked, flags=re.I):
         tag = match.group()
-        source = HTML_IMAGE.search(tag)
-        alt = HTML_ALT.search(tag)
-        if source:
+        source = _html_attribute(tag, "src")
+        alt = _html_attribute(tag, "alt")
+        if source is not None:
             references.append(
                 (
-                    source.group(1),
-                    alt.group(1).strip() if alt else "",
+                    source,
+                    alt.strip() if alt is not None else "",
                     _line(masked, match.start()),
                 )
             )
     return references
+
+
+def _html_attribute(tag: str, name: str) -> str | None:
+    match = re.search(
+        rf"\b{re.escape(name)}\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s\"'=<>`]+))",
+        tag,
+        flags=re.I,
+    )
+    if match is None:
+        return None
+    return next(value for value in match.groups() if value is not None)
 
 
 def audit_readme(path: Path, *, root: Path | None = None) -> tuple[list[str], int, int]:
@@ -306,7 +451,12 @@ def audit_readme(path: Path, *, root: Path | None = None) -> tuple[list[str], in
         readme.relative_to(audit_root)
     except ValueError:
         return (["line 1: README escapes audit root"], 0, 0)
-    text = readme.read_text(encoding="utf-8")
+    text = read_regular_bytes(
+        readme,
+        maximum=MAX_README_BYTES,
+        path_code="E_README_PATH",
+        size_code="E_README_LIMIT",
+    ).decode("utf-8")
     masked = _masked_markdown(text)
     warnings: list[str] = []
     image_count = 0
@@ -323,16 +473,32 @@ def audit_readme(path: Path, *, root: Path | None = None) -> tuple[list[str], in
         image_count += 1
         if target.suffix.lower() == ".svg":
             warnings.extend(
-                f"line {line}: {src}: {code}: {message}"
-                for code, message in audit_svg_bytes(target.read_bytes())
+                f"line {line}: {src}: {issue}"
+                for issue in audit_svg(target)
             )
     links = [
         (match.group(2), _line(masked, match.start()))
         for match in MARKDOWN_LINK.finditer(masked)
     ]
+    definitions = {
+        " ".join(match.group(1).split()).casefold(): (
+            match.group(2) or match.group(3)
+        )
+        for match in REFERENCE_DEFINITION.finditer(masked)
+    }
     links.extend(
-        (match.group(1), _line(masked, match.start()))
-        for match in HTML_LINK.finditer(masked)
+        (source, _line(masked, match.start()))
+        for match in MARKDOWN_LINK_REFERENCE.finditer(masked)
+        if (
+            source := definitions.get(
+                " ".join((match.group(2) or match.group(1)).split()).casefold()
+            )
+        )
+    )
+    links.extend(
+        (source, _line(masked, match.start()))
+        for match in re.finditer(r"<a\b[^>]*>", masked, flags=re.I)
+        if (source := _html_attribute(match.group(), "href")) is not None
     )
     for src, line in links:
         target, issue = _resolve_local(src, readme, audit_root, line)
@@ -355,7 +521,7 @@ def main() -> int:
 
     try:
         warnings, checked, links = audit_readme(readme)
-    except (OSError, UnicodeDecodeError) as exc:
+    except (ContractError, OSError, UnicodeDecodeError) as exc:
         print(f"ERROR: cannot audit README: {exc}")
         return 2
 

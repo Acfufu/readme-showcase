@@ -46,12 +46,21 @@ same OS/architecture/runtime image that will render:
 ```sh
 README_SHOWCASE_SKILL="${CODEX_HOME:-$HOME/.codex}/skills/readme-showcase"
 GLYPHIC_NODE_VERSION="$(node -p 'process.versions.node')"
+GLYPHIC_TREE_SHA256="<trusted lowercase SHA-256 from reviewed CI build>"
 python3 "$README_SHOWCASE_SKILL/scripts/build_glyphic_engine_lock.py" \
   --install-root /absolute/install \
   --npm-sri "sha512-+wWBhFXOkgS6ZtGk4cHPooIueXt01g3meuHHcZnapBtgPW8IXy8nDFPO1lZXeETVK+NZ6BeCu+blmD3QGr5hDw==" \
   --node-version "$GLYPHIC_NODE_VERSION" \
+  --expected-tree-sha256 "$GLYPHIC_TREE_SHA256" \
   --output /absolute/install/glyphic-engine-lock.json
 ```
+
+`--expected-tree-sha256` is an independent trust input, not a digest copied
+from the tree being locked. CI derives and reviews it in a separate repeatable
+build, then pins it with the immutable image, exact transitive package list,
+Node patch version, architecture, and package SRI. The builder rejects
+symlinks, special files, excessive depth/count/bytes, missing directory
+entries, or any tree mismatch.
 
 Native optional packages make a lock platform-specific. Never install on macOS
 and reuse that tree in Linux, or switch glibc/musl images after locking.
@@ -61,9 +70,10 @@ and reuse that tree in Linux, or switch glibc/musl images after locking.
 Envelope is strict JSON: schema version, allowed diagram type, accessibility title/claim, direction, six-color palette, groups, nodes, edges, and exact sorted claim IDs. Unknown fields fail. Coordinates, icons, fonts, URLs, resources, and free-form metadata fail.
 
 `readme-showcase` projects the envelope into fixed Glyphic fields and supplies
-no font name or font URL. Glyphic therefore emits its local/system fallback
-stack without a remote `@import`. Output remains exact raw bytes. Adapter never
-sanitizes or repairs output.
+no font name or font URL. Glyphic emits its fixed unbundled
+`Inter, system-ui, sans-serif` fallback stack without a remote `@import`;
+audit accepts only that exact engine stack or system-only stacks. Output remains
+exact raw bytes. Adapter never sanitizes or repairs output.
 
 ## Reject-only gate and fallback
 
@@ -83,4 +93,6 @@ This adapter reduces network exposure by providing no network feature and
 scrubbing child environment. CI installs inside one immutable Linux image,
 then renders the same locked tree with `--network none`, read-only mounts,
 dropped capabilities, and no-new-privileges. Universal network isolation still
-belongs to caller/CI sandbox.
+belongs to caller/CI sandbox. The controller snapshots input and lock bytes
+into its private work directory before both render workers start; output is
+accepted only when both workers return byte-identical raw SVG.

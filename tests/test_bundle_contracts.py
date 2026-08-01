@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 
 _CONTRACTS = importlib.import_module("skill.scripts.pipeline_contracts")
@@ -398,6 +399,20 @@ class BundleContractTests(unittest.TestCase):
             before = readme.read_bytes()
             self.assert_code(root, bundle, "E_BUNDLE_HASH")
             self.assertEqual(readme.read_bytes(), before)
+
+    def test_artifact_read_is_bounded_before_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle, _ = self.make_bundle(root, "readme")
+            oversized = b"# Demo\n" + b"x" * 64
+            bundle["candidate"]["readme"] = self.write_bytes(
+                root,
+                "README.generated.md",
+                oversized,
+            )
+
+            with mock.patch.object(_CORE, "MAX_ARTIFACT_BYTES", 32):
+                self.assert_code(root, bundle, "E_BUNDLE_SIZE")
 
     def test_traversal_missing_pair_and_engine_mismatch_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

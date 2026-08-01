@@ -26,7 +26,7 @@ class CiContractTests(unittest.TestCase):
         self.assertIn("permissions:\n  contents: read", self.workflow)
         self.assertNotIn("contents: write", self.workflow)
         self.assertNotIn("pull-requests: write", self.workflow)
-        self.assertIn("node-version: 22", self.workflow)
+        self.assertIn('node-version: "22.22.3"', self.workflow)
         self.assertIn("@glyphicjs/core@1.3.1", self.workflow)
         self.assertIn("@glyphicjs/schema@1.1.1", self.workflow)
         self.assertIn(
@@ -38,6 +38,30 @@ class CiContractTests(unittest.TestCase):
         self.assertIn("--read-only", self.workflow)
         self.assertIn("--cap-drop ALL", self.workflow)
         self.assertIn("architecture flowchart c4", self.workflow)
+        for mutable in (
+            "actions/checkout@v4",
+            "actions/setup-python@v5",
+            "actions/setup-node@v4",
+            "actions/upload-artifact@v4",
+            "node:22-bookworm-slim",
+        ):
+            self.assertNotIn(mutable, self.workflow)
+        for pinned in (
+            "11d5960a326750d5838078e36cf38b85af677262",
+            "a26af69be951a213d495a4c3e4e4022e16d87065",
+            "49933ea5288caeca8642d1e84afbd3f7d6820020",
+            "ea165f8d65b6e75b540449e92b4886f43607fa02",
+            "sha256:16d364eebf6b62da439dc993d9b80940c78b0ca38438452f011ab9a25c752644",
+            "57e9a8686f850adda3bd2bc639b6dfbfc1e119d40b92d9517ca472881d873e6e",
+        ):
+            self.assertIn(pinned, self.workflow)
+        self.assertGreaterEqual(
+            self.workflow.count("persist-credentials: false"),
+            4,
+        )
+        self.assertIn("--expected-tree-sha256", self.workflow)
+        self.assertIn("expected_files =", self.workflow)
+        self.assertIn("if-no-files-found: error", self.workflow)
 
     def test_motion_is_isolated_and_no_dependency_payload_is_tracked(self) -> None:
         self.assertIn("Pillow==11.3.0", self.workflow)

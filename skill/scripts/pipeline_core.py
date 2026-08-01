@@ -7,6 +7,7 @@ import os
 import re
 import stat
 import subprocess
+import tempfile
 import time
 from pathlib import Path, PurePosixPath
 from typing import Any, NoReturn, cast
@@ -24,6 +25,7 @@ _AUDIT = importlib.import_module(
 )
 ContractError = _CONTRACTS.ContractError
 canonical_sha256 = _CONTRACTS.canonical_sha256
+read_regular_bytes = _CONTRACTS.read_regular_bytes
 validate_contract = _CONTRACTS.validate_contract
 audit_readme = _AUDIT.audit_readme
 audit_svg_bytes = _AUDIT.audit_svg_bytes
@@ -67,6 +69,8 @@ MAX_FILES = 2000
 MAX_DIRECTORIES = 500
 MAX_FILE_BYTES = 512 * 1024
 MAX_TOTAL_BYTES = 4 * 1024 * 1024
+MAX_ARTIFACT_BYTES = 16 * 1024 * 1024
+MAX_GIT_OUTPUT_BYTES = 1024 * 1024
 MAX_DEPTH = 12
 MAX_SECONDS = 5
 _EXCLUDED_DIRECTORIES = {
@@ -432,6 +436,7 @@ def validate_dataset_manifest(payload: Any) -> dict[str, object]:
 
     record_ids: set[str] = set()
     source_splits: dict[tuple[str, str, str], str] = {}
+    material_splits: dict[str, str] = {}
     split_counts = {"test": 0, "train": 0}
     for index, value in enumerate(records):
         context = f"retrieval dataset manifest.records[{index}]"
@@ -457,6 +462,16 @@ def validate_dataset_manifest(payload: Any) -> dict[str, object]:
             code = "E_DATASET_SPLIT_LEAK" if prior_split != split else "E_DATASET_SOURCE_DUPLICATE"
             _fail(code, f"source identity reused by {record_id}")
         source_splits[identity] = split
+        material_sha256 = identity[2]
+        prior_material_split = material_splits.get(material_sha256)
+        if prior_material_split is not None:
+            code = (
+                "E_DATASET_SPLIT_LEAK"
+                if prior_material_split != split
+                else "E_DATASET_SOURCE_DUPLICATE"
+            )
+            _fail(code, f"source material reused by {record_id}")
+        material_splits[material_sha256] = split
         split_counts[split] += 1
 
     return {
@@ -641,8 +656,17 @@ def _incomplete_scan(root: Path, code: str, path: str) -> dict[str, object]:
     }
 
 
-def _read_scanned_file(entry: Path, expected: os.stat_result, relative: str) -> bytes:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+def _read_scanned_file(
+    entry: Path,
+    expected: os.stat_result,
+    relative: str,
+    maximum: int,
+) -> bytes:
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     try:
         descriptor = os.open(entry, flags)
     except OSError as exc:
@@ -654,11 +678,27 @@ def _read_scanned_file(entry: Path, expected: os.stat_result, relative: str) -> 
             or actual.st_dev != expected.st_dev
             or actual.st_ino != expected.st_ino
             or actual.st_size != expected.st_size
+            or actual.st_mtime_ns != expected.st_mtime_ns
         ):
             raise ContractError("E_SCAN_RACE", f"file changed during scan: {relative}")
-        with os.fdopen(descriptor, "rb") as source:
-            descriptor = -1
-            return source.read()
+        chunks: list[bytes] = []
+        remaining = maximum + 1
+        while remaining:
+            chunk = os.read(descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if (
+            len(raw) > maximum
+            or len(raw) != actual.st_size
+            or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            != (actual.st_dev, actual.st_ino, actual.st_size, actual.st_mtime_ns)
+        ):
+            raise ContractError("E_SCAN_RACE", f"file changed during scan: {relative}")
+        return raw
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -738,7 +778,12 @@ def scan_repository(root: Path) -> dict[str, object]:
             total_bytes += entry_stat.st_size
             if total_bytes > MAX_TOTAL_BYTES:
                 return _incomplete_scan(canonical_root, "E_SCAN_TOTAL_SIZE", relative)
-            raw = _read_scanned_file(entry, entry_stat, relative)
+            raw = _read_scanned_file(
+                entry,
+                entry_stat,
+                relative,
+                MAX_FILE_BYTES,
+            )
             if b"\0" in raw:
                 warnings.append({"code": "W_SCAN_BINARY", "path": relative})
                 continue
@@ -799,24 +844,28 @@ def _reference(value: Any, context: str) -> dict[str, str]:
 
 
 def _artifact_bytes(root: Path, reference: dict[str, str], context: str) -> bytes:
+    try:
+        root_info = root.lstat()
+    except FileNotFoundError as exc:
+        raise ContractError("E_BUNDLE_MISSING", f"{context} root is missing") from exc
+    if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+        _fail("E_PATH", f"{context} root must be a real directory")
     root = root.resolve(strict=True)
     destination = root.joinpath(*PurePosixPath(reference["path"]).parts)
-    current = root
     try:
-        for part in PurePosixPath(reference["path"]).parts:
-            current = current / part
-            if stat.S_ISLNK(current.lstat().st_mode):
-                _fail("E_PATH", f"{context} cannot reference a symlink")
-    except FileNotFoundError as exc:
-        raise ContractError("E_BUNDLE_MISSING", f"{context} not found: {reference['path']}") from exc
-    try:
-        destination.resolve(strict=True).relative_to(root)
-    except (OSError, ValueError) as exc:
-        raise ContractError("E_PATH", f"{context} escapes artifact root") from exc
-    file_stat = destination.lstat()
-    if not stat.S_ISREG(file_stat.st_mode):
-        _fail("E_PATH", f"{context} must reference a regular file")
-    raw = _read_scanned_file(destination, file_stat, reference["path"])
+        raw = read_regular_bytes(
+            destination,
+            maximum=MAX_ARTIFACT_BYTES,
+            path_code="E_PATH",
+            size_code="E_BUNDLE_SIZE",
+        )
+    except ContractError as exc:
+        if exc.code == "E_INPUT_NOT_FOUND":
+            raise ContractError(
+                "E_BUNDLE_MISSING",
+                f"{context} not found: {reference['path']}",
+            ) from exc
+        raise
     if hashlib.sha256(raw).hexdigest() != reference["sha256"]:
         _fail("E_BUNDLE_HASH", f"{context} hash does not match {reference['path']}")
     return raw
@@ -937,21 +986,23 @@ def _load_evidence_facts(
     *,
     base_sha: str,
     evidence_ids: list[str],
-) -> dict[str, str]:
+) -> tuple[dict[str, str], str]:
     path = root / "repository-evidence.json"
     try:
-        info = path.lstat()
+        path.lstat()
     except FileNotFoundError as exc:
         raise ContractError(
             "E_CLAIM_EVIDENCE",
             "repository-evidence.json is required for claim validation",
         ) from exc
-    if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
-        _fail("E_CLAIM_EVIDENCE", "repository evidence must be a regular file")
-    if info.st_size > MAX_TOTAL_BYTES:
-        _fail("E_CLAIM_EVIDENCE", "repository evidence exceeds scan byte limit")
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw = read_regular_bytes(
+            path,
+            maximum=MAX_TOTAL_BYTES,
+            path_code="E_CLAIM_EVIDENCE",
+            size_code="E_CLAIM_EVIDENCE",
+        )
+        payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ContractError(
             "E_CLAIM_EVIDENCE",
@@ -1021,7 +1072,56 @@ def _load_evidence_facts(
         fact_hashes[fact_id] = digest
     if not set(evidence_ids).issubset(fact_hashes):
         _fail("E_CLAIM_EVIDENCE", "README plan references unknown target evidence")
-    return fact_hashes
+    return fact_hashes, hashlib.sha256(raw).hexdigest()
+
+
+def _validate_evidence_checkout(
+    artifact_root: Path,
+    target_root: Path,
+    expected_sha256: str,
+) -> None:
+    try:
+        raw = read_regular_bytes(
+            artifact_root / "repository-evidence.json",
+            maximum=MAX_TOTAL_BYTES,
+            path_code="E_PR_EVIDENCE",
+            size_code="E_PR_EVIDENCE",
+        )
+        if hashlib.sha256(raw).hexdigest() != expected_sha256:
+            _fail("E_PR_EVIDENCE", "repository evidence changed after validation")
+        evidence = json.loads(raw.decode("utf-8"))
+        files = cast(list[dict[str, Any]], evidence["files"])
+        for index, item in enumerate(files):
+            relative = _relative_path(
+                item["path"],
+                f"repository evidence.files[{index}].path",
+            )
+            current = read_regular_bytes(
+                target_root.joinpath(*relative.parts),
+                maximum=MAX_FILE_BYTES,
+                path_code="E_PR_EVIDENCE",
+                size_code="E_PR_EVIDENCE",
+            )
+            if (
+                hashlib.sha256(current).hexdigest() != item["sha256"]
+                or current.decode("utf-8") != item["content"]
+            ):
+                _fail(
+                    "E_PR_EVIDENCE",
+                    f"repository evidence differs from target: {relative.as_posix()}",
+                )
+    except ContractError as exc:
+        if exc.code == "E_PR_EVIDENCE":
+            raise
+        raise ContractError(
+            "E_PR_EVIDENCE",
+            "repository evidence cannot be bound to target checkout",
+        ) from exc
+    except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractError(
+            "E_PR_EVIDENCE",
+            "repository evidence cannot be bound to target checkout",
+        ) from exc
 
 
 def _readme_claim_inputs(
@@ -1688,7 +1788,7 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
                 _fail("E_README_LANGUAGE", "bilingual README must link its language pair")
     if retrieval.get("schema_version") != 1:
         _fail("E_SCHEMA_VERSION", "retrieval packet requires schema_version 1")
-    fact_hashes = _load_evidence_facts(
+    fact_hashes, evidence_sha256 = _load_evidence_facts(
         artifact_root,
         base_sha=target["base_sha"],
         evidence_ids=validated_plan["evidence_ids"],
@@ -1722,6 +1822,7 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
         "status": "pass",
         "mode": mode,
         "bundle_sha256": canonical_sha256(bundle),
+        "evidence_sha256": evidence_sha256,
         "candidate_count": (1 if readme is not None else 0) + len(candidate_assets),
     }
 
@@ -1915,30 +2016,52 @@ def _validate_evaluation_report(
 
 
 def _git_output(root: Path, *arguments: str) -> bytes:
-    environment = os.environ.copy()
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("GIT_")
+    }
     environment["GIT_OPTIONAL_LOCKS"] = "0"
     environment["LC_ALL"] = "C"
     try:
-        result = subprocess.run(
-            [
-                "git",
-                "--no-optional-locks",
-                "-C",
-                str(root),
-                *arguments,
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-            timeout=10,
-            env=environment,
-        )
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            result = subprocess.run(
+                [
+                    "git",
+                    "--no-optional-locks",
+                    "-c",
+                    "core.fsmonitor=false",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "-c",
+                    "credential.helper=",
+                    "-c",
+                    "diff.external=",
+                    "-C",
+                    str(root),
+                    *arguments,
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                stderr=stderr,
+                check=False,
+                timeout=10,
+                env=environment,
+            )
+            output_size = os.fstat(stdout.fileno()).st_size
+            error_size = os.fstat(stderr.fileno()).st_size
+            if (
+                output_size > MAX_GIT_OUTPUT_BYTES
+                or error_size > MAX_GIT_OUTPUT_BYTES
+            ):
+                _fail("E_PR_GIT", "local Git inspection output exceeds limit")
+            stdout.seek(0)
+            output = stdout.read()
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         raise ContractError("E_PR_GIT", "local Git inspection is unavailable") from exc
     if result.returncode != 0:
         _fail("E_PR_GIT", f"local Git inspection failed: {arguments[0]}")
-    return result.stdout
+    return output
 
 
 def _github_repository_from_origin(value: str) -> str:
@@ -1986,7 +2109,12 @@ def _target_file_sha256(root: Path, path: PurePosixPath) -> str | None:
         elif not stat.S_ISREG(info.st_mode):
             _fail("E_PR_PATH", f"target candidate is not a regular file: {path.as_posix()}")
     return hashlib.sha256(
-        _read_scanned_file(current, current.lstat(), path.as_posix())
+        read_regular_bytes(
+            current,
+            maximum=MAX_ARTIFACT_BYTES,
+            path_code="E_PR_PATH",
+            size_code="E_PR_PATH",
+        )
     ).hexdigest()
 
 
@@ -2069,6 +2197,7 @@ def build_pr_bundle(
         "--cached",
         "--binary",
         "--no-ext-diff",
+        "--no-textconv",
     )
     worktree = _git_output(
         target_root,
@@ -2080,7 +2209,12 @@ def build_pr_bundle(
     if worktree:
         _fail("E_PR_WORKTREE", "target worktree and index must be clean")
 
-    validate_generated_bundle(bundle, artifact_root)
+    validation = validate_generated_bundle(bundle, artifact_root)
+    _validate_evidence_checkout(
+        artifact_root,
+        target_root,
+        cast(str, validation["evidence_sha256"]),
+    )
     bundle_sha256 = canonical_sha256(bundle)
     _validate_evaluation_report(evaluation, bundle_sha256=bundle_sha256)
     candidate = cast(dict[str, Any], bundle["candidate"])
@@ -2149,6 +2283,7 @@ def build_pr_bundle(
         "--cached",
         "--binary",
         "--no-ext-diff",
+        "--no-textconv",
     ) != cached_before:
         _fail("E_PR_INDEX", "cached diff changed during PR bundle inspection")
 
@@ -2214,7 +2349,12 @@ def _sha256(value: Any, context: str) -> str:
     return value
 
 
-def _validate_pr_candidate_list(value: Any, context: str) -> list[dict[str, Any]]:
+def _validate_pr_candidate_list(
+    value: Any,
+    context: str,
+    *,
+    semantic: bool,
+) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         _fail("E_SCHEMA_TYPE", f"{context} must be a list")
     candidates: list[dict[str, Any]] = []
@@ -2224,7 +2364,16 @@ def _validate_pr_candidate_list(value: Any, context: str) -> list[dict[str, Any]
             _PR_CANDIDATE_FIELDS,
             f"{context}[{index}]",
         )
-        path = _relative_path(candidate["path"], f"{context}[{index}].path").as_posix()
+        raw_path = candidate["path"]
+        normalized = _relative_path(raw_path, f"{context}[{index}].path")
+        kind = (
+            "semantic"
+            if semantic
+            else "readme"
+            if normalized.name in {"README.md", "README_zh.md"}
+            else "asset"
+        )
+        path = _publish_path(raw_path, kind).as_posix()
         before = candidate["before_sha256"]
         if before is not None:
             _sha256(before, f"{context}[{index}].before_sha256")
@@ -2275,10 +2424,12 @@ def _validate_pr_bundle(payload: Any) -> dict[str, Any]:
     candidate_files = _validate_pr_candidate_list(
         pr["candidate_files"],
         "PR bundle.candidate_files",
+        semantic=False,
     )
     semantic_sources = _validate_pr_candidate_list(
         pr["semantic_sources"],
         "PR bundle.semantic_sources",
+        semantic=True,
     )
     combined_paths = [
         cast(str, item["path"])
@@ -2455,16 +2606,17 @@ def _publish_artifact_state(
         if stat.S_ISREG(evaluation_info.st_mode) and not stat.S_ISLNK(
             evaluation_info.st_mode
         ):
-            raw = _read_scanned_file(
+            raw = read_regular_bytes(
                 evaluation_path,
-                evaluation_info,
-                "evaluation-report.json",
+                maximum=MAX_ARTIFACT_BYTES,
+                path_code="E_PUBLISH_PATH",
+                size_code="E_PUBLISH_PATH",
             )
             evaluation_current = hashlib.sha256(raw).hexdigest() == cast(
                 dict[str, Any],
                 pr["evaluation"],
             )["report_sha256"]
-    except OSError:
+    except (ContractError, OSError):
         pass
     return candidate_current, evaluation_current
 

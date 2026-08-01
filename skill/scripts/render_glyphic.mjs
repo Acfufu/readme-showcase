@@ -2,16 +2,15 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { constants } from "node:fs";
 import {
   lstat,
   mkdir,
   mkdtemp,
   open,
-  readFile,
   readdir,
   rename,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -29,6 +28,8 @@ const MAX_LOCK_BYTES = 64 * 1024;
 const MAX_SVG_BYTES = 2 * 1024 * 1024;
 const MAX_TREE_BYTES = 256 * 1024 * 1024;
 const MAX_TREE_FILES = 20_000;
+const MAX_TREE_DIRECTORIES = 5_000;
+const MAX_TREE_DEPTH = 64;
 const MAX_PROCESS_BYTES = 1024 * 1024;
 const HELP = `Usage:
   node skill/scripts/render_glyphic.mjs \\
@@ -97,6 +98,7 @@ const ALLOWED_KINDS = new Set([
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+const OPACITY_VALUE_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?%?$/;
 
 class AdapterError extends Error {
   constructor(code, message, exitCode = 1, status = "invalid") {
@@ -360,14 +362,64 @@ function projectInput(input) {
 }
 
 async function readBounded(path, maximum, code) {
-  let info;
+  let expected;
   try {
-    info = await stat(path);
+    expected = await lstat(path, { bigint: true });
   } catch {
     fail(code, `${basename(path)} is unavailable`, 2);
   }
-  if (!info.isFile() || info.size > maximum) fail(code, `${basename(path)} exceeds contract`, 2);
-  return readFile(path);
+  if (
+    expected.isSymbolicLink()
+    || !expected.isFile()
+    || expected.size > BigInt(maximum)
+  ) {
+    fail(code, `${basename(path)} exceeds contract`, 2);
+  }
+  let handle;
+  try {
+    handle = await open(
+      path,
+      constants.O_RDONLY
+        | (constants.O_NOFOLLOW ?? 0)
+        | (constants.O_NONBLOCK ?? 0),
+    );
+    const opened = await handle.stat({ bigint: true });
+    if (
+      !opened.isFile()
+      || opened.dev !== expected.dev
+      || opened.ino !== expected.ino
+      || opened.size !== expected.size
+      || opened.mtimeNs !== expected.mtimeNs
+    ) {
+      fail(code, `${basename(path)} changed before read`, 2);
+    }
+    const chunks = [];
+    let total = 0;
+    while (total <= maximum) {
+      const chunk = Buffer.alloc(Math.min(64 * 1024, maximum + 1 - total));
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, total);
+      if (bytesRead === 0) break;
+      chunks.push(chunk.subarray(0, bytesRead));
+      total += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    if (
+      total > maximum
+      || BigInt(total) !== opened.size
+      || after.dev !== opened.dev
+      || after.ino !== opened.ino
+      || after.size !== opened.size
+      || after.mtimeNs !== opened.mtimeNs
+    ) {
+      fail(code, `${basename(path)} changed during read`, 2);
+    }
+    return Buffer.concat(chunks);
+  } catch (error) {
+    if (error instanceof AdapterError) throw error;
+    fail(code, `${basename(path)} cannot be read`, 2);
+  } finally {
+    if (handle) await handle.close();
+  }
 }
 
 async function parseJson(path, maximum, code) {
@@ -380,50 +432,67 @@ async function parseJson(path, maximum, code) {
 }
 
 async function treeSha256(root) {
-  const files = [];
+  const entries = [];
+  let files = 0;
+  let directories = 0;
   let total = 0;
-  async function walk(directory) {
-    let entries;
+  async function walk(directory, depth) {
+    if (depth > MAX_TREE_DEPTH) {
+      fail("E_ENGINE_TREE", "engine tree exceeds directory depth bound", 2);
+    }
+    let children;
     try {
-      entries = await readdir(directory, { withFileTypes: true });
+      children = await readdir(directory, { withFileTypes: true });
     } catch {
       fail("E_ENGINE_TREE", "engine tree cannot be read", 2);
     }
-    entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
-    for (const entry of entries) {
+    children.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    for (const entry of children) {
       const path = join(directory, entry.name);
-      if (entry.isSymbolicLink()) fail("E_ENGINE_TREE", "engine tree contains a symlink", 2);
-      if (entry.isDirectory()) {
-        await walk(path);
-      } else if (entry.isFile()) {
-        const info = await lstat(path);
-        if (!info.isFile()) fail("E_ENGINE_TREE", "engine tree contains a special file", 2);
-        total += info.size;
-        if (files.length >= MAX_TREE_FILES || total > MAX_TREE_BYTES) {
+      const info = await lstat(path);
+      const name = relative(root, path).split(sep).join("/");
+      if (info.isSymbolicLink()) fail("E_ENGINE_TREE", "engine tree contains a symlink", 2);
+      if (info.isDirectory()) {
+        directories += 1;
+        if (directories > MAX_TREE_DIRECTORIES) {
+          fail("E_ENGINE_TREE", "engine tree exceeds directory count bound", 2);
+        }
+        entries.push({ kind: "D", name, raw: null });
+        await walk(path, depth + 1);
+      } else if (info.isFile()) {
+        files += 1;
+        if (files > MAX_TREE_FILES || total + info.size > MAX_TREE_BYTES) {
           fail("E_ENGINE_TREE", "engine tree exceeds bounds", 2);
         }
-        files.push(path);
+        const raw = await readBounded(
+          path,
+          MAX_TREE_BYTES - total,
+          "E_ENGINE_TREE",
+        );
+        total += raw.length;
+        entries.push({ kind: "F", name, raw });
       } else {
         fail("E_ENGINE_TREE", "engine tree contains a special file", 2);
       }
     }
   }
-  await walk(root);
-  files.sort((left, right) => {
-    const leftName = relative(root, left).split(sep).join("/");
-    const rightName = relative(root, right).split(sep).join("/");
-    return leftName < rightName ? -1 : leftName > rightName ? 1 : 0;
+  await walk(root, 0);
+  entries.sort((left, right) => {
+    if (left.name !== right.name) return left.name < right.name ? -1 : 1;
+    return left.kind < right.kind ? -1 : left.kind > right.kind ? 1 : 0;
   });
   const digest = createHash("sha256");
-  for (const path of files) {
-    const raw = await readFile(path);
-    const name = relative(root, path).split(sep).join("/");
-    digest.update(name, "utf8");
+  for (const entry of entries) {
+    digest.update(entry.kind, "ascii");
     digest.update("\0");
-    digest.update(String(raw.length), "ascii");
+    digest.update(entry.name, "utf8");
     digest.update("\0");
-    digest.update(raw);
-    digest.update("\0");
+    if (entry.raw !== null) {
+      digest.update(String(entry.raw.length), "ascii");
+      digest.update("\0");
+      digest.update(entry.raw);
+      digest.update("\0");
+    }
   }
   return digest.digest("hex");
 }
@@ -524,6 +593,32 @@ function decodeXml(value) {
     .replaceAll("&amp;", "&");
 }
 
+function opacityHides(value) {
+  const normalized = value.trim();
+  if (!OPACITY_VALUE_PATTERN.test(normalized)) return true;
+  const numeric = Number(normalized.endsWith("%") ? normalized.slice(0, -1) : normalized);
+  return !Number.isFinite(numeric) || numeric <= 0;
+}
+
+function hasHiddenOpacity(svg) {
+  for (const match of svg.matchAll(/\b(?:opacity|fill-opacity)\s*=\s*["']([^"']*)["']/gi)) {
+    if (opacityHides(match[1])) return true;
+  }
+  for (const match of svg.matchAll(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    const style = match[1] ?? match[2];
+    for (const declaration of style.split(";")) {
+      const separator = declaration.indexOf(":");
+      if (separator < 0) continue;
+      const name = declaration.slice(0, separator).trim().toLowerCase();
+      if (
+        ["opacity", "fill-opacity"].includes(name)
+        && opacityHides(declaration.slice(separator + 1))
+      ) return true;
+    }
+  }
+  return false;
+}
+
 function validateSvg(raw, input, semantic = false) {
   if (!Buffer.isBuffer(raw) || raw.length < 1 || raw.length > MAX_SVG_BYTES) {
     fail("E_SVG_UNSAFE", "SVG exceeds byte contract");
@@ -533,21 +628,41 @@ function validateSvg(raw, input, semantic = false) {
     fail("E_SVG_UNSAFE", "SVG must be valid UTF-8");
   }
   const lower = svg.toLowerCase();
-  for (const marker of [
-    "<!doctype",
-    "<!entity",
-    "<script",
-    "<style",
-    "<foreignobject",
-    "<image",
-    "<animate",
-    "<set",
-    "<mpath",
+  if (
+    lower.includes("<!doctype")
+    || lower.includes("<!entity")
+    || /<\?xml-stylesheet\b/i.test(svg)
+    || /\bxml:base\s*=/i.test(svg)
+  ) {
+    fail("E_SVG_UNSAFE", "SVG contains unsafe XML indirection");
+  }
+  for (const tag of [
+    "script",
+    "style",
+    "foreignobject",
+    "image",
+    "animate",
+    "animatecolor",
+    "animatemotion",
+    "animatetransform",
+    "discard",
+    "set",
+    "mpath",
   ]) {
-    if (lower.includes(marker)) fail("E_SVG_UNSAFE", `SVG contains forbidden ${marker}`);
+    if (new RegExp(`<(?:(?:[A-Za-z_][\\w.-]*):)?${tag}\\b`, "i").test(svg)) {
+      fail("E_SVG_UNSAFE", `SVG contains forbidden <${tag}>`);
+    }
   }
   if (/\son[a-z]+\s*=/i.test(svg) || /@import/i.test(svg)) {
     fail("E_SVG_UNSAFE", "SVG contains active content");
+  }
+  if (
+    /\b(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse))/i.test(svg)
+    || /\b(?:display|visibility)\s*=\s*["'](?:none|hidden|collapse)["']/i.test(svg)
+    || hasHiddenOpacity(svg)
+    || /\b(?:clip-path|mask)\s*=/i.test(svg)
+  ) {
+    fail("E_SVG_UNSAFE", "SVG contains hidden semantic content");
   }
   if (/\b(?:href|xlink:href)\s*=\s*["'](?!#)[^"']*["']/i.test(svg)) {
     fail("E_SVG_UNSAFE", "SVG contains external reference");
@@ -826,11 +941,22 @@ async function runController(args) {
   const input = validateEnvelope(rawInput);
   const work = await mkdtemp(join(tmpdir(), "readme-showcase-glyphic-controller-"));
   try {
+    const snapshotInput = join(work, "input.json");
+    const snapshotLock = join(work, "engine-lock.json");
+    await Promise.all([
+      writeFile(snapshotInput, inputRaw, { flag: "wx", mode: 0o600 }),
+      writeFile(snapshotLock, engine.lockRaw, { flag: "wx", mode: 0o600 }),
+    ]);
+    const snapshotArgs = {
+      ...args,
+      "--input": snapshotInput,
+      "--engine-lock": snapshotLock,
+    };
     const firstPath = join(work, "first.svg");
     const secondPath = join(work, "second.svg");
-    const first = await runIsolatedWorker(args, firstPath);
+    const first = await runIsolatedWorker(snapshotArgs, firstPath);
     if (first.code !== 0) throw workerFailure(first);
-    const second = await runIsolatedWorker(args, secondPath);
+    const second = await runIsolatedWorker(snapshotArgs, secondPath);
     if (second.code !== 0) throw workerFailure(second);
     const [firstRaw, secondRaw] = await Promise.all([
       readBounded(firstPath, MAX_SVG_BYTES, "E_SVG_UNSAFE"),

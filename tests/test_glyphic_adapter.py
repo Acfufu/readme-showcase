@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -9,7 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +22,21 @@ CORE_SRI = (
     "sha512-+wWBhFXOkgS6ZtGk4cHPooIueXt01g3meuHHcZnapBtgPW8IXy8nDFPO1lZX"
     "eETVK+NZ6BeCu+blmD3QGr5hDw=="
 )
+
+
+class BuilderModule(Protocol):
+    def tree_sha256(self, root: Path) -> str: ...
+
+
+builder_spec = importlib.util.spec_from_file_location(
+    "readme_showcase_glyphic_test_builder",
+    BUILDER,
+)
+if builder_spec is None or builder_spec.loader is None:
+    raise RuntimeError(f"cannot load builder: {BUILDER}")
+builder_module = importlib.util.module_from_spec(builder_spec)
+builder_spec.loader.exec_module(builder_module)
+builder = cast(BuilderModule, cast(object, builder_module))
 
 
 @unittest.skipIf(
@@ -57,6 +73,8 @@ class GlyphicAdapterTests(unittest.TestCase):
                 CORE_SRI,
                 "--node-version",
                 node_version,
+                "--expected-tree-sha256",
+                builder.tree_sha256(node_modules),
                 "--output",
                 str(lock_path),
             ],
@@ -225,6 +243,7 @@ class GlyphicAdapterTests(unittest.TestCase):
             base = Path(temporary)
             cases: list[tuple[str, str, str, str, dict[str, Any] | None]] = [
                 ("unsafe", "architecture.json", "invalid", "E_SVG_UNSAFE", None),
+                ("unsafe", "flowchart.json", "invalid", "E_SVG_UNSAFE", None),
                 (
                     "nondeterministic",
                     "architecture.json",

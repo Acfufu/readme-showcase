@@ -48,6 +48,12 @@ class DatasetValidationTests(unittest.TestCase):
         )
         self.assert_code(leakage, "E_DATASET_SPLIT_LEAK")
 
+        material_alias = self.fixture()
+        material_alias["records"][1]["source"]["material_sha256"] = (
+            material_alias["records"][0]["source"]["material_sha256"]
+        )
+        self.assert_code(material_alias, "E_DATASET_SPLIT_LEAK")
+
     def test_mutable_commit_and_license_failures_are_rejected(self) -> None:
         mutable = self.fixture()
         mutable["records"][0]["source"]["commit"] = "main"
