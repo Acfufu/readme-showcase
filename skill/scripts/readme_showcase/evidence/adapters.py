@@ -12,8 +12,6 @@ from .graph import EvidenceGraph
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _V1_FIELDS = {"fact_id", "kind", "path", "evidence_sha256"}
-
-
 def adapt_v1_file_fact(fact: Mapping[str, Any]) -> dict[str, Any]:
     legacy = copy.deepcopy(dict(fact))
     if set(legacy) != _V1_FIELDS or legacy.get("kind") != "repository-file":
@@ -40,6 +38,35 @@ def adapt_v1_repository_evidence(packet: Mapping[str, Any]) -> dict[str, Any]:
     if legacy.get("schema_version") != 1 or not isinstance(legacy.get("facts"), list):
         raise ContractError("E_V1_EVIDENCE", "v1 repository evidence packet is invalid")
     return EvidenceGraph(adapt_v1_file_fact(fact) for fact in legacy["facts"]).to_dict()
+
+
+def adapt_verified_command_observation(
+    observation: Mapping[str, Any],
+    *,
+    path: str,
+    source_bytes: bytes | None = None,
+    source_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Copy an upstream-verified envelope into Evidence v2 without executing it."""
+    if observation.get("verification") != "verified":
+        raise ValueError("command observation must already be verified")
+    command_id = observation.get("command_id")
+    if not isinstance(command_id, str) or not command_id:
+        raise ValueError("verified command observation command_id is invalid")
+    value = copy.deepcopy(dict(observation))
+    return build_fact(
+        kind="command-observation",
+        path=path,
+        locator={"json_pointer": ""},
+        semantic_key=command_id,
+        value=value,
+        source_bytes=source_bytes,
+        source_sha256=source_sha256,
+        confidence="observed",
+    )
+
+
+adapt_command_observation = adapt_verified_command_observation
 
 
 adapt_v1_fact = adapt_v1_file_fact

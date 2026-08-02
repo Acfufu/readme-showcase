@@ -1,0 +1,7 @@
+{
+  "name": "demo-node",
+  "version": "1.0.0",
+  "bin": {"demo-node": "src/cli.js"},
+  "engines": {"node": ">=20"},
+  "scripts": {"test": "node --test", "check": "node --check src/cli.js"}
+}

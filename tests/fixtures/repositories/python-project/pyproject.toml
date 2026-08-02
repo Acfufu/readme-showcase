@@ -1,0 +1,9 @@
+[project]
+name = "demo-cli"
+requires-python = ">=3.10,<3.14"
+
+[project.scripts]
+demo = "demo_cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
