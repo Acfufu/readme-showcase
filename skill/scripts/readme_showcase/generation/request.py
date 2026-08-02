@@ -3,12 +3,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import re
-import unicodedata
 from pathlib import PurePosixPath
 from typing import Any, Mapping, Sequence
 
 from ...pipeline_contracts import ContractError, canonical_json_bytes, validate_contract
-from ..contracts.plan import validate_readme_plan
+from ..contracts.plan import normalize_generation_text, validate_readme_plan
 from ..contracts.run import canonical_repository
 
 
@@ -21,10 +20,6 @@ REQUEST_MODES = frozenset({"readme", "asset-only", "audit-only"})
 REQUEST_LOCALES = frozenset({"en", "zh-Hans"})
 _SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
-_ABSOLUTE_PATH = re.compile(r"(?:^|\s)(?:/|~/)[^\s]*")
-_SECRET_ASSIGNMENT = re.compile(
-    r"(?i)(?:^|\s)(?:api[_-]?key|api[_-]?token|access[_-]?token|auth[_-]?token|password|private[_-]?key|secret)\s*[:=]"
-)
 
 
 def _reject_float(value: Any, path: str = "$") -> None:
@@ -38,15 +33,13 @@ def _reject_float(value: Any, path: str = "$") -> None:
             _reject_float(item, f"{path}.{key}")
 
 
-def _text(value: Any, path: str, *, maximum: int = MAX_REQUEST_TEXT_BYTES) -> str:
-    if not isinstance(value, str) or not value or value != value.strip() or "\x00" in value:
-        raise ContractError("E_SCHEMA_TYPE", f"{path} must be non-empty normalized text")
-    normalized = unicodedata.normalize("NFC", value)
-    if len(normalized.encode("utf-8")) > maximum:
-        raise ContractError("E_GENERATION_REQUEST_VALUE", f"{path} exceeds {maximum} bytes")
-    if _ABSOLUTE_PATH.search(normalized) or _SECRET_ASSIGNMENT.search(normalized):
-        raise ContractError("E_GENERATION_REQUEST_VALUE", f"{path} contains an absolute path or secret assignment")
-    return normalized
+def _text(
+    value: Any,
+    path: str,
+    *,
+    maximum: int = MAX_REQUEST_TEXT_BYTES,
+) -> str:
+    return normalize_generation_text(value, path, maximum=maximum)
 
 
 def _sha(value: Any, path: str, *, sha1: bool = False) -> str:
@@ -124,7 +117,13 @@ def _records(value: Any) -> list[dict[str, Any]]:
         records.append({
             "record_id": record_id,
             "score": score,
-            "pattern": {name: _text(pattern[name], f"generation request retrieval pattern.{name}") for name in ("summary", "structure", "proof")},
+            "pattern": {
+                name: _text(
+                    pattern[name],
+                    f"generation request retrieval pattern.{name}",
+                )
+                for name in ("summary", "structure", "proof")
+            },
         })
     expected = sorted(records, key=lambda item: (-item["score"], item["record_id"]))
     if records != expected:
@@ -223,7 +222,16 @@ def _source_records(packet: Any) -> list[dict[str, Any]]:
             raise ContractError("E_GENERATION_RETRIEVAL", "retrieval record identity or score is invalid")
         seen.add(record_id)
         try:
-            selected.append({"record_id": _text(record_id, "retrieval record_id"), "score": score, "pattern": {name: _text(pattern[name], f"retrieval pattern.{name}") for name in ("summary", "structure", "proof")}})
+            selected.append({
+                "record_id": _text(record_id, "retrieval record_id"),
+                "score": score,
+                "pattern": {
+                    name: _text(
+                        pattern[name], f"retrieval pattern.{name}"
+                    )
+                    for name in ("summary", "structure", "proof")
+                },
+            })
         except ContractError as exc:
             raise ContractError("E_GENERATION_RETRIEVAL", "retrieval pattern values are invalid") from exc
     return sorted(selected, key=lambda item: (-item["score"], item["record_id"]))

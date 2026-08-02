@@ -14,7 +14,16 @@ PLAN_LANGUAGES = frozenset({"en", "zh"})
 DIAGRAM_ROUTES = frozenset({"none", "static", "elk"})
 MAX_PLAN_ITEMS = 10_000
 MAX_PLAN_TEXT_BYTES = 4096
-_ABSOLUTE_PATH = re.compile(r"(?:^|\s)(?:/|~/)[^\s]*")
+_URL = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>(){}\[\]\"']+")
+_JSON_POINTER = re.compile(r"/(?:[^~/\s]|~[01])*(?:/(?:[^~/\s]|~[01])*)*\Z")
+_LABELED_JSON_POINTER = re.compile(
+    r"(?i)\bjson\s+pointer\s*(?::|=)?\s*(?P<pointer>/[^\s<>(){}\[\],;]+)"
+)
+_PARENT_TRAVERSAL = re.compile(r"(?<![A-Za-z0-9_.])\.\.(?:$|[/\\])")
+_POSIX_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_/])/(?![/\s])")
+_HOME_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_])~/")
+_WINDOWS_DRIVE = re.compile(r"(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]")
+_WINDOWS_UNC = re.compile(r"(?:^|[^A-Za-z0-9_:])(?:\\\\|//)[^\\/\s]+[\\/][^\\/\s]+")
 _SECRET_ASSIGNMENT = re.compile(
     r"(?i)(?:^|\s)(?:api[_-]?key|api[_-]?token|access[_-]?token|auth[_-]?token|password|private[_-]?key|secret)\s*[:=]"
 )
@@ -31,21 +40,57 @@ def _reject_float(value: Any, path: str = "$") -> None:
             _reject_float(item, f"{path}.{key}")
 
 
-def _text(value: Any, path: str) -> str:
+def _masked_safe_references(value: str, *, allow_json_pointer: bool) -> str:
+    characters = list(value)
+
+    def mask(start: int, end: int) -> None:
+        characters[start:end] = " " * (end - start)
+
+    for match in _URL.finditer(value):
+        mask(*match.span())
+    if allow_json_pointer and _JSON_POINTER.fullmatch(value):
+        mask(0, len(value))
+    for match in _LABELED_JSON_POINTER.finditer(value):
+        pointer = match.group("pointer")
+        if _JSON_POINTER.fullmatch(pointer):
+            mask(*match.span("pointer"))
+    return "".join(characters)
+
+
+def normalize_generation_text(
+    value: Any,
+    path: str,
+    *,
+    maximum: int = MAX_PLAN_TEXT_BYTES,
+    allow_json_pointer: bool = False,
+) -> str:
     if not isinstance(value, str) or not value or value != value.strip() or "\x00" in value:
         raise ContractError("E_SCHEMA_TYPE", f"{path} must be non-empty normalized text")
     normalized = unicodedata.normalize("NFC", value)
-    if len(normalized.encode("utf-8")) > MAX_PLAN_TEXT_BYTES:
-        raise ContractError("E_GENERATION_REQUEST_VALUE", f"{path} exceeds {MAX_PLAN_TEXT_BYTES} bytes")
-    if _ABSOLUTE_PATH.search(normalized) or _SECRET_ASSIGNMENT.search(normalized):
+    if len(normalized.encode("utf-8")) > maximum:
+        raise ContractError("E_GENERATION_REQUEST_VALUE", f"{path} exceeds {maximum} bytes")
+    inspected = _masked_safe_references(normalized, allow_json_pointer=allow_json_pointer)
+    if (
+        _PARENT_TRAVERSAL.search(inspected)
+        or _POSIX_ABSOLUTE.search(inspected)
+        or _HOME_ABSOLUTE.search(inspected)
+        or _WINDOWS_DRIVE.search(inspected)
+        or _WINDOWS_UNC.search(inspected)
+        or _SECRET_ASSIGNMENT.search(normalized)
+    ):
         raise ContractError("E_GENERATION_REQUEST_VALUE", f"{path} contains an absolute path or secret assignment")
     return normalized
 
 
-def _strings(value: Any, path: str, *, allowed: frozenset[str] | None = None) -> list[str]:
+def _strings(
+    value: Any,
+    path: str,
+    *,
+    allowed: frozenset[str] | None = None,
+) -> list[str]:
     if not isinstance(value, list) or len(value) > MAX_PLAN_ITEMS:
         raise ContractError("E_SCHEMA_TYPE", f"{path} must be a bounded array")
-    result = [_text(item, f"{path}[]") for item in value]
+    result = [normalize_generation_text(item, f"{path}[]") for item in value]
     if len(result) != len(set(result)):
         raise ContractError("E_SCHEMA_VALUE", f"{path} must not contain duplicates")
     if allowed is not None and not set(result).issubset(allowed):
@@ -64,13 +109,13 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
         optional=set(),
         context="README plan",
     )
-    normalized_mode = _text(plan["mode"], "README plan.mode")
+    normalized_mode = normalize_generation_text(plan["mode"], "README plan.mode")
     if normalized_mode not in PLAN_MODES or (mode is not None and normalized_mode != mode):
         raise ContractError("E_BUNDLE_PLAN", "README plan mode is unsupported")
     languages = _strings(plan["languages"], "README plan.languages", allowed=PLAN_LANGUAGES)
     if not languages:
         raise ContractError("E_README_LANGUAGE", "README plan.languages must not be empty")
-    diagram_route = _text(plan["diagram_route"], "README plan.diagram_route")
+    diagram_route = normalize_generation_text(plan["diagram_route"], "README plan.diagram_route")
     if diagram_route not in DIAGRAM_ROUTES:
         raise ContractError("E_BUNDLE_PLAN", "README plan diagram route is unsupported")
     normalized = {
@@ -78,7 +123,9 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
         "mode": normalized_mode,
         "languages": languages,
         "sections": _strings(plan["sections"], "README plan.sections"),
-        "visual_intent": _text(plan["visual_intent"], "README plan.visual_intent"),
+        "visual_intent": normalize_generation_text(
+            plan["visual_intent"], "README plan.visual_intent"
+        ),
         "diagram_route": diagram_route,
         "commands": _strings(plan["commands"], "README plan.commands"),
         "evidence_ids": _strings(plan["evidence_ids"], "README plan.evidence_ids"),

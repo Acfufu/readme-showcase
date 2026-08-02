@@ -17,6 +17,7 @@ from jsonschema import Draft202012Validator
 from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes
 from skill.scripts.readme_showcase.contracts.plan import (
     canonical_readme_plan_bytes,
+    normalize_generation_text,
     validate_readme_plan,
 )
 from skill.scripts.readme_showcase.generation.request import (
@@ -152,6 +153,53 @@ class GenerationRequestContractTests(unittest.TestCase):
         secret = self.plan()
         secret["commands"] = ["API_TOKEN=fixture-secret"]
         self.assert_code("E_GENERATION_REQUEST_VALUE", self.request, plan=secret)
+
+    def test_embedded_path_leakage_is_rejected_without_blocking_urls_or_json_pointers(self) -> None:
+        unsafe = (
+            "/tmp/private.txt",
+            "see(/tmp/private.txt)",
+            "see{/tmp/private.txt}",
+            "path:/tmp/private.txt",
+            "x=/Users/example/secret.txt",
+            "python ../outside.py",
+            "open(foo/../../outside.py)",
+            r"run C:\Users\example\secret.txt",
+            r"run C:/Users/example/secret.txt",
+            r"read \\server\share\secret.txt",
+            "read //server/share/secret.txt",
+        )
+        for value in unsafe:
+            with self.subTest(value=value):
+                self.assert_code("E_GENERATION_REQUEST_VALUE", normalize_generation_text, value, "fixture")
+                plan = self.plan()
+                plan["commands"] = [value]
+                self.assert_code("E_GENERATION_REQUEST_VALUE", self.request, plan=plan)
+                retrieval = self.retrieval()
+                retrieval["records"][0]["pattern"]["summary"] = value  # type: ignore[index]
+                self.assert_code(
+                    "E_GENERATION_RETRIEVAL", self.request, retrieval_packet=retrieval
+                )
+
+        benign = (
+            "see https://example.com/docs/setup?next=/quick-start",
+            "source https://github.com/owner/repo/blob/main/README.md",
+            "ordinary and/or prose",
+            "version 1.2.3 and section A/B",
+        )
+        for value in benign:
+            with self.subTest(value=value):
+                self.assertEqual(normalize_generation_text(value, "fixture"), value)
+        self.assertEqual(
+            normalize_generation_text("/scripts/test", "fixture", allow_json_pointer=True),
+            "/scripts/test",
+        )
+        self.assertEqual(
+            normalize_generation_text("JSON Pointer: /scripts/test", "fixture", allow_json_pointer=True),
+            "JSON Pointer: /scripts/test",
+        )
+        pointer_retrieval = self.retrieval()
+        pointer_retrieval["records"][0]["pattern"]["summary"] = "JSON Pointer: /scripts/test"  # type: ignore[index]
+        self.request(retrieval_packet=pointer_retrieval)
 
     def test_duplicate_dangling_and_stale_evidence_fail_closed(self) -> None:
         evidence = self.evidence()
