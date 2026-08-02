@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -63,11 +64,22 @@ class CiContractTests(unittest.TestCase):
         self.assertIn("expected_files =", self.workflow)
         self.assertIn("if-no-files-found: error", self.workflow)
 
-    def test_motion_is_isolated_and_no_dependency_payload_is_tracked(self) -> None:
+    def test_motion_and_npm_package_are_isolated_without_dependency_payload(self) -> None:
         self.assertIn("Pillow==11.3.0", self.workflow)
         self.assertIn("render_motion_gif.py", self.workflow)
+        self.assertIn("npm-package:", self.workflow)
+        self.assertIn("npm pack --dry-run", self.workflow)
+        package = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(package["bin"], {"readme-showcase": "scripts/install_skill.py"})
+        self.assertEqual(package["os"], ["darwin", "linux"])
+        for field in (
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+            "peerDependencies",
+        ):
+            self.assertNotIn(field, package)
         for path in (
-            REPO_ROOT / "package.json",
             REPO_ROOT / "package-lock.json",
             REPO_ROOT / "node_modules",
         ):

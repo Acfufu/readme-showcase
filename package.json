@@ -1,0 +1,21 @@
+{
+  "name": "readme-showcase",
+  "version": "0.1.0",
+  "description": "Install the evidence-backed readme-showcase Codex Skill.",
+  "license": "GPL-3.0-only",
+  "repository": "github:Acfufu/readme-showcase",
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "bin": {
+    "readme-showcase": "scripts/install_skill.py"
+  },
+  "files": [
+    "README_zh.md",
+    "dataset",
+    "skill",
+    "scripts/build_glyphic_engine_lock.py",
+    "scripts/install_skill.py"
+  ]
+}

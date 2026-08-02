@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -147,6 +148,68 @@ class InstallerTests(unittest.TestCase):
             post_run_check = self.run_cli(codex_home, "--check")
             self.assertEqual(post_run_check.returncode, 0, post_run_check.stderr)
             self.assertEqual(json.loads(post_run_check.stdout)["status"], "current")
+
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "npm package test runs in isolated Node lane",
+    )
+    def test_packed_npm_binary_installs_and_checks_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = subprocess.run(
+                [
+                    "npm",
+                    "pack",
+                    "--pack-destination",
+                    str(root),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(package.returncode, 0, package.stderr)
+            tarballs = list(root.glob("*.tgz"))
+            self.assertEqual(len(tarballs), 1)
+            tarball = tarballs[0]
+            project = root / "project"
+            project.mkdir()
+            installed = subprocess.run(
+                [
+                    "npm",
+                    "install",
+                    "--ignore-scripts",
+                    "--no-audit",
+                    "--no-fund",
+                    str(tarball),
+                ],
+                cwd=project,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            binary = project / "node_modules" / ".bin" / "readme-showcase"
+            codex_home = root / "codex"
+            environment = os.environ | {"CODEX_HOME": str(codex_home)}
+
+            results = [
+                subprocess.run(
+                    [str(binary), *arguments],
+                    cwd=project,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                for arguments in ((), (), ("--check",))
+            ]
+            for result in results:
+                self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                [json.loads(result.stdout)["status"] for result in results],
+                ["installed", "unchanged", "current"],
+            )
 
     def test_stage_hash_mismatch_and_backup_failure_restore_old_target(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
