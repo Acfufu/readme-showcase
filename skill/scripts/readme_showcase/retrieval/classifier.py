@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import re
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -89,20 +88,19 @@ def _validate_index(index: Iterable[Mapping[str, Any]]) -> None:
 def _signal(fact: Mapping[str, Any]) -> tuple[str, int, str, str, bool] | None:
     """Return type, score, reason code/message, and explicit-type marker; never inspect fact values."""
     kind, key = fact["kind"], fact["semantic_key"]
+    if fact["confidence"] != "observed":
+        return None
     if kind == "config-value" and key.startswith("project-type:"):
         project_type = key.removeprefix("project-type:")
         if project_type in _TYPE_ORDER:
             return project_type, 9000, "classifier.explicit-type", "observed explicit project-type signal", True
-    if key.startswith("classifier-hint:"):
-        project_type = key.removeprefix("classifier-hint:")
-        if project_type in _TYPE_ORDER:
-            score = 5900 if kind == "file-presence" else 6200
-            return project_type, score, "classifier.type-hint", "observed classifier type signal", False
     if kind == "cli-entrypoint":
         return "cli", 9200, "classifier.cli-entrypoint", "observed CLI entrypoint", False
     if kind == "config-value" and key in {"node-script:start", "node-script:dev"}:
         score = 9000 if key.endswith(":start") else 8000
         return "web-app", score, "classifier.web-app-script", "observed web application start signal", False
+    if kind == "test-observation" and key == "test-framework":
+        return "developer-tool", 5900, "classifier.test-framework", "observed test framework signal", False
     return None
 
 
@@ -171,7 +169,7 @@ def classify_project(
         "primary": primary,
         "secondary": secondary,
         "confidence_basis_points": best[primary][0],
-        "reasons": copy.deepcopy(reasons),
+        "reasons": reasons,
     }
 
 
