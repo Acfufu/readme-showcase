@@ -33,6 +33,77 @@ from .state import RunState, StageState, initial_stages
 Clock = Callable[[], str]
 
 
+def _assert_attempt_consistency(root: Path, manifest: Mapping[str, Any]) -> None:
+    for number, stage in enumerate(manifest["stages"], 1):
+        stage_root = root / "stages" / f"{number:02d}-{stage['name']}"
+        attempts_path = stage_root / "attempts"
+        try:
+            os.lstat(attempts_path)
+        except FileNotFoundError:
+            observed: list[int] = []
+        else:
+            attempts = _open_directory(attempts_path, create=False, code="E_RUN_PATH")
+            try:
+                names = os.listdir(attempts)
+                if any(not name.isdigit() or int(name) < 1 for name in names):
+                    raise ContractError("E_RUN_MANIFEST_STALE", "attempt directory contains an invalid entry")
+                observed = sorted(int(name) for name in names)
+                for name in names:
+                    item = os.stat(name, dir_fd=attempts, follow_symlinks=False)
+                    if not stat.S_ISDIR(item.st_mode):
+                        raise ContractError("E_RUN_MANIFEST_STALE", "attempt entry must be a directory")
+            finally:
+                os.close(attempts)
+        expected = list(range(1, stage["attempt"] + 1))
+        if observed != expected:
+            raise ContractError("E_RUN_MANIFEST_STALE", "manifest attempt counter does not match immutable attempts")
+
+        current_path = stage_root / "current.json"
+        if stage["attempt"] == 0:
+            if current_path.exists() or current_path.is_symlink():
+                raise ContractError("E_RUN_MANIFEST_STALE", "current pointer exists without a committed attempt")
+            continue
+        raw, current = read_json_object_bytes(current_path)
+        if current != {"attempt": stage["attempt"]} or raw != canonical_json_bytes(current):
+            raise ContractError("E_RUN_MANIFEST_STALE", "current pointer does not match manifest attempt")
+
+
+def _rollback_attempt(stage_root: Path, attempt: int, names: list[str], previous: int) -> None:
+    stage = _open_directory(stage_root, create=False, code="E_RUN_PATH")
+    try:
+        if previous == 0:
+            try:
+                current = os.stat("current.json", dir_fd=stage, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                if not stat.S_ISREG(current.st_mode):
+                    raise ContractError("E_RUN_PATH", "current pointer must be a regular file")
+                os.unlink("current.json", dir_fd=stage)
+                os.fsync(stage)
+        else:
+            write_canonical_json_atomic(stage_root / "current.json", {"attempt": previous})
+    finally:
+        os.close(stage)
+
+    attempts = _open_directory(stage_root / "attempts", create=False, code="E_RUN_PATH")
+    try:
+        committed = os.open(
+            str(attempt),
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=attempts,
+        )
+        try:
+            for name in names:
+                os.unlink(name, dir_fd=committed)
+        finally:
+            os.close(committed)
+        os.rmdir(str(attempt), dir_fd=attempts)
+        os.fsync(attempts)
+    finally:
+        os.close(attempts)
+
+
 class _RunLock:
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace
@@ -176,6 +247,13 @@ class RunWorkspace:
         if payload["target"]["root"] != os.fspath(self.target_root):
             raise ContractError("E_RUN_TARGET", "run manifest target does not match workspace target")
         with self.lock():
+            current = self.read_manifest()
+            _assert_attempt_consistency(self.root, current)
+            if payload["created_at"] != current["created_at"] or any(
+                candidate["attempt"] != existing["attempt"]
+                for candidate, existing in zip(payload["stages"], current["stages"], strict=True)
+            ):
+                raise ContractError("E_RUN_MANIFEST_STALE", "manifest snapshot would rewrite immutable run history")
             write_canonical_json_atomic(self.root / "run-manifest.json", payload)
 
     def append_attempt(
@@ -201,6 +279,7 @@ class RunWorkspace:
         stage_root = self.root / "stages" / f"{stage_number:02d}-{stage_name}"
         with self.lock():
             manifest = self.read_manifest()
+            _assert_attempt_consistency(self.root, manifest)
             current_attempt = manifest["stages"][stage_number - 1]["attempt"]
             next_attempt = current_attempt + 1 if attempt is None else attempt
             attempts = _open_directory(stage_root / "attempts", create=True, code="E_RUN_PATH")
@@ -262,7 +341,6 @@ class RunWorkspace:
                     os.rmdir(temporary, dir_fd=attempts)
                 os.close(attempts)
 
-            write_canonical_json_atomic(stage_root / "current.json", {"attempt": next_attempt})
             timestamp = self._clock() if self._clock is not None else manifest["updated_at"]
             output_projection = [
                 {"path": name, "sha256": hashlib.sha256(files[name]).hexdigest()}
@@ -282,5 +360,17 @@ class RunWorkspace:
             manifest["current_stage"] = stage_name
             manifest["updated_at"] = timestamp
             validate_run_manifest(manifest)
-            write_canonical_json_atomic(self.root / "run-manifest.json", manifest)
+            try:
+                write_canonical_json_atomic(stage_root / "current.json", {"attempt": next_attempt})
+                write_canonical_json_atomic(self.root / "run-manifest.json", manifest)
+            except Exception:
+                try:
+                    committed = self.read_manifest()
+                    _assert_attempt_consistency(self.root, committed)
+                except (ContractError, OSError):
+                    committed = None
+                if committed == manifest:
+                    return stage_root / "attempts" / str(next_attempt)
+                _rollback_attempt(stage_root, next_attempt, written_names, current_attempt)
+                raise
             return stage_root / "attempts" / str(next_attempt)

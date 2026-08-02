@@ -6,8 +6,10 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes
+from skill.scripts.readme_showcase.orchestration import workspace as workspace_module
 from skill.scripts.readme_showcase.contracts.run import (
     RUN_SCHEMA_VERSION,
     compute_run_id,
@@ -156,6 +158,46 @@ class RunManifestContractTests(unittest.TestCase):
         with self.assertRaises(ContractError) as linked:
             workspace.append_attempt(1, "scan", {"result": b"bad"})
         self.assertEqual(linked.exception.code, "E_RUN_PATH")
+
+    def test_write_manifest_rejects_stale_attempt_snapshot(self) -> None:
+        workspace = self.create()
+        stale = workspace.read_manifest()
+        attempt = workspace.append_attempt(1, "scan", {"result.json": b"committed\n"})
+        before = (self.workspace_path / "run-manifest.json").read_bytes()
+        with self.assertRaises(ContractError) as raised:
+            workspace.write_manifest(stale)
+        self.assertEqual(raised.exception.code, "E_RUN_MANIFEST_STALE")
+        self.assertEqual((self.workspace_path / "run-manifest.json").read_bytes(), before)
+        self.assertEqual((attempt / "result.json").read_bytes(), b"committed\n")
+
+    def test_manifest_write_failure_rolls_back_attempt_for_retry(self) -> None:
+        workspace = self.create()
+        atomic_write = workspace_module.write_canonical_json_atomic
+
+        def fail_manifest(path: Path, value: object) -> None:
+            if path.name == "run-manifest.json":
+                raise ContractError("E_TEST_WRITE", "injected manifest write failure")
+            atomic_write(path, value)
+
+        with mock.patch.object(workspace_module, "write_canonical_json_atomic", side_effect=fail_manifest):
+            with self.assertRaises(ContractError) as raised:
+                workspace.append_attempt(1, "scan", {"result.json": b"uncommitted\n"})
+        self.assertEqual(raised.exception.code, "E_TEST_WRITE")
+        stage = self.workspace_path / "stages/01-scan"
+        self.assertFalse((stage / "attempts/1").exists())
+        self.assertFalse((stage / "current.json").exists())
+        self.assertEqual(workspace.read_manifest()["stages"][0]["attempt"], 0)
+        retry = workspace.append_attempt(1, "scan", {"result.json": b"committed\n"})
+        self.assertEqual(retry.name, "1")
+        self.assertEqual((retry / "result.json").read_bytes(), b"committed\n")
+        with mock.patch.object(workspace_module, "write_canonical_json_atomic", side_effect=fail_manifest):
+            with self.assertRaises(ContractError):
+                workspace.append_attempt(1, "scan", {"result.json": b"uncommitted second\n"})
+        self.assertFalse((stage / "attempts/2").exists())
+        self.assertEqual(json.loads((stage / "current.json").read_bytes()), {"attempt": 1})
+        self.assertEqual(workspace.read_manifest()["stages"][0]["attempt"], 1)
+        second = workspace.append_attempt(1, "scan", {"result.json": b"committed second\n"})
+        self.assertEqual(second.name, "2")
 
 
 if __name__ == "__main__":
