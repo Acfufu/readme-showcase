@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib
 import json
@@ -15,6 +16,9 @@ from skill.scripts.pipeline_contracts import (
     canonical_sha256,
     write_canonical_json_atomic,
 )
+from skill.scripts.readme_showcase.contracts.evidence import build_fact
+from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
+from skill.scripts.readme_showcase.generation.assembler import assemble_generated_bundle
 from tests import test_claim_coverage as claim_coverage
 
 
@@ -35,9 +39,95 @@ def reversed_objects(value: Any) -> Any:
     return value
 
 
+def _walk(value: Any) -> list[Any]:
+    if isinstance(value, dict):
+        return [value, *[child for item in value.values() for child in _walk(item)]]
+    if isinstance(value, list):
+        return [value, *[child for item in value for child in _walk(item)]]
+    return [value]
+
+
 class EvaluationTests(unittest.TestCase):
     def helper(self) -> claim_coverage.ClaimCoverageTests:
         return claim_coverage.ClaimCoverageTests(methodName="runTest")
+
+    def v2_bundle(self, root: Path, quality: str) -> dict[str, Any]:
+        source = b"source evidence\n"
+        asset_raw = b"asset bytes\n"
+        readme_raw = b"# Overview\n"
+        (root / "source").mkdir()
+        (root / "source" / "README.md").write_bytes(source)
+        (root / "assets").mkdir()
+        (root / "assets" / "hero.png").write_bytes(asset_raw)
+        (root / "README.generated.md").write_bytes(readme_raw)
+        fact = build_fact(
+            kind="file-presence", path="source/README.md", locator=None,
+            semantic_key="presence", value=True, source_bytes=source,
+        )
+        graph = EvidenceGraph([fact]).to_dict()
+        fact_id = fact["fact_id"]
+        plan = {
+            "schema_version": 2, "mode": "readme", "languages": ["en"],
+            "sections": ["overview"], "visual_intent": "hero",
+            "diagram_route": "static", "commands": ["python -m demo"],
+            "evidence_ids": [fact_id],
+        }
+        claims = {
+            "schema_version": 2,
+            "markdown_blocks": [{
+                "claim_id": "markdown:en:overview", "content_sha256": "0" * 64,
+                "claim_kind": "factual", "evidence_ids": [fact_id],
+                "language_pair_id": None,
+                "support_level": "documented-only" if quality == "low" else "direct",
+            }],
+            "diagram_labels": [],
+        }
+        if quality == "high":
+            claims["diagram_labels"] = [{
+                **copy.deepcopy(claims["markdown_blocks"][0]),
+                "claim_id": "diagram:en:hero", "content_sha256": "f" * 64,
+            }]
+        assets = {
+            "schema_version": 2,
+            "assets": [{
+                "asset_id": "hero", "path": "assets/hero.png", "locale": "en",
+                "provenance": {
+                    "kind": "derived", "path": "source/README.md",
+                    "sha256": hashlib.sha256(source).hexdigest(),
+                },
+                "artifact_sha256": hashlib.sha256(asset_raw).hexdigest(),
+                "candidate_sha256": hashlib.sha256(asset_raw).hexdigest(),
+                "evidence_ids": [fact_id],
+            }],
+        }
+        retrieval = {
+            "schema_version": 1,
+            "status": "available" if quality == "high" else "unavailable",
+            "records": ([{"section_intents": ["overview"]}] if quality == "high" else []),
+        }
+        candidate = {
+            "readme": {"path": "README.generated.md", "sha256": hashlib.sha256(readme_raw).hexdigest()},
+            "assets": [{"path": "assets/hero.png", "sha256": hashlib.sha256(asset_raw).hexdigest()}],
+        }
+        evaluation = {"schema_version": 2, "status": "pass", "candidate_sha256": canonical_sha256(candidate)}
+        values = {
+            "plan": plan, "retrieval": retrieval, "evidence": graph,
+            "claim_map": claims, "asset_manifest": assets, "evaluation": evaluation,
+        }
+        paths = {
+            "plan": "readme-plan.json", "retrieval": "retrieval-packet.json",
+            "evidence": "repository-evidence.json", "claim_map": "claim-map.json",
+            "asset_manifest": "asset-manifest.json", "evaluation": "evaluation.json",
+        }
+        artifacts = {}
+        for name, value in values.items():
+            write_canonical_json_atomic(root / paths[name], value)
+            artifacts[name] = {"path": paths[name], "sha256": canonical_sha256(value)}
+        return assemble_generated_bundle(
+            root, mode="readme",
+            target={"repository": "owner/repo", "base_sha": "a" * 40},
+            candidate=candidate, artifacts=artifacts,
+        )
 
     def test_integer_report_snapshot_and_object_order_are_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -83,6 +173,45 @@ class EvaluationTests(unittest.TestCase):
             self.assertEqual(
                 report["advisory"]["section_intents"],
                 {"covered": 0, "total": 2},
+            )
+
+    def test_v2_low_and_high_metrics_are_exact_distinct_and_advisory(self) -> None:
+        reports = {}
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            for quality in ("low", "high"):
+                root = base / quality
+                root.mkdir()
+                bundle = self.v2_bundle(root, quality)
+                reports[quality] = evaluate_generated_bundle(bundle, root)
+            low, high = reports["low"], reports["high"]
+            self.assertEqual(low["status"], "pass")
+            self.assertEqual(low["hard_gate"], {"status": "pass", "findings": []})
+            self.assertEqual(low["advisory"]["claim_coverage"], {
+                "basis_points": 0, "covered": 0,
+                "reasons": ["claim-unverified:markdown:en:overview"],
+                "status": "measured", "total": 1,
+            })
+            self.assertEqual(low["advisory"]["visual_provenance"], {
+                "basis_points": 0, "covered": 0,
+                "reasons": ["visual-missing-claim-binding:hero"],
+                "status": "measured", "total": 1,
+            })
+            self.assertEqual(high["advisory"]["claim_coverage"]["covered"], 2)
+            self.assertEqual(high["advisory"]["diagram_label_coverage"]["covered"], 1)
+            self.assertEqual(high["advisory"]["visual_provenance"]["covered"], 1)
+            self.assertEqual(high["advisory"]["observable_commands"]["covered"], 0)
+            self.assertNotEqual(canonical_sha256(low), canonical_sha256(high))
+            self.assertFalse(any(isinstance(value, float) for report in reports.values() for value in _walk(report)))
+
+    def test_v1_snapshot_bytes_remain_pinned(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self.helper().monolingual_bundle(root)
+            report = evaluate_generated_bundle(bundle, root)
+            self.assertEqual(
+                hashlib.sha256(canonical_json_bytes(report)).hexdigest(),
+                "323de83bbb43fb68822a08ffb247406f226af01a040c58a9c6c92e1529c73052",
             )
 
     def test_hard_failure_cannot_be_masked_by_advisory_metrics(self) -> None:
