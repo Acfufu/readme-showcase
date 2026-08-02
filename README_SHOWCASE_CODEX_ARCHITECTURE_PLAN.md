@@ -4,8 +4,29 @@
 > 目标仓库：`Acfufu/readme-showcase`
 > 基线来源：当前仓库提交 `b38f780928a7982746965e5ec8673375609e5aa5`
 > 适用执行者：Codex 及人工 Reviewer
-> 文档状态：已审查，可按声明依赖执行
+> 文档状态：已审查；Batch 1 已于 2026-08-02 验收通过
 > 范围声明：**明确排除供应链优化、依赖治理、渲染引擎插件化及 ELK 依赖锁升级。**
+
+---
+
+## 执行状态
+
+Batch 1 已按 M0-T1、M0-T2、M0-T3 的依赖顺序完成，后续里程碑尚未开始。
+
+| 任务 | 结果 | 提交 |
+|---|---|---|
+| 规划矛盾校正 | 完成 | `3877388` |
+| M0-T1 架构兼容基线 | 完成 | `1615573` |
+| M0-T2 完整测试长尾调查与 CI 边界 | 完成 | `59205a3` |
+| M0-T3 通用 Diagnostics 模型 | 完成 | `dfd86de` |
+
+验收结果：
+
+- Python 3.11 与 Python 3.13 完整测试均为 89/89 通过，`npm test` 使用受支持解释器时同样为 89/89；
+- 数据集 manifest、英文与中文 README audit、ELK vendor parity、Node 语法、动效 GIF 渲染及 `npm pack --dry-run` 全部通过；
+- 未复现历史 90 秒长尾，完整测试约 8 秒结束且无残留测试进程，因此没有引入自定义进程管理 runner；
+- v1 CLI、公开 Python 导入、canonical JSON、安装边界及现有 fail-closed 安全行为保持不变；
+- 下一执行入口为 Batch 2，开始前应再次确认 M1 的 workspace、stage runner 与 generation request 契约仍与当前代码一致。
 
 ---
 
