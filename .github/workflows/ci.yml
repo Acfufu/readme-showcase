@@ -11,6 +11,7 @@ permissions:
 jobs:
   legacy-all:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -25,7 +26,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m py_compile skill/scripts/*.py scripts/*.py
-      - run: python -m unittest discover -s tests -v
+      - run: time python -m unittest discover -s tests -v
       - run: python skill/scripts/readme_pipeline.py validate-dataset --manifest dataset/retrieval/manifest.json
       - run: python skill/scripts/audit_readme.py README.md
       - run: python skill/scripts/audit_readme.py README_zh.md
