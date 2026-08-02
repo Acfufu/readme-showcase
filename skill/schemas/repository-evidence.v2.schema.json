@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Acfufu/readme-showcase/schemas/repository-evidence.v2.schema.json",
   "title": "Repository Evidence v2",
+  "$comment": "Draft 2020-12 validates structural shape. Python semantic validation is additionally required for cross-field rules identified by x-python-semantic-validation annotations.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "facts", "evidence_sha256"],
@@ -37,6 +38,12 @@
       ]
     },
     "source": {
+      "$comment": "JSON Schema Draft 2020-12 cannot compare sibling numeric values. validate_fact and validate_evidence_graph enforce the annotated closed-range ordering rule after structural validation.",
+      "x-python-semantic-validation": {
+        "code": "E_EVIDENCE_LOCATOR",
+        "rule": "line_start <= line_end",
+        "validator": "skill.scripts.readme_showcase.contracts.evidence.validate_fact"
+      },
       "oneOf": [
         {
           "type": "object",

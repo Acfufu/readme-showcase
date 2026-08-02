@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.metadata
 import json
 import tempfile
 import unittest
 from pathlib import Path
+
+from jsonschema import Draft202012Validator
 
 from skill.scripts.pipeline_contracts import ContractError
 from skill.scripts.readme_showcase.contracts.common import canonical_json_bytes, read_source_bytes
@@ -43,6 +46,12 @@ class EvidenceV2ContractTests(unittest.TestCase):
         with self.assertRaises(ContractError) as raised:
             function(*arguments, **keywords)  # type: ignore[operator]
         self.assertEqual(raised.exception.code, code)
+
+    def schema_validator(self) -> Draft202012Validator:
+        self.assertEqual(importlib.metadata.version("jsonschema"), "4.26.0")
+        schema = json.loads((ROOT / "skill" / "schemas" / "repository-evidence.v2.schema.json").read_text(encoding="utf-8"))
+        Draft202012Validator.check_schema(schema)
+        return Draft202012Validator(schema)
 
     def test_exact_hash_formulas_match_independent_stdlib(self) -> None:
         fact = self.fact()
@@ -219,7 +228,31 @@ class EvidenceV2ContractTests(unittest.TestCase):
         self.assertEqual(left, right)
         self.assertEqual(validate_evidence_graph(left), left)
 
-    def test_schema_and_named_invalid_fixtures_have_validator_parity(self) -> None:
+    def test_draft_2020_12_schema_executes_over_valid_and_structural_invalid_cases(self) -> None:
+        valid = json.loads((FIXTURES / "repository-evidence-v2.valid.json").read_text(encoding="utf-8"))
+        invalid = json.loads((FIXTURES / "repository-evidence-v2.invalid.json").read_text(encoding="utf-8"))
+        validator = self.schema_validator()
+        self.assertEqual(list(validator.iter_errors(valid)), [])
+        structurally_invalid = {"mixed-locator", "source-hash", "bad-json-pointer"}
+        for case in invalid["cases"]:
+            with self.subTest(case=case["name"]):
+                has_errors = bool(list(validator.iter_errors(case["payload"])))
+                self.assertEqual(has_errors, case["name"] in structurally_invalid)
+
+    def test_python_semantic_supplement_enforces_cross_field_line_order(self) -> None:
+        schema = json.loads((ROOT / "skill" / "schemas" / "repository-evidence.v2.schema.json").read_text(encoding="utf-8"))
+        annotation = schema["$defs"]["source"]["x-python-semantic-validation"]
+        self.assertEqual(annotation["code"], "E_EVIDENCE_LOCATOR")
+        self.assertEqual(annotation["rule"], "line_start <= line_end")
+        inverted = self.fact()
+        inverted["source"]["line_start"] = 3
+        self.assertEqual(list(self.schema_validator().iter_errors(EvidenceGraph([self.fact()]).to_dict())), [])
+        structurally_valid = EvidenceGraph([self.fact()]).to_dict()
+        structurally_valid["facts"][0] = inverted
+        self.assertEqual(list(self.schema_validator().iter_errors(structurally_valid)), [])
+        self.assert_code("E_EVIDENCE_LOCATOR", validate_fact, inverted)
+
+    def test_python_validator_accepts_valid_and_rejects_named_invalid_fixtures(self) -> None:
         valid = json.loads((FIXTURES / "repository-evidence-v2.valid.json").read_text(encoding="utf-8"))
         self.assertEqual(validate_evidence_graph(valid), valid)
         invalid = json.loads((FIXTURES / "repository-evidence-v2.invalid.json").read_text(encoding="utf-8"))
