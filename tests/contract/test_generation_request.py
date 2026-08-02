@@ -160,6 +160,10 @@ class GenerationRequestContractTests(unittest.TestCase):
             "see(/tmp/private.txt)",
             "see{/tmp/private.txt}",
             "path:/tmp/private.txt",
+            '"API_TOKEN"="fixture-secret"',
+            "'password':'fixture-secret'",
+            '{"private_key":"fixture-secret"}',
+            "RFC6901 pointer=/a~2b/c",
             "x=/Users/example/secret.txt",
             "python ../outside.py",
             "open(foo/../../outside.py)",
@@ -183,12 +187,21 @@ class GenerationRequestContractTests(unittest.TestCase):
         benign = (
             "see https://example.com/docs/setup?next=/quick-start",
             "source https://github.com/owner/repo/blob/main/README.md",
+            "RFC6901 pointer=/a~1b/c~0d",
+            "JSON Pointer=/scripts/~1test",
+            "NOT_API_TOKEN=label",
             "ordinary and/or prose",
             "version 1.2.3 and section A/B",
         )
         for value in benign:
             with self.subTest(value=value):
                 self.assertEqual(normalize_generation_text(value, "fixture"), value)
+                plan = self.plan()
+                plan["commands"] = [value]
+                self.request(plan=plan)
+                retrieval = self.retrieval()
+                retrieval["records"][0]["pattern"]["summary"] = value  # type: ignore[index]
+                self.request(retrieval_packet=retrieval)
         self.assertEqual(
             normalize_generation_text("/scripts/test", "fixture", allow_json_pointer=True),
             "/scripts/test",

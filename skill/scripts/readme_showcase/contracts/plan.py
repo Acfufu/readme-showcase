@@ -17,7 +17,8 @@ MAX_PLAN_TEXT_BYTES = 4096
 _URL = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>(){}\[\]\"']+")
 _JSON_POINTER = re.compile(r"/(?:[^~/\s]|~[01])*(?:/(?:[^~/\s]|~[01])*)*\Z")
 _LABELED_JSON_POINTER = re.compile(
-    r"(?i)\bjson\s+pointer\s*(?::|=)?\s*(?P<pointer>/[^\s<>(){}\[\],;]+)"
+    r"(?i)\b(?:json\s+pointer|rfc\s*6901\s+pointer)\s*(?::|=)?\s*"
+    r"(?P<pointer>/[^\s<>(){}\[\],;]+)"
 )
 _PARENT_TRAVERSAL = re.compile(r"(?<![A-Za-z0-9_.])\.\.(?:$|[/\\])")
 _POSIX_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_/])/(?![/\s])")
@@ -25,7 +26,9 @@ _HOME_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_])~/")
 _WINDOWS_DRIVE = re.compile(r"(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]")
 _WINDOWS_UNC = re.compile(r"(?:^|[^A-Za-z0-9_:])(?:\\\\|//)[^\\/\s]+[\\/][^\\/\s]+")
 _SECRET_ASSIGNMENT = re.compile(
-    r"(?i)(?:^|\s)(?:api[_-]?key|api[_-]?token|access[_-]?token|auth[_-]?token|password|private[_-]?key|secret)\s*[:=]"
+    r"(?i)(?<![A-Za-z0-9_])[\"']?"
+    r"(?:api[_-]?key|api[_-]?token|access[_-]?token|auth[_-]?token|password|private[_-]?key|secret)"
+    r"[\"']?\s*[:=]"
 )
 
 
