@@ -11,7 +11,7 @@ from pathlib import Path
 ContractError = importlib.import_module(
     "skill.scripts.pipeline_contracts" if __package__.startswith("skill.") else "pipeline_contracts"
 ).ContractError
-from .git import base_sha, tracked_paths
+from .git import base_sha, tracked_paths, tracked_state
 from .index import build_file_index
 
 
@@ -59,10 +59,11 @@ class ScanLimits:
 
 def tracked_file_index(root: Path) -> dict[str, object]:
     canonical_root = _root(root)
-    paths = tracked_paths(canonical_root)
-    if paths is None:
+    state = tracked_state(canonical_root)
+    if state is None:
         raise ContractError("E_SCAN_ROOT", "tracked file index requires a Git repository")
-    return {"base_sha": base_sha(canonical_root), "files": build_file_index(canonical_root, paths)}
+    base, paths = state
+    return {"base_sha": base, "files": build_file_index(canonical_root, paths)}
 
 
 def _root(root: Path) -> Path:

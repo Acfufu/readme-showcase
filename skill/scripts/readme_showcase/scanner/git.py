@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import os
 import re
@@ -17,6 +18,8 @@ read_regular_bytes = _CONTRACTS.read_regular_bytes
 
 _COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 _MAX_GIT_OUTPUT_BYTES = 1024 * 1024
+_MAX_INDEX_BYTES = 16 * 1024 * 1024
+_STATE_ATTEMPTS = 2
 
 
 def _fail(message: str) -> None:
@@ -94,19 +97,18 @@ def _git_output(root: Path, *arguments: str) -> bytes:
     return output
 
 
-def base_sha(root: Path) -> str | None:
-    if git_directory(root) is None:
-        return None
+def _base_sha(root: Path) -> str:
     value = _git_output(root, "rev-parse", "--verify", "HEAD").decode("ascii", "strict").strip()
     if not _COMMIT.fullmatch(value):
         _fail("Git HEAD is not a commit")
     return value
 
 
-def tracked_paths(root: Path) -> tuple[str, ...] | None:
-    if git_directory(root) is None:
-        return None
-    output = _git_output(root, "ls-files", "-z", "--cached")
+def base_sha(root: Path) -> str | None:
+    return None if git_directory(root) is None else _base_sha(root)
+
+
+def _paths(output: bytes) -> tuple[str, ...]:
     if output and not output.endswith(b"\0"):
         _fail("Git tracked-file output is not NUL terminated")
     paths: list[tuple[bytes, str]] = []
@@ -128,3 +130,37 @@ def tracked_paths(root: Path) -> tuple[str, ...] | None:
         paths.append((raw, value))
     paths.sort(key=lambda item: item[0])
     return tuple(value for _, value in paths)
+
+
+def tracked_paths(root: Path) -> tuple[str, ...] | None:
+    if git_directory(root) is None:
+        return None
+    return _paths(_git_output(root, "ls-files", "-z", "--cached"))
+
+
+def _index_snapshot(git_dir: Path) -> bytes:
+    try:
+        raw = read_regular_bytes(
+            git_dir / "index",
+            maximum=_MAX_INDEX_BYTES,
+            path_code="E_SCAN_IO",
+            size_code="E_SCAN_IO",
+        )
+    except ContractError as exc:
+        raise ContractError("E_SCAN_IO", "Git index must be a bounded regular file") from exc
+    return hashlib.sha256(raw).digest()
+
+
+def tracked_state(root: Path) -> tuple[str, tuple[str, ...]] | None:
+    git_dir = git_directory(root)
+    if git_dir is None:
+        return None
+    for _ in range(_STATE_ATTEMPTS):
+        base_before = _base_sha(root)
+        index_before = _index_snapshot(git_dir)
+        paths = _paths(_git_output(root, "ls-files", "-z", "--cached"))
+        index_after = _index_snapshot(git_dir)
+        base_after = _base_sha(root)
+        if base_before == base_after and index_before == index_after:
+            return base_before, paths
+    raise ContractError("E_SCAN_RACE", "Git HEAD or index changed during tracked-file scan")

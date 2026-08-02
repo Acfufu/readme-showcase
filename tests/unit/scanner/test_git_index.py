@@ -6,8 +6,10 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from skill.scripts.pipeline_contracts import ContractError
+from skill.scripts.readme_showcase.scanner import git as scanner_git
 from skill.scripts.readme_showcase.scanner.service import tracked_file_index
 
 
@@ -88,6 +90,52 @@ class TrackedFileIndexTests(unittest.TestCase):
             tracked_file_index(root)
 
             self.assertFalse(sentinel.exists())
+
+    def test_commit_between_git_observations_never_returns_mixed_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _ = self.make_repository(Path(temporary))
+            original = scanner_git._git_output
+            mutated = False
+
+            def mutate_after_paths(target: Path, *arguments: str) -> bytes:
+                nonlocal mutated
+                output = original(target, *arguments)
+                if arguments == ("ls-files", "-z", "--cached") and not mutated:
+                    mutated = True
+                    (root / "new.py").write_text("print('new')\n", encoding="utf-8")
+                    self.git(root, "add", "new.py")
+                    self.git(root, "commit", "-qm", "race")
+                return output
+
+            with mock.patch.object(scanner_git, "_git_output", side_effect=mutate_after_paths):
+                result = tracked_file_index(root)
+
+            self.assertEqual(result["base_sha"], self.git(root, "rev-parse", "HEAD"))
+            self.assertIn("new.py", {entry["path"] for entry in result["files"]})
+
+    def test_index_only_mutation_forces_a_fresh_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root, expected_sha = self.make_repository(Path(temporary))
+            original = scanner_git._git_output
+            path_observations = 0
+
+            def mutate_index(target: Path, *arguments: str) -> bytes:
+                nonlocal path_observations
+                output = original(target, *arguments)
+                if arguments == ("ls-files", "-z", "--cached"):
+                    path_observations += 1
+                    if path_observations == 1:
+                        (root / "README.md").write_text("# staged mutation\n", encoding="utf-8")
+                        self.git(root, "add", "README.md")
+                return output
+
+            with mock.patch.object(scanner_git, "_git_output", side_effect=mutate_index):
+                result = tracked_file_index(root)
+
+            self.assertEqual(result["base_sha"], expected_sha)
+            self.assertGreaterEqual(path_observations, 2)
+            readme = next(entry for entry in result["files"] if entry["path"] == "README.md")
+            self.assertEqual(readme["bytes"], len("# staged mutation\n"))
 
     def test_tracked_symlink_and_fifo_fail_without_reading(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
