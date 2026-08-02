@@ -23,7 +23,7 @@ class SkillWorkflowTests(unittest.TestCase):
             "validate-dataset",
             " scan ",
             " retrieve ",
-            "render_glyphic.mjs",
+            "render_elk.mjs",
             "validate-bundle",
             " evaluate ",
             "build-pr-bundle",
@@ -32,7 +32,7 @@ class SkillWorkflowTests(unittest.TestCase):
         positions = [flat.index(command) for command in ordered_commands]
         self.assertEqual(positions, sorted(positions))
         self.assertIn("| `static` |", text)
-        self.assertIn("| `glyphic` |", text)
+        self.assertIn("| `elk` |", text)
         self.assertIn("raw SVG", flat)
         self.assertIn("last-known-good", flat)
         self.assertIn("Retrieval patterns are not target facts", flat)

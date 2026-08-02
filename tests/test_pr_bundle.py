@@ -59,10 +59,10 @@ class PrBundleTests(unittest.TestCase):
         root: Path,
         base_sha: str,
         *,
-        glyphic: bool = False,
+        elk: bool = False,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         helper = claim_coverage.ClaimCoverageTests(methodName="runTest")
-        bundle = helper.monolingual_bundle(root, glyphic=glyphic)
+        bundle = helper.monolingual_bundle(root, elk=elk)
         bundle["target"] = {
             "repository": "owner/target",
             "base_sha": base_sha,
@@ -115,7 +115,7 @@ class PrBundleTests(unittest.TestCase):
         bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(
             manifest
         )
-        if not glyphic:
+        if not elk:
             source = root / bundle["candidate"]["readme"]["path"]
             destination = root / "README.md"
             source.rename(destination)
@@ -175,26 +175,26 @@ class PrBundleTests(unittest.TestCase):
                 index_before,
             )
 
-            glyphic_root = base / "glyphic-run"
-            glyphic_root.mkdir()
-            glyphic_bundle, glyphic_evaluation = self.run_bundle(
-                glyphic_root,
+            elk_root = base / "elk-run"
+            elk_root.mkdir()
+            elk_bundle, elk_evaluation = self.run_bundle(
+                elk_root,
                 base_sha,
-                glyphic=True,
+                elk=True,
             )
-            glyphic_pr = build_pr_bundle(
-                glyphic_bundle,
-                glyphic_evaluation,
-                glyphic_root,
+            elk_pr = build_pr_bundle(
+                elk_bundle,
+                elk_evaluation,
+                elk_root,
                 target,
             )
             self.assertEqual(
-                [item["path"] for item in glyphic_pr["candidate_files"]],
+                [item["path"] for item in elk_pr["candidate_files"]],
                 ["assets/readme/diagram.svg"],
             )
             self.assertEqual(
-                [item["path"] for item in glyphic_pr["semantic_sources"]],
-                ["assets/readme/diagram.glyphic.json"],
+                [item["path"] for item in elk_pr["semantic_sources"]],
+                ["assets/readme/diagram.diagram.json"],
             )
 
     def test_base_evaluation_dirty_and_excluded_paths_fail_without_index_change(self) -> None:
@@ -229,7 +229,7 @@ class PrBundleTests(unittest.TestCase):
             excluded_bundle, _ = self.run_bundle(
                 excluded_root,
                 base_sha,
-                glyphic=True,
+                elk=True,
             )
             source = excluded_root / "assets/readme/diagram.svg"
             excluded = excluded_root / ".omo/diagram.svg"

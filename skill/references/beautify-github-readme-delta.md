@@ -22,7 +22,7 @@ editorial rules only.
 | `showcase-contribution.md` | excluded | upstream showcase workflow and remote PR are outside product scope |
 
 Mapped coverage: `7/8 = 87.5%`. The excluded showcase pack is not replaced by
-Glyphic and does not grant remote-write authority.
+ELK and does not grant remote-write authority.
 
 ## Rule decisions
 
@@ -39,8 +39,8 @@ Glyphic and does not grant remote-write authority.
 | Automatic ImageGen | excluded | no benchmark, audit, or CI generation |
 | Showcase assets and examples | excluded | no upstream README, image, hero, badge, or case-study asset copied |
 
-Issue #9 proposed Glyphic, but merged PR #11 added generic optional-engine
-guidance only. This project does not claim upstream Glyphic integration.
+Issue #9 proposed ELK, but merged PR #11 added generic optional-engine
+guidance only. This project does not claim upstream ELK integration.
 
 ## Recomputed counts
 

@@ -68,9 +68,6 @@ def expected_files() -> dict[str, bytes]:
                 and path.name != ".DS_Store"
             ):
                 result[(prefix / path.relative_to(source)).as_posix()] = path.read_bytes()
-    result["scripts/build_glyphic_engine_lock.py"] = (
-        REPO_ROOT / "scripts" / "build_glyphic_engine_lock.py"
-    ).read_bytes()
     return result
 
 
@@ -94,7 +91,7 @@ class InstallerTests(unittest.TestCase):
             check=False,
         )
 
-    def test_fresh_repeat_check_and_no_engine_payload(self) -> None:
+    def test_fresh_repeat_check_and_vendored_engine_payload(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             codex_home = Path(temporary) / "codex"
             target = codex_home / "skills" / "readme-showcase"
@@ -114,7 +111,10 @@ class InstallerTests(unittest.TestCase):
             for relative, content in expected.items():
                 self.assertEqual((target / relative).read_bytes(), content)
             self.assertFalse(any(path.name == "node_modules" for path in target.rglob("*")))
-            self.assertFalse(any(path.name == "package.json" for path in target.rglob("*")))
+            self.assertEqual(
+                hashlib.sha256((target / "vendor/elkjs/lib/elk.bundled.js").read_bytes()).hexdigest(),
+                "b0745abd7f23cd91690a1587e377edbe19fd7233c783300290936720546216d4",
+            )
             self.assertFalse(
                 any(
                     path.name

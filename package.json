@@ -11,11 +11,17 @@
   "bin": {
     "readme-showcase": "scripts/install_skill.py"
   },
+  "scripts": {
+    "test": "python3 -m unittest discover -s tests -v"
+  },
   "files": [
     "README_zh.md",
+    ".nvmrc",
     "dataset",
     "skill",
-    "scripts/build_glyphic_engine_lock.py",
     "scripts/install_skill.py"
-  ]
+  ],
+  "devDependencies": {
+    "elkjs": "0.9.3"
+  }
 }

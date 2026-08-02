@@ -1,4 +1,4 @@
 interface:
   display_name: "README Showcase"
   short_description: "Run an evidence-to-PR README pipeline"
-  default_prompt: "Use $readme-showcase with one README Agent to scan repository evidence, retrieve licensed abstract patterns, generate and evaluate a project-native README, use verified Glyphic only for justified body structure, and stop at a local PR bundle unless I separately approve an exact GitHub write."
+  default_prompt: "Use $readme-showcase with one README Agent to scan repository evidence, retrieve licensed abstract patterns, generate and evaluate a project-native README, use verified ELK only for justified body structure, and stop at a local PR bundle unless I separately approve an exact GitHub write."

@@ -23,21 +23,15 @@ class CiContractTests(unittest.TestCase):
         self.assertIn("audit_readme.py README.md", self.workflow)
         self.assertIn("audit_readme.py README_zh.md", self.workflow)
 
-    def test_glyphic_lanes_are_pinned_read_only_and_network_isolated(self) -> None:
+    def test_elk_lanes_are_pinned_read_only_and_network_isolated(self) -> None:
         self.assertIn("permissions:\n  contents: read", self.workflow)
         self.assertNotIn("contents: write", self.workflow)
         self.assertNotIn("pull-requests: write", self.workflow)
         self.assertIn('node-version: "22.22.3"', self.workflow)
-        self.assertIn("@glyphicjs/core@1.3.1", self.workflow)
-        self.assertIn("@glyphicjs/schema@1.1.1", self.workflow)
-        self.assertIn(
-            "sha512-+wWBhFXOkgS6ZtGk4cHPooIueXt01g3meuHHcZnapBtgPW8IXy8nDFPO1lZX"
-            "eETVK+NZ6BeCu+blmD3QGr5hDw==",
-            self.workflow,
-        )
-        self.assertIn("--network none", self.workflow)
-        self.assertIn("--read-only", self.workflow)
-        self.assertIn("--cap-drop ALL", self.workflow)
+        self.assertIn("npm ci --ignore-scripts", self.workflow)
+        self.assertIn("node_modules/elkjs/lib/elk.bundled.js", self.workflow)
+        self.assertIn("sudo unshare --net", self.workflow)
+        self.assertNotIn("docker ", self.workflow.lower())
         self.assertIn("architecture flowchart c4", self.workflow)
         for mutable in (
             "actions/checkout@v4",
@@ -52,19 +46,17 @@ class CiContractTests(unittest.TestCase):
             "a26af69be951a213d495a4c3e4e4022e16d87065",
             "49933ea5288caeca8642d1e84afbd3f7d6820020",
             "ea165f8d65b6e75b540449e92b4886f43607fa02",
-            "sha256:16d364eebf6b62da439dc993d9b80940c78b0ca38438452f011ab9a25c752644",
-            "57e9a8686f850adda3bd2bc639b6dfbfc1e119d40b92d9517ca472881d873e6e",
+            "b0745abd7f23cd91690a1587e377edbe19fd7233c783300290936720546216d4",
         ):
             self.assertIn(pinned, self.workflow)
         self.assertGreaterEqual(
             self.workflow.count("persist-credentials: false"),
-            4,
+            5,
         )
-        self.assertIn("--expected-tree-sha256", self.workflow)
         self.assertIn("expected_files =", self.workflow)
         self.assertIn("if-no-files-found: error", self.workflow)
 
-    def test_motion_and_npm_package_are_isolated_without_dependency_payload(self) -> None:
+    def test_motion_and_npm_package_include_only_pinned_development_source(self) -> None:
         self.assertIn("Pillow==11.3.0", self.workflow)
         self.assertIn("render_motion_gif.py", self.workflow)
         self.assertIn("npm-package:", self.workflow)
@@ -72,18 +64,12 @@ class CiContractTests(unittest.TestCase):
         package = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8"))
         self.assertEqual(package["bin"], {"readme-showcase": "scripts/install_skill.py"})
         self.assertEqual(package["os"], ["darwin", "linux"])
-        for field in (
-            "dependencies",
-            "devDependencies",
-            "optionalDependencies",
-            "peerDependencies",
-        ):
+        self.assertEqual(package["devDependencies"], {"elkjs": "0.9.3"})
+        for field in ("dependencies", "optionalDependencies", "peerDependencies"):
             self.assertNotIn(field, package)
-        for path in (
-            REPO_ROOT / "package-lock.json",
-            REPO_ROOT / "node_modules",
-        ):
-            self.assertFalse(path.exists(), path)
+        lock = json.loads((REPO_ROOT / "package-lock.json").read_text(encoding="utf-8"))
+        self.assertEqual(lock["packages"]["node_modules/elkjs"]["version"], "0.9.3")
+        self.assertTrue((REPO_ROOT / "skill/vendor/elkjs/LICENSE.md").is_file())
 
 
 if __name__ == "__main__":

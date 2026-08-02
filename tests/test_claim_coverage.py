@@ -110,20 +110,20 @@ class ClaimCoverageTests(unittest.TestCase):
         self,
         root: Path,
         *,
-        glyphic: bool = False,
+        elk: bool = False,
     ) -> dict[str, Any]:
         helper = self.helper()
         bundle, _ = helper.make_bundle(
             root,
-            "asset-only" if glyphic else "readme",
-            glyphic=glyphic,
+            "asset-only" if elk else "readme",
+            elk=elk,
         )
         markdown_claims: list[dict[str, object]] = []
         diagram_claims: list[dict[str, object]] = []
         facts: dict[str, tuple[str, str]] = {}
-        if glyphic:
+        if elk:
             semantic = json.loads(
-                (root / "assets/readme/diagram.glyphic.json").read_text(encoding="utf-8")
+                (root / "assets/readme/diagram.diagram.json").read_text(encoding="utf-8")
             )
             labels = [
                 (semantic["accessibility_claim_id"], semantic["accessibility_title"]),
@@ -226,14 +226,14 @@ class ClaimCoverageTests(unittest.TestCase):
             validate_generated_bundle(bundle, root)
         self.assertEqual(raised.exception.code, code)
 
-    def test_complete_monolingual_markdown_and_glyphic_labels_pass(self) -> None:
+    def test_complete_monolingual_markdown_and_elk_labels_pass(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
-            for name, glyphic in (("markdown", False), ("glyphic", True)):
+            for name, elk in (("markdown", False), ("elk", True)):
                 with self.subTest(name=name):
                     root = base / name
                     root.mkdir()
-                    bundle = self.monolingual_bundle(root, glyphic=glyphic)
+                    bundle = self.monolingual_bundle(root, elk=elk)
                     self.assertEqual(validate_generated_bundle(bundle, root)["status"], "pass")
 
     def test_valid_bilingual_pairs_pass(self) -> None:
@@ -299,7 +299,7 @@ class ClaimCoverageTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            bundle = self.monolingual_bundle(root, glyphic=True)
+            bundle = self.monolingual_bundle(root, elk=True)
             claims_path = root / bundle["artifacts"]["claim_map"]["path"]
             claims = json.loads(claims_path.read_text(encoding="utf-8"))
             claims["diagram_labels"].pop()

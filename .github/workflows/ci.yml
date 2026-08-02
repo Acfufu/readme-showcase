@@ -42,10 +42,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22.22.3"
+          cache: npm
+      - run: npm ci --ignore-scripts
       - run: python -m unittest tests.test_installer.InstallerTests.test_packed_npm_binary_installs_and_checks_skill -v
       - run: npm pack --dry-run
 
-  fake-glyphic:
+  elk-unit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -57,8 +59,13 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22.22.3"
-      - run: node --check skill/scripts/render_glyphic.mjs
-      - run: python -m unittest tests.test_glyphic_adapter tests.test_pipeline_e2e -v
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: cmp node_modules/elkjs/lib/elk.bundled.js skill/vendor/elkjs/lib/elk.bundled.js
+      - run: cmp node_modules/elkjs/package.json skill/vendor/elkjs/package.json
+      - run: cmp node_modules/elkjs/LICENSE.md skill/vendor/elkjs/LICENSE.md
+      - run: node --check skill/scripts/render_elk.mjs
+      - run: python -m unittest tests.test_elk_adapter tests.test_pipeline_e2e -v
 
   motion:
     runs-on: ubuntu-latest
@@ -78,11 +85,8 @@ jobs:
           --spec assets/readme/hero-motion.json
       - run: test -s "${RUNNER_TEMP}/hero.gif"
 
-  real-glyphic:
+  real-elk:
     runs-on: ubuntu-latest
-    env:
-      NODE_IMAGE: node:22.22.3-bookworm-slim@sha256:16d364eebf6b62da439dc993d9b80940c78b0ca38438452f011ab9a25c752644
-      EXPECTED_TREE_SHA256: 57e9a8686f850adda3bd2bc639b6dfbfc1e119d40b92d9517ca472881d873e6e
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -93,79 +97,38 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22.22.3"
-      - name: Provision pinned packages and immutable runtime
+          cache: npm
+      - name: Verify vendored ELK and render without network
         shell: bash
         run: |
           set -euo pipefail
-          ENGINE_ROOT="${RUNNER_TEMP}/glyphic-engine"
-          EVIDENCE_ROOT="${RUNNER_TEMP}/glyphic-evidence"
-          CORE_SRI="sha512-+wWBhFXOkgS6ZtGk4cHPooIueXt01g3meuHHcZnapBtgPW8IXy8nDFPO1lZXeETVK+NZ6BeCu+blmD3QGr5hDw=="
-          mkdir -p "${ENGINE_ROOT}" "${EVIDENCE_ROOT}"
-          test "$(npm view @glyphicjs/core@1.3.1 dist.integrity)" = "${CORE_SRI}"
-          docker pull "${NODE_IMAGE}"
-          IMAGE_ID="$(docker image inspect "${NODE_IMAGE}" --format '{{.Id}}')"
-          NODE_VERSION="$(docker run --rm --network none "${IMAGE_ID}" node -p 'process.versions.node')"
-          test "${NODE_VERSION}" = "22.22.3"
-          docker run --rm \
-            -v "${ENGINE_ROOT}:/engine:rw" \
-            "${IMAGE_ID}" \
-            npm install \
-              --prefix /engine \
-              --ignore-scripts \
-              --no-save \
-              --no-package-lock \
-              --omit=dev \
-              @glyphicjs/core@1.3.1 \
-              @glyphicjs/schema@1.1.1 \
-              @fortawesome/fontawesome-common-types@7.2.0 \
-              @fortawesome/fontawesome-svg-core@7.2.0 \
-              @fortawesome/free-brands-svg-icons@7.2.0 \
-              @fortawesome/free-solid-svg-icons@7.2.0 \
-              @resvg/resvg-js@2.6.2 \
-              d3-array@2.12.1 \
-              d3-hierarchy@3.1.2 \
-              d3-path@3.1.0 \
-              d3-sankey@0.12.3 \
-              d3-shape@3.2.0 \
-              elkjs@0.9.3 \
-              internmap@1.0.1 \
-              zod@3.25.76
-          python scripts/build_glyphic_engine_lock.py \
-            --install-root "${ENGINE_ROOT}" \
-            --npm-sri "${CORE_SRI}" \
-            --node-version "${NODE_VERSION}" \
-            --expected-tree-sha256 "${EXPECTED_TREE_SHA256}" \
-            --output "${ENGINE_ROOT}/glyphic-engine-lock.json"
+          npm ci --ignore-scripts
+          cmp node_modules/elkjs/lib/elk.bundled.js skill/vendor/elkjs/lib/elk.bundled.js
+          cmp node_modules/elkjs/package.json skill/vendor/elkjs/package.json
+          cmp node_modules/elkjs/LICENSE.md skill/vendor/elkjs/LICENSE.md
+          test "$(sha256sum skill/vendor/elkjs/lib/elk.bundled.js | cut -d' ' -f1)" = "b0745abd7f23cd91690a1587e377edbe19fd7233c783300290936720546216d4"
+          EVIDENCE_ROOT="${RUNNER_TEMP}/elk-evidence"
+          NODE_BIN="$(command -v node)"
+          RUNNER_UID="$(id -u)"
+          RUNNER_GID="$(id -g)"
+          mkdir -p "${EVIDENCE_ROOT}"
+          printf 'node_version=%s\nmodule_sha256=%s\nnetwork=unshare-net\n' \
+            "$(node -p 'process.versions.node')" \
+            "$(sha256sum skill/vendor/elkjs/lib/elk.bundled.js | cut -d' ' -f1)" \
+            > "${EVIDENCE_ROOT}/runtime.txt"
           for kind in architecture flowchart c4; do
             KIND_ROOT="${EVIDENCE_ROOT}/${kind}"
             mkdir "${KIND_ROOT}"
-            cp "tests/fixtures/glyphic/${kind}.json" \
-              "${KIND_ROOT}/${kind}.glyphic.json"
-            docker run --rm \
-              --network none \
-              --read-only \
-              --cap-drop ALL \
-              --security-opt no-new-privileges \
-              --tmpfs /tmp:rw,noexec,nosuid,size=64m \
-              -v "${GITHUB_WORKSPACE}:/repo:ro" \
-              -v "${ENGINE_ROOT}:/engine:ro" \
-              -v "${KIND_ROOT}:/evidence:rw" \
-              "${IMAGE_ID}" \
-              node /repo/skill/scripts/render_glyphic.mjs \
-                --module-root /engine/node_modules/@glyphicjs/core \
-                --engine-lock /engine/glyphic-engine-lock.json \
-                --input "/evidence/${kind}.glyphic.json" \
-                --output "/evidence/${kind}.svg" \
-                --metadata "/evidence/${kind}.engine.json"
+            cp "tests/fixtures/elk/${kind}.json" "${KIND_ROOT}/${kind}.diagram.json"
+            sudo unshare --net --setuid "${RUNNER_UID}" --setgid "${RUNNER_GID}" -- \
+              "${NODE_BIN}" "${GITHUB_WORKSPACE}/skill/scripts/render_elk.mjs" \
+                --input "${KIND_ROOT}/${kind}.diagram.json" \
+                --output "${KIND_ROOT}/${kind}.svg" \
+                --metadata "${KIND_ROOT}/${kind}.engine.json"
           done
-          cp "${ENGINE_ROOT}/glyphic-engine-lock.json" "${EVIDENCE_ROOT}/"
-          printf 'image=%s\nimage_id=%s\nnode_version=%s\n' \
-            "${NODE_IMAGE}" "${IMAGE_ID}" "${NODE_VERSION}" \
-            > "${EVIDENCE_ROOT}/runtime.txt"
           PYTHONDONTWRITEBYTECODE=1 python - "${EVIDENCE_ROOT}" "${GITHUB_WORKSPACE}" <<'PY'
           import hashlib
           import json
-          import os
           import sys
           from pathlib import Path
 
@@ -174,77 +137,51 @@ jobs:
           sys.path.insert(0, str(repository))
           from skill.scripts.audit_readme import audit_svg_bytes
 
+          digest = lambda raw: hashlib.sha256(raw).hexdigest()
           kinds = ("architecture", "flowchart", "c4")
           expected_files = {
-              "glyphic-engine-lock.json",
               "runtime.txt",
               *{
                   f"{kind}/{kind}.{suffix}"
                   for kind in kinds
-                  for suffix in ("glyphic.json", "svg", "engine.json")
+                  for suffix in ("diagram.json", "svg", "engine.json")
               },
           }
-          observed = set()
-          total = 0
-          for path in evidence_root.rglob("*"):
-              if path.is_symlink():
-                  raise SystemExit(f"symlink evidence rejected: {path}")
-              if path.is_file():
-                  observed.add(path.relative_to(evidence_root).as_posix())
-                  total += path.stat().st_size
-              elif not path.is_dir():
-                  raise SystemExit(f"special evidence rejected: {path}")
-          if observed != expected_files or total > 10 * 1024 * 1024:
-              raise SystemExit("evidence file allowlist or byte bound failed")
-
-          lock_raw = (evidence_root / "glyphic-engine-lock.json").read_bytes()
-          lock = json.loads(lock_raw)
-          if (
-              lock["tree_sha256"] != os.environ["EXPECTED_TREE_SHA256"]
-              or lock["npm_sri"]
-              != "sha512-+wWBhFXOkgS6ZtGk4cHPooIueXt01g3meuHHcZnapBtgPW8IXy8nDFPO1lZXeETVK+NZ6BeCu+blmD3QGr5hDw=="
-          ):
-              raise SystemExit("engine lock differs from trusted CI pins")
-
-          digest = lambda raw: hashlib.sha256(raw).hexdigest()
+          observed = {
+              path.relative_to(evidence_root).as_posix()
+              for path in evidence_root.rglob("*")
+              if path.is_file()
+          }
+          if observed != expected_files:
+              raise SystemExit("ELK evidence file allowlist failed")
           for kind in kinds:
               directory = evidence_root / kind
-              input_raw = (directory / f"{kind}.glyphic.json").read_bytes()
-              expected_input = (
-                  repository / "tests/fixtures/glyphic" / f"{kind}.json"
-              ).read_bytes()
+              input_raw = (directory / f"{kind}.diagram.json").read_bytes()
+              expected_input = (repository / "tests/fixtures/elk" / f"{kind}.json").read_bytes()
               svg_raw = (directory / f"{kind}.svg").read_bytes()
-              metadata = json.loads(
-                  (directory / f"{kind}.engine.json").read_bytes()
-              )
+              metadata = json.loads((directory / f"{kind}.engine.json").read_bytes())
               semantic = json.loads(input_raw)
               labels = [
                   *[item["label"] for item in semantic["groups"]],
                   *[item["label"] for item in semantic["nodes"]],
-                  *[
-                      item["label"]
-                      for item in semantic["edges"]
-                      if item["label"] is not None
-                  ],
+                  *[item["label"] for item in semantic["edges"] if item["label"] is not None],
               ]
               issues = audit_svg_bytes(
                   svg_raw,
                   expected_title=semantic["accessibility_title"],
                   expected_labels=labels,
               )
-              if input_raw != expected_input or issues:
-                  raise SystemExit(f"{kind} semantic or SVG verification failed")
               output_sha256 = digest(svg_raw)
+              if input_raw != expected_input or issues:
+                  raise SystemExit(f"{kind} semantic or SVG verification failed: {issues}")
               if (
-                  metadata["input_sha256"] != digest(input_raw)
-                  or metadata["output_sha256"] != output_sha256
-                  or metadata["run_hashes"]
-                  != [output_sha256, output_sha256]
-                  or metadata["lock_sha256"] != digest(lock_raw)
-                  or metadata["tree_sha256"] != lock["tree_sha256"]
+                  metadata["package_name"] != "elkjs"
+                  or metadata["package_version"] != "0.9.3"
+                  or metadata["license_spdx"] != "EPL-2.0"
                   or metadata["node_version"] != "22.22.3"
-                  or metadata["source_commit"]
-                  != "ed79edb1624e2de78041611971a963efaea5e080"
+                  or metadata["input_sha256"] != digest(input_raw)
+                  or metadata["output_sha256"] != output_sha256
+                  or metadata["run_hashes"] != [output_sha256, output_sha256]
                   or metadata["validation"] != "pass"
               ):
                   raise SystemExit(f"{kind} metadata verification failed")
@@ -253,17 +190,6 @@ jobs:
           test -z "$(git status --porcelain)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: glyphic-real-engine-evidence
+          name: elk-real-engine-evidence
           if-no-files-found: error
-          path: |
-            ${{ runner.temp }}/glyphic-evidence/glyphic-engine-lock.json
-            ${{ runner.temp }}/glyphic-evidence/runtime.txt
-            ${{ runner.temp }}/glyphic-evidence/architecture/architecture.glyphic.json
-            ${{ runner.temp }}/glyphic-evidence/architecture/architecture.svg
-            ${{ runner.temp }}/glyphic-evidence/architecture/architecture.engine.json
-            ${{ runner.temp }}/glyphic-evidence/flowchart/flowchart.glyphic.json
-            ${{ runner.temp }}/glyphic-evidence/flowchart/flowchart.svg
-            ${{ runner.temp }}/glyphic-evidence/flowchart/flowchart.engine.json
-            ${{ runner.temp }}/glyphic-evidence/c4/c4.glyphic.json
-            ${{ runner.temp }}/glyphic-evidence/c4/c4.svg
-            ${{ runner.temp }}/glyphic-evidence/c4/c4.engine.json
+          path: ${{ runner.temp }}/elk-evidence

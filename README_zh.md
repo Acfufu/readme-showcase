@@ -25,8 +25,8 @@
 
 ![仓库事实与有许可证的编辑模式经过单一 README Agent、声明与资产门禁，形成带指纹的本地交付](assets/readme/workflow-zh.svg)
 
-_Glyphic 生成的原始 SVG。Skill 仍负责全部声明、标签、调色板、说明文字、
-验收决定和发布边界。_
+_ELK 负责图布局，项目代码负责序列化并验证 SVG。Skill 仍负责全部声明、
+标签、调色板、说明文字与发布边界。_
 
 | 你的目标 | Skill 的动作 | 你得到的结果 |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ $readme-showcase 围绕已验证行为和可运行的快速开始，重新设计
 | 仅资产 | 指定 Hero、图表、徽章或成套资产 | 不改变 README 内容的视觉工作 |
 | 仅审计 | 只输出发现与证据 | 真实性、安全、多语言和发布准备检查 |
 
-动效与 Hybrid 栅格合成需要明确选择，不是独立模式。Glyphic 是可选能力，
+动效与 Hybrid 栅格合成需要明确选择，不是独立模式。ELK 是可选能力，
 只用于关系密集的 `architecture`、`flowchart` 或 `c4` 正文图。
 
 ## 本地流水线如何工作
@@ -92,19 +92,19 @@ import-benchmark  build-pr-bundle  check-publish-gate
 ```
 
 <details>
-<summary><strong>可选 Glyphic 与动效边界</strong></summary>
+<summary><strong>可选 ELK 与动效边界</strong></summary>
 
 <br>
 
-- Glyphic 使用调用方提供、哈希锁定的 Node 22 依赖树，其中固定
-  `@glyphicjs/core@1.3.1`。
+- Skill 内置经过哈希验证的 `elkjs@0.9.3` bundle；ELK 路线要求精确的
+  Node `22.22.3`。
 - Adapter 接收严格语义 JSON，在两个全新进程中渲染，只接受字节完全相同、
   独立且 GitHub 安全的 SVG。
-- Glyphic 原始 SVG 不做后处理。任何不一致都会选择项目自有静态 fallback，
+- 已验收 SVG 不做后处理。任何不一致都会选择项目自有静态 fallback，
   保持最近一次可靠资产不变。
 - GIF 动效从已批准的静态 SVG 生成；可编辑 SVG 与 motion JSON 和派生 GIF 共存。
-- Glyphic 包、engine lock、`node_modules`、凭据和生成的 benchmark 答案不会进入
-  Skill 安装树。
+- 精确的 ELK bundle、包元数据与 EPL-2.0 许可证随 Skill 安装；不会安装
+  `node_modules`，也不依赖 Docker、凭据或运行时下载。
 
 </details>
 
@@ -131,9 +131,9 @@ npm pack --dry-run
 ```
 
 生成动效还需要 Pillow、`ffmpeg`，以及 `rsvg-convert` 或 macOS `sips`。
-经过验证的 Glyphic 渲染需要 Node 22 与
-[`skill/references/glyphic-structure.md`](skill/references/glyphic-structure.md)
-记录的精确外部 engine lock。
+经过验证的 ELK 渲染使用 Node `22.22.3` 与
+[`skill/references/elk-structure.md`](skill/references/elk-structure.md)
+记录的内置文件。
 
 ## 仓库地图
 
@@ -141,8 +141,9 @@ npm pack --dry-run
 skill/
 ├── SKILL.md                 # 单 Agent 工作流与范围门禁
 ├── agents/openai.yaml       # Codex discovery 元数据
-├── references/              # 叙事、视觉、动效与 Glyphic 规则
-└── scripts/                 # 扫描、检索、评估、审计与渲染器
+├── references/              # 叙事、视觉、动效与 ELK 规则
+├── scripts/                 # 扫描、检索、评估、审计与渲染器
+└── vendor/elkjs/            # 固定 ELK bundle、元数据、EPL-2.0 许可证
 dataset/retrieval/manifest.json
 scripts/install_skill.py     # 原子安装与升级回滚
 package.json                 # npx 包入口
@@ -157,4 +158,5 @@ tests/                       # 确定性契约与失败场景
 [`oil-oil/beautify-github-readme`](https://github.com/oil-oil/beautify-github-readme)
 的 MIT 许可规则；保留的声明位于
 [`skill/references/motion-production.md`](skill/references/motion-production.md#upstream-license)。
-可选 Glyphic 仍是 `FSL-1.1-ALv2` 外部组件，不随本仓库分发。
+内置的 `elkjs@0.9.3` 文件继续适用 `EPL-2.0`；未修改的许可证位于
+[`skill/vendor/elkjs/LICENSE.md`](skill/vendor/elkjs/LICENSE.md)。

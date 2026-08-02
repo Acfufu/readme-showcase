@@ -27,8 +27,8 @@ fingerprinted handoff.
 
 ![Repository facts and licensed editorial patterns pass through one README Agent, claim and asset gates, and a fingerprinted local handoff](assets/readme/workflow.svg)
 
-_Glyphic-generated raw SVG. The Skill owns every claim, label, palette choice,
-caption, acceptance decision, and publish boundary._
+_ELK lays out the graph; project code serializes and verifies the SVG. The Skill
+owns every claim, label, palette choice, caption, and publish boundary._
 
 | What you need | What the Skill does | What you receive |
 | --- | --- | --- |
@@ -77,7 +77,7 @@ Skill asks whether the job is a whole README, assets only, or an audit.
 | Audit-only | Findings and evidence only | Truth, safety, localization, and publish-readiness review |
 
 Motion and hybrid raster composition are explicit opt-ins, not separate modes.
-Glyphic is optional and limited to relationship-heavy `architecture`,
+ELK is optional and limited to relationship-heavy `architecture`,
 `flowchart`, or `c4` body diagrams.
 
 ## How the local pipeline works
@@ -97,20 +97,20 @@ import-benchmark  build-pr-bundle  check-publish-gate
 ```
 
 <details>
-<summary><strong>Optional Glyphic and motion boundaries</strong></summary>
+<summary><strong>Optional ELK and motion boundaries</strong></summary>
 
 <br>
 
-- Glyphic runs from a caller-supplied, hash-locked Node 22 tree with
-  `@glyphicjs/core@1.3.1`.
+- The Skill ships a hash-verified `elkjs@0.9.3` bundle and requires exact Node
+  `22.22.3` for the ELK route.
 - The adapter accepts strict semantic JSON, renders twice in fresh processes,
   and accepts only byte-identical, standalone, GitHub-safe SVG.
-- Raw Glyphic SVG is never post-edited. Any mismatch selects the project-owned
+- Accepted SVG is never post-edited. Any mismatch selects the project-owned
   static fallback and leaves the last-known-good asset unchanged.
 - GIF motion starts from an approved static SVG. The editable SVG and motion
   JSON remain beside the derived GIF.
-- Glyphic packages, engine locks, `node_modules`, credentials, and generated
-  benchmark answers are never installed into the Skill tree.
+- The exact ELK bundle, package metadata, and EPL-2.0 license are installed with
+  the Skill; `node_modules`, Docker, credentials, and runtime downloads are not.
 
 </details>
 
@@ -138,9 +138,9 @@ npm pack --dry-run
 ```
 
 Motion generation additionally needs Pillow, `ffmpeg`, and either
-`rsvg-convert` or macOS `sips`. Verified Glyphic rendering requires Node 22 and
-the exact external engine lock documented in
-[`skill/references/glyphic-structure.md`](skill/references/glyphic-structure.md).
+`rsvg-convert` or macOS `sips`. Verified ELK rendering uses Node `22.22.3` and
+the vendored files documented in
+[`skill/references/elk-structure.md`](skill/references/elk-structure.md).
 
 ## Repository map
 
@@ -148,8 +148,9 @@ the exact external engine lock documented in
 skill/
 ├── SKILL.md                 # one-Agent workflow and scope gates
 ├── agents/openai.yaml       # Codex discovery metadata
-├── references/              # narrative, visual, motion, and Glyphic rules
-└── scripts/                 # scan, retrieval, evaluation, audit, renderers
+├── references/              # narrative, visual, motion, and ELK rules
+├── scripts/                 # scan, retrieval, evaluation, audit, renderers
+└── vendor/elkjs/            # pinned ELK bundle, metadata, EPL-2.0 license
 dataset/retrieval/manifest.json
 scripts/install_skill.py     # atomic installer and upgrade rollback
 package.json                 # npx package entrypoint
@@ -165,5 +166,5 @@ The visual and motion workflow adapts MIT-licensed guidance from
 [`oil-oil/beautify-github-readme`](https://github.com/oil-oil/beautify-github-readme);
 the retained notice lives in
 [`skill/references/motion-production.md`](skill/references/motion-production.md#upstream-license).
-Optional Glyphic remains external under `FSL-1.1-ALv2` and is not distributed
-with this repository.
+The vendored `elkjs@0.9.3` files remain under `EPL-2.0`; the unmodified license
+is included at [`skill/vendor/elkjs/LICENSE.md`](skill/vendor/elkjs/LICENSE.md).

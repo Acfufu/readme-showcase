@@ -15,7 +15,7 @@ from skill.scripts.pipeline_contracts import (
     write_canonical_json_atomic,
 )
 from tests import test_bundle_contracts as bundle_contracts
-from tests import test_glyphic_adapter as glyphic_adapter
+from tests import test_elk_adapter as elk_adapter
 from tests import test_pr_bundle as pr_bundle
 
 
@@ -48,14 +48,14 @@ class OfflinePipelineE2ETests(unittest.TestCase):
         base_sha: str,
         *,
         mode: str,
-        glyphic: bool = False,
+        elk: bool = False,
         engine_artifacts: tuple[Path, Path, Path] | None = None,
     ) -> tuple[Path, Path, dict[str, Any]]:
         helper = bundle_contracts.BundleContractTests(methodName="runTest")
         bundle, _ = helper.make_bundle(
             run_root,
             mode,
-            glyphic=glyphic,
+            elk=elk,
         )
         if bundle["candidate"]["readme"] is not None:
             source = run_root / bundle["candidate"]["readme"]["path"]
@@ -130,7 +130,7 @@ class OfflinePipelineE2ETests(unittest.TestCase):
             asset["truth_ids"] = ["file:README.md"]
         if engine_artifacts is not None:
             semantic_source, raw_source, metadata_source = engine_artifacts
-            semantic_destination = run_root / "assets/readme/diagram.glyphic.json"
+            semantic_destination = run_root / "assets/readme/diagram.diagram.json"
             raw_destination = run_root / "assets/readme/diagram.svg"
             metadata_destination = run_root / "assets/readme/diagram.engine.json"
             semantic_destination.write_bytes(semantic_source.read_bytes())
@@ -238,24 +238,21 @@ class OfflinePipelineE2ETests(unittest.TestCase):
 
     @unittest.skipIf(
         os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
-        "fake Glyphic flow runs in isolated Node 22 lane",
+        "ELK flow runs in isolated Node 22 lane",
     )
-    def test_fake_glyphic_readme_preserves_raw_bytes_and_semantic_source(self) -> None:
+    def test_elk_readme_preserves_raw_bytes_and_semantic_source(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             target, base_sha = self.target(base)
             engine_root = base / "engine"
             engine_root.mkdir()
-            engine = glyphic_adapter.GlyphicAdapterTests(methodName="runTest")
-            module_root, lock = engine.build_engine(engine_root)
+            engine = elk_adapter.ELKAdapterTests(methodName="runTest")
             rendered, raw, metadata = engine.run_adapter(
                 engine_root,
-                module_root,
-                lock,
                 "architecture.json",
             )
             self.assertEqual(rendered.returncode, 0, rendered.stderr)
-            semantic = engine_root / "run/diagram.glyphic.json"
+            semantic = engine_root / "run/diagram.diagram.json"
             raw_before = raw.read_bytes()
             run_root = base / "run"
             run_root.mkdir()
@@ -264,7 +261,7 @@ class OfflinePipelineE2ETests(unittest.TestCase):
                 target,
                 base_sha,
                 mode="readme",
-                glyphic=True,
+                elk=True,
                 engine_artifacts=(semantic, raw, metadata),
             )
             output = run_root / "pr.json"
@@ -279,48 +276,26 @@ class OfflinePipelineE2ETests(unittest.TestCase):
             pr_payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(
                 [item["path"] for item in pr_payload["semantic_sources"]],
-                ["assets/readme/diagram.glyphic.json"],
+                ["assets/readme/diagram.diagram.json"],
             )
 
     @unittest.skipIf(
         os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
-        "fake Glyphic flow runs in isolated Node 22 lane",
+        "ELK flow runs in isolated Node 22 lane",
     )
-    def test_missing_and_unsafe_engine_fall_back_to_static_asset_only(self) -> None:
+    def test_invalid_engine_input_falls_back_to_static_asset_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
-            engine = glyphic_adapter.GlyphicAdapterTests(methodName="runTest")
-
-            missing_root = base / "missing"
-            missing_root.mkdir()
-            _, lock = engine.build_engine(missing_root)
-            missing, missing_output, _ = engine.run_adapter(
-                missing_root,
-                missing_root / "absent",
-                lock,
-                "architecture.json",
+            engine = elk_adapter.ELKAdapterTests(methodName="runTest")
+            invalid_root = base / "invalid"
+            invalid_root.mkdir()
+            invalid, invalid_output, invalid_metadata = engine.run_adapter(
+                invalid_root,
+                "invalid-coordinate.json",
             )
-            self.assertEqual(missing.returncode, 1)
-            self.assertFalse(missing_output.exists())
-
-            unsafe_root = base / "unsafe"
-            unsafe_root.mkdir()
-            module_root, unsafe_lock = engine.build_engine(unsafe_root, "unsafe")
-            unsafe_run = unsafe_root / "run"
-            unsafe_run.mkdir()
-            unsafe_output = unsafe_run / "diagram.svg"
-            unsafe_metadata = unsafe_run / "diagram.engine.json"
-            unsafe_output.write_bytes(b"last-good-svg")
-            unsafe_metadata.write_bytes(b"last-good-metadata")
-            unsafe, _, _ = engine.run_adapter(
-                unsafe_root,
-                module_root,
-                unsafe_lock,
-                "architecture.json",
-            )
-            self.assertEqual(unsafe.returncode, 1)
-            self.assertEqual(unsafe_output.read_bytes(), b"last-good-svg")
-            self.assertEqual(unsafe_metadata.read_bytes(), b"last-good-metadata")
+            self.assertEqual(invalid.returncode, 2)
+            self.assertFalse(invalid_output.exists())
+            self.assertFalse(invalid_metadata.exists())
 
             target, base_sha = self.target(base)
             readme_before = hashlib.sha256(

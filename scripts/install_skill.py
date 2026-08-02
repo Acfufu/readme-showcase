@@ -86,18 +86,16 @@ def _source_files(repo_root: Path) -> dict[Path, Path]:
             if path.is_file() and not _skip_source(path):
                 result[prefix / path.relative_to(source)] = path
 
-    builder = repo_root / "scripts" / "build_glyphic_engine_lock.py"
-    if builder.is_symlink() or not builder.is_file():
-        raise InstallError(f"invalid source file: {builder}")
-    result[Path("scripts/build_glyphic_engine_lock.py")] = builder
-
     required = {
+        Path(".nvmrc"),
         Path("SKILL.md"),
         Path("agents/openai.yaml"),
         Path("scripts/readme_pipeline.py"),
-        Path("scripts/render_glyphic.mjs"),
+        Path("scripts/render_elk.mjs"),
+        Path("vendor/elkjs/lib/elk.bundled.js"),
+        Path("vendor/elkjs/package.json"),
+        Path("vendor/elkjs/LICENSE.md"),
         Path("dataset/retrieval/manifest.json"),
-        Path("scripts/build_glyphic_engine_lock.py"),
     }
     missing = sorted(required - set(result))
     if missing:

@@ -1,143 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1285.8272" height="284" viewBox="0 0 1285.8272 284" role="img" aria-label="Evidence-bound README workflow">
+<svg xmlns="http://www.w3.org/2000/svg" width="1820" height="262" viewBox="0 0 1820 262" role="img">
 <title>Evidence-bound README workflow</title>
 <defs>
-
-        <marker id="arrow-solid" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
-          <path d="M 0 0 L 12 6 L 0 12 z" fill="#6B675F" />
-        </marker>
-        <marker id="arrow-open-solid" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="8" markerHeight="8" orient="auto">
-          <path d="M 0 1 L 11 6 L 0 11" fill="none" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        <marker id="arrow-dependency-solid" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="8" markerHeight="8" orient="auto">
-          <path d="M 0 1 L 11 6 L 0 11" fill="none" stroke="#6B675F" stroke-width="2" stroke-dasharray="0" />
-        </marker>
-        <marker id="arrow-inheritance-solid" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="10" markerHeight="10" orient="auto">
-          <path d="M 0 1 L 14 7 L 0 13 z" fill="#F4F0E7" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        <marker id="arrow-composition-solid" viewBox="0 0 18 14" refX="14" refY="7" markerWidth="12" markerHeight="10" orient="auto">
-          <path d="M 0 7 L 8 1 L 16 7 L 8 13 z" fill="#6B675F" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        <marker id="arrow-aggregation-solid" viewBox="0 0 18 14" refX="14" refY="7" markerWidth="12" markerHeight="10" orient="auto">
-          <path d="M 0 7 L 8 1 L 16 7 L 8 13 z" fill="#F4F0E7" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        
-        <marker id="arrow-crow-solid" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 22 10 M 12 10 L 22 0 M 12 10 L 22 20" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-crow-one-solid" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 22 10 M 12 10 L 22 0 M 12 10 L 22 20 M 12 2 L 12 18" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-crow-zero-many-solid" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 4 10 M 12 10 L 22 10 M 12 10 L 22 0 M 12 10 L 22 20 M 4 10 a 4 4 0 1 1 8 0 a 4 4 0 1 1 -8 0" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-zero-one-solid" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 8 10 M 16 10 L 22 10 M 8 10 a 4 4 0 1 1 8 0 a 4 4 0 1 1 -8 0 M 18 2 L 18 18" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-one-one-solid" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 22 10 M 12 2 L 12 18 M 18 2 L 18 18" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-      
-        <marker id="arrow-dashed" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
-          <path d="M 0 0 L 12 6 L 0 12 z" fill="#6B675F" />
-        </marker>
-        <marker id="arrow-open-dashed" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="8" markerHeight="8" orient="auto">
-          <path d="M 0 1 L 11 6 L 0 11" fill="none" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        <marker id="arrow-dependency-dashed" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="8" markerHeight="8" orient="auto">
-          <path d="M 0 1 L 11 6 L 0 11" fill="none" stroke="#6B675F" stroke-width="2" stroke-dasharray="0" />
-        </marker>
-        <marker id="arrow-inheritance-dashed" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="10" markerHeight="10" orient="auto">
-          <path d="M 0 1 L 14 7 L 0 13 z" fill="#F4F0E7" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        <marker id="arrow-composition-dashed" viewBox="0 0 18 14" refX="14" refY="7" markerWidth="12" markerHeight="10" orient="auto">
-          <path d="M 0 7 L 8 1 L 16 7 L 8 13 z" fill="#6B675F" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        <marker id="arrow-aggregation-dashed" viewBox="0 0 18 14" refX="14" refY="7" markerWidth="12" markerHeight="10" orient="auto">
-          <path d="M 0 7 L 8 1 L 16 7 L 8 13 z" fill="#F4F0E7" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        
-        <marker id="arrow-crow-dashed" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 22 10 M 12 10 L 22 0 M 12 10 L 22 20" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-crow-one-dashed" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 22 10 M 12 10 L 22 0 M 12 10 L 22 20 M 12 2 L 12 18" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-crow-zero-many-dashed" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 4 10 M 12 10 L 22 10 M 12 10 L 22 0 M 12 10 L 22 20 M 4 10 a 4 4 0 1 1 8 0 a 4 4 0 1 1 -8 0" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-zero-one-dashed" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 8 10 M 16 10 L 22 10 M 8 10 a 4 4 0 1 1 8 0 a 4 4 0 1 1 -8 0 M 18 2 L 18 18" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-one-one-dashed" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 22 10 M 12 2 L 12 18 M 18 2 L 18 18" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-      
-        <marker id="arrow-dotted" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
-          <path d="M 0 0 L 12 6 L 0 12 z" fill="#6B675F" />
-        </marker>
-        <marker id="arrow-open-dotted" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="8" markerHeight="8" orient="auto">
-          <path d="M 0 1 L 11 6 L 0 11" fill="none" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        <marker id="arrow-dependency-dotted" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="8" markerHeight="8" orient="auto">
-          <path d="M 0 1 L 11 6 L 0 11" fill="none" stroke="#6B675F" stroke-width="2" stroke-dasharray="0" />
-        </marker>
-        <marker id="arrow-inheritance-dotted" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="10" markerHeight="10" orient="auto">
-          <path d="M 0 1 L 14 7 L 0 13 z" fill="#F4F0E7" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        <marker id="arrow-composition-dotted" viewBox="0 0 18 14" refX="14" refY="7" markerWidth="12" markerHeight="10" orient="auto">
-          <path d="M 0 7 L 8 1 L 16 7 L 8 13 z" fill="#6B675F" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        <marker id="arrow-aggregation-dotted" viewBox="0 0 18 14" refX="14" refY="7" markerWidth="12" markerHeight="10" orient="auto">
-          <path d="M 0 7 L 8 1 L 16 7 L 8 13 z" fill="#F4F0E7" stroke="#6B675F" stroke-width="2" />
-        </marker>
-        
-        <marker id="arrow-crow-dotted" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 22 10 M 12 10 L 22 0 M 12 10 L 22 20" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-crow-one-dotted" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 22 10 M 12 10 L 22 0 M 12 10 L 22 20 M 12 2 L 12 18" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-crow-zero-many-dotted" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 4 10 M 12 10 L 22 10 M 12 10 L 22 0 M 12 10 L 22 20 M 4 10 a 4 4 0 1 1 8 0 a 4 4 0 1 1 -8 0" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-zero-one-dotted" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 8 10 M 16 10 L 22 10 M 8 10 a 4 4 0 1 1 8 0 a 4 4 0 1 1 -8 0 M 18 2 L 18 18" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrow-one-one-dotted" viewBox="0 0 24 20" refX="20" refY="10" markerWidth="14" markerHeight="14" orient="auto">
-          <path d="M 0 10 L 22 10 M 12 2 L 12 18 M 18 2 L 18 18" fill="none" stroke="#6B675F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-      
-<filter id="glyphic-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.12"/></filter>
+<filter id="elk-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#1D1B17" flood-opacity="0.14"/></filter>
+<marker id="elk-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0 L10 4 L0 8 Z" fill="#6B675F"/></marker>
 </defs>
-<rect x="0" y="0" width="1285.8272" height="284" fill="#F4F0E7"/>
-<g transform="translate(40, 40)">
-<path d="M 164.84799999999998 157 L 304.0512 157 L 304.0512 113.66666666666667 L 348.0512 113.66666666666667" fill="none" stroke="#6B675F" stroke-width="1.5" marker-end="url(#arrow-solid)"/>
-<path d="M 168.0512 47 L 304.0512 47 L 304.0512 90.33333333333334 L 348.0512 90.33333333333334" fill="none" stroke="#6B675F" stroke-width="1.5" marker-end="url(#arrow-solid)"/>
-<path d="M 521.8272 102 L 696.5903999999999 102" fill="none" stroke="#6B675F" stroke-width="1.5" marker-end="url(#arrow-solid)"/>
-<path d="M 877.0639999999999 102 L 1051.8272 102" fill="none" stroke="#6B675F" stroke-width="1.5" marker-end="url(#arrow-solid)"/>
-<rect x="15.20320000000001" y="122" width="147.64479999999998" height="70" rx="14" ry="14" fill="#FBF8F1" stroke="#1D1B17" stroke-width="1.5" filter="url(#glyphic-shadow)"/>
-<rect x="12" y="12" width="154.0512" height="70" rx="14" ry="14" fill="#FBF8F1" stroke="#1D1B17" stroke-width="1.5" filter="url(#glyphic-shadow)"/>
-<rect x="350.0512" y="67" width="169.77599999999998" height="70" rx="14" ry="14" fill="#FBF8F1" stroke="#1D1B17" stroke-width="1.5" filter="url(#glyphic-shadow)"/>
-<rect x="698.5903999999999" y="67" width="176.47359999999995" height="70" rx="14" ry="14" fill="#FBF8F1" stroke="#1D1B17" stroke-width="1.5" filter="url(#glyphic-shadow)"/>
-<rect x="1053.8272" y="67" width="140" height="70" rx="10" ry="10" fill="#FBF8F1" stroke="#1D1B17" stroke-width="1.5" filter="url(#glyphic-shadow)"/>
-<g>
-<text x="89.0256" y="157" text-anchor="middle" dominant-baseline="central" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#1D1B17">Repository facts</text>
-</g>
-<g>
-<text x="89.0256" y="47" text-anchor="middle" dominant-baseline="central" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#1D1B17">Editorial patterns</text>
-</g>
-<g>
-<text x="434.93919999999997" y="102" text-anchor="middle" dominant-baseline="central" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#1D1B17">One README Agent</text>
-</g>
-<g>
-<text x="786.8272" y="102" text-anchor="middle" dominant-baseline="central" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#1D1B17">Verified local bundle</text>
-</g>
-<g>
-<text x="1123.8272" y="102" text-anchor="middle" dominant-baseline="central" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#1D1B17">Remote publish</text>
-</g>
-<text x="253.0512" y="167" text-anchor="middle" dominant-baseline="central" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#C84B3C">Truth</text>
-<text x="253.0512" y="31" text-anchor="middle" dominant-baseline="central" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#C84B3C">Structure</text>
-<text x="603.8272" y="112" text-anchor="middle" dominant-baseline="central" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#C84B3C">Evaluate</text>
-<text x="959.8272" y="112" text-anchor="middle" dominant-baseline="central" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#C84B3C">Approval</text>
-</g>
+<rect x="0" y="0" width="1820" height="262" fill="#F4F0E7"/>
+<path id="edge-0-0" d="M212 203 L222 203 L222 85 L568 85" fill="none" stroke="#6B675F" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-0-0" x="355" y="96" width="70" height="28" rx="8" fill="#F4F0E7"/>
+<text id="edge-label-text-0-0" x="390" y="115" fill="#C84B3C" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="390" dy="0">Truth</tspan>
+</text>
+<path id="edge-1-0" d="M212 61 L568 61" fill="none" stroke="#6B675F" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-1-0" x="339" y="22" width="102" height="28" rx="8" fill="#F4F0E7"/>
+<text id="edge-label-text-1-0" x="390" y="41" fill="#C84B3C" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="390" dy="0">Structure</tspan>
+</text>
+<path id="edge-2-0" d="M736 73 L1084 73" fill="none" stroke="#6B675F" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-2-0" x="863" y="84" width="94" height="28" rx="8" fill="#F4F0E7"/>
+<text id="edge-label-text-2-0" x="910" y="103" fill="#C84B3C" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="910" dy="0">Evaluate</tspan>
+</text>
+<path id="edge-3-0" d="M1292 73 L1640 73" fill="none" stroke="#6B675F" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-3-0" x="1419" y="84" width="94" height="28" rx="8" fill="#F4F0E7"/>
+<text id="edge-label-text-3-0" x="1466" y="103" fill="#C84B3C" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="1466" dy="0">Approval</tspan>
+</text>
+<rect id="node-facts" x="40" y="168" width="172" height="70" rx="16" fill="#FBF8F1" stroke="#1D1B17" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-facts" x="126" y="208" fill="#1D1B17" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="126" dy="0">Repository facts</tspan>
+</text>
+<rect id="node-patterns" x="24" y="26" width="188" height="70" rx="16" fill="#FBF8F1" stroke="#1D1B17" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-patterns" x="118" y="66" fill="#1D1B17" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="118" dy="0">Editorial patterns</tspan>
+</text>
+<rect id="node-agent" x="568" y="38" width="168" height="70" rx="16" fill="#FBF8F1" stroke="#1D1B17" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-agent" x="652" y="78" fill="#1D1B17" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="652" dy="0">One README Agent</tspan>
+</text>
+<rect id="node-local" x="1084" y="38" width="208" height="70" rx="16" fill="#FBF8F1" stroke="#1D1B17" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-local" x="1188" y="78" fill="#1D1B17" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="1188" dy="0">Verified local bundle</tspan>
+</text>
+<rect id="node-remote" x="1640" y="38" width="156" height="70" rx="16" fill="#FBF8F1" stroke="#1D1B17" stroke-width="1.5" stroke-dasharray="7 5" filter="url(#elk-shadow)"/>
+<text id="node-label-remote" x="1718" y="78" fill="#1D1B17" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="1718" dy="0">Remote publish</tspan>
+</text>
 </svg>

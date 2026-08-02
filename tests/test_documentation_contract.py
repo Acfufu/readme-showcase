@@ -18,7 +18,8 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn("npx --yes github:Acfufu/readme-showcase", text)
             self.assertIn('"status":"installed"', text)
             self.assertIn('"status":"current"', text)
-            self.assertIn("@glyphicjs/core@1.3.1", text)
+            self.assertIn("elkjs@0.9.3", text)
+            self.assertIn("22.22.3", text)
             self.assertIn("build-pr-bundle", text)
             self.assertNotIn("19/19", text)
             self.assertNotIn("649/692", text)
@@ -56,10 +57,10 @@ class DocumentationContractTests(unittest.TestCase):
 
     def test_skill_references_match_runtime_and_publish_boundary(self) -> None:
         skill = (REPO_ROOT / "skill/SKILL.md").read_text(encoding="utf-8")
-        glyphic = (
-            REPO_ROOT / "skill/references/glyphic-structure.md"
+        elk = (
+            REPO_ROOT / "skill/references/elk-structure.md"
         ).read_text(encoding="utf-8")
-        flat_glyphic = " ".join(glyphic.split())
+        flat_elk = " ".join(elk.split())
         delta = (
             REPO_ROOT / "skill/references/beautify-github-readme-delta.md"
         ).read_text(encoding="utf-8")
@@ -68,9 +69,11 @@ class DocumentationContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('README_SHOWCASE_SKILL="${CODEX_HOME', skill)
         self.assertIn("10 production `train`", skill)
-        self.assertIn("@glyphicjs/schema@1.1.1", glyphic)
-        self.assertNotIn("system font `Arial`", glyphic)
-        self.assertIn("defined in the same SVG", flat_glyphic)
+        self.assertIn("elkjs@0.9.3", elk)
+        self.assertIn("EPL-2.0", elk)
+        self.assertNotIn("engine lock", elk.lower())
+        self.assertNotIn("system font `Arial`", elk)
+        self.assertIn("defined in the same SVG", flat_elk)
         self.assertIn("`992`", delta)
         self.assertIn("`649/692 = 93.79%`", delta)
         self.assertNotIn("`691/692", delta)

@@ -1,1 +1,2 @@
 assets/readme/workflow*.svg -whitespace
+skill/vendor/elkjs/lib/elk.bundled.js -whitespace

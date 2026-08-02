@@ -155,7 +155,7 @@ _ASSET_FIELDS = {
     "caption",
     "truth_ids",
 }
-_GLYPHIC_ASSET_FIELDS = _ASSET_FIELDS | {"semantic", "engine_metadata", "fallback"}
+_ELK_ASSET_FIELDS = _ASSET_FIELDS | {"semantic", "engine_metadata", "fallback"}
 _HYBRID_ASSET_FIELDS = _ASSET_FIELDS | {"layout", "subject", "prompt", "fallback"}
 _MOTION_ASSET_FIELDS = _ASSET_FIELDS | {
     "source",
@@ -166,27 +166,24 @@ _MOTION_ASSET_FIELDS = _ASSET_FIELDS | {
 _ENGINE_METADATA_FIELDS = {
     "schema_version",
     "engine_kind",
-    "source_commit",
+    "package_name",
     "package_version",
-    "core_version",
-    "engine_schema_version",
+    "package_integrity",
     "package_sha256",
-    "tree_sha256",
-    "sri",
+    "module_sha256",
     "license_spdx",
     "license_sha256",
-    "lock_sha256",
     "node_version",
     "platform",
     "architecture",
     "input_sha256",
-    "theme_sha256",
+    "renderer_sha256",
     "output_sha256",
     "run_hashes",
     "validation",
     "fallback_state",
 }
-_GLYPHIC_SEMANTIC_FIELDS = {
+_ELK_SEMANTIC_FIELDS = {
     "schema_version",
     "diagram_type",
     "accessibility_title",
@@ -198,7 +195,7 @@ _GLYPHIC_SEMANTIC_FIELDS = {
     "edges",
     "claim_ids",
 }
-_GLYPHIC_PALETTE_FIELDS = {
+_ELK_PALETTE_FIELDS = {
     "background",
     "node_background",
     "node_border",
@@ -206,15 +203,20 @@ _GLYPHIC_PALETTE_FIELDS = {
     "edge_color",
     "edge_label_color",
 }
-_GLYPHIC_GROUP_FIELDS = {"id", "label", "parent_id", "claim_id"}
-_GLYPHIC_NODE_FIELDS = {"id", "label", "group_id", "kind", "claim_id"}
-_GLYPHIC_EDGE_FIELDS = {"source", "target", "label", "claim_id"}
-_GLYPHIC_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
+_ELK_GROUP_FIELDS = {"id", "label", "parent_id", "claim_id"}
+_ELK_NODE_FIELDS = {"id", "label", "group_id", "kind", "claim_id"}
+_ELK_EDGE_FIELDS = {"source", "target", "label", "claim_id"}
+_ELK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 _HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}\Z")
-_GLYPHIC_SOURCE_COMMIT = "ed79edb1624e2de78041611971a963efaea5e080"
-_GLYPHIC_VERSION = "1.3.1"
-_GLYPHIC_SCHEMA_VERSION = "1.1.1"
-_GLYPHIC_LICENSE = "FSL-1.1-ALv2"
+_ELK_VERSION = "0.9.3"
+_ELK_LICENSE = "EPL-2.0"
+_ELK_INTEGRITY = (
+    "sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxf"
+    "Omt8KjswHmI5EwCQcPMpOYhQ=="
+)
+_ELK_PACKAGE_SHA256 = "fb9bb80b980c72022fb4540b38aa0545242b4eb67b82250aeae2f0beb67eea25"
+_ELK_MODULE_SHA256 = "b0745abd7f23cd91690a1587e377edbe19fd7233c783300290936720546216d4"
+_ELK_LICENSE_SHA256 = "89591d4578fb1ebd91501312a3d25f021bd865a2e436641c1cf7b1bc7e3c1617"
 _RETRIEVAL_EVIDENCE_FIELDS = {
     "schema_version",
     "status",
@@ -912,7 +914,7 @@ def _validate_plan(payload: Any, mode: str) -> dict[str, Any]:
         _text(command, f"README plan.commands[{index}]")
     _string_list(plan["evidence_ids"], "README plan.evidence_ids")
     _text(plan["visual_intent"], "README plan.visual_intent")
-    if plan["diagram_route"] not in {"none", "static", "glyphic"}:
+    if plan["diagram_route"] not in {"none", "static", "elk"}:
         _fail("E_BUNDLE_PLAN", "README plan.diagram_route is unsupported")
     return plan
 
@@ -1210,13 +1212,13 @@ def _diagram_claim_inputs(
             )
             else default_language
         )
-        if value.get("engine_kind") == "glyphic":
+        if value.get("engine_kind") == "elk":
             semantic, _ = _artifact_json(
                 root,
                 value.get("semantic"),
                 f"asset manifest.assets[{index}].semantic",
             )
-            _validate_glyphic_semantic(semantic)
+            _validate_elk_semantic(semantic)
             labels = [
                 (semantic["accessibility_claim_id"], semantic["accessibility_title"]),
                 *[(item["claim_id"], item["label"]) for item in semantic["groups"]],
@@ -1361,23 +1363,23 @@ def _validate_claim_map(
     return truth_ids
 
 
-def _validate_glyphic_semantic(payload: Any) -> None:
-    semantic = _object(payload, _GLYPHIC_SEMANTIC_FIELDS, "Glyphic semantic source")
+def _validate_elk_semantic(payload: Any) -> None:
+    semantic = _object(payload, _ELK_SEMANTIC_FIELDS, "ELK semantic source")
     if semantic["schema_version"] != 1:
-        _fail("E_GLYPHIC_SEMANTIC", "Glyphic semantic schema_version must be 1")
+        _fail("E_ELK_SEMANTIC", "ELK semantic schema_version must be 1")
     if semantic["diagram_type"] not in {"architecture", "flowchart", "c4"}:
-        _fail("E_GLYPHIC_SEMANTIC", "Glyphic diagram type is unsupported")
+        _fail("E_ELK_SEMANTIC", "ELK diagram type is unsupported")
     if semantic["direction"] not in {"TB", "BT", "LR", "RL"}:
-        _fail("E_GLYPHIC_SEMANTIC", "Glyphic direction is unsupported")
+        _fail("E_ELK_SEMANTIC", "ELK direction is unsupported")
 
-    def glyphic_id(value: Any, context: str, *, nullable: bool = False) -> str | None:
+    def elk_id(value: Any, context: str, *, nullable: bool = False) -> str | None:
         if nullable and value is None:
             return None
-        if not isinstance(value, str) or not _GLYPHIC_ID.fullmatch(value):
-            _fail("E_GLYPHIC_SEMANTIC", f"{context} must be a bounded identifier")
+        if not isinstance(value, str) or not _ELK_ID.fullmatch(value):
+            _fail("E_ELK_SEMANTIC", f"{context} must be a bounded identifier")
         return value
 
-    def glyphic_text(value: Any, context: str, *, nullable: bool = False) -> str | None:
+    def elk_text(value: Any, context: str, *, nullable: bool = False) -> str | None:
         if nullable and value is None:
             return None
         if (
@@ -1387,44 +1389,44 @@ def _validate_glyphic_semantic(payload: Any) -> None:
             or "\n" in value
             or "\r" in value
         ):
-            _fail("E_GLYPHIC_SEMANTIC", f"{context} must be single-line text within 120 characters")
+            _fail("E_ELK_SEMANTIC", f"{context} must be single-line text within 120 characters")
         return value
 
-    glyphic_text(semantic["accessibility_title"], "Glyphic accessibility_title")
-    glyphic_id(semantic["accessibility_claim_id"], "Glyphic accessibility_claim_id")
-    palette = _object(semantic["palette"], _GLYPHIC_PALETTE_FIELDS, "Glyphic palette")
-    for field in sorted(_GLYPHIC_PALETTE_FIELDS):
+    elk_text(semantic["accessibility_title"], "ELK accessibility_title")
+    elk_id(semantic["accessibility_claim_id"], "ELK accessibility_claim_id")
+    palette = _object(semantic["palette"], _ELK_PALETTE_FIELDS, "ELK palette")
+    for field in sorted(_ELK_PALETTE_FIELDS):
         if not isinstance(palette[field], str) or not _HEX_COLOR.fullmatch(palette[field]):
-            _fail("E_GLYPHIC_SEMANTIC", f"Glyphic palette.{field} must be a six-digit hex color")
+            _fail("E_ELK_SEMANTIC", f"ELK palette.{field} must be a six-digit hex color")
 
     groups_raw = semantic["groups"]
     nodes_raw = semantic["nodes"]
     edges_raw = semantic["edges"]
     if not isinstance(groups_raw, list) or len(groups_raw) > 50:
-        _fail("E_GLYPHIC_SEMANTIC", "Glyphic groups must contain at most 50 entries")
+        _fail("E_ELK_SEMANTIC", "ELK groups must contain at most 50 entries")
     if not isinstance(nodes_raw, list) or not nodes_raw or len(nodes_raw) > 100:
-        _fail("E_GLYPHIC_SEMANTIC", "Glyphic nodes must contain 1-100 entries")
+        _fail("E_ELK_SEMANTIC", "ELK nodes must contain 1-100 entries")
     if not isinstance(edges_raw, list) or len(edges_raw) > 200:
-        _fail("E_GLYPHIC_SEMANTIC", "Glyphic edges must contain at most 200 entries")
+        _fail("E_ELK_SEMANTIC", "ELK edges must contain at most 200 entries")
 
     groups: list[dict[str, Any]] = []
     for index, raw in enumerate(groups_raw):
-        context = f"Glyphic groups[{index}]"
-        item = _object(raw, _GLYPHIC_GROUP_FIELDS, context)
-        glyphic_id(item["id"], f"{context}.id")
-        glyphic_text(item["label"], f"{context}.label")
-        glyphic_id(item["parent_id"], f"{context}.parent_id", nullable=True)
-        glyphic_id(item["claim_id"], f"{context}.claim_id")
+        context = f"ELK groups[{index}]"
+        item = _object(raw, _ELK_GROUP_FIELDS, context)
+        elk_id(item["id"], f"{context}.id")
+        elk_text(item["label"], f"{context}.label")
+        elk_id(item["parent_id"], f"{context}.parent_id", nullable=True)
+        elk_id(item["claim_id"], f"{context}.claim_id")
         groups.append(item)
 
     nodes: list[dict[str, Any]] = []
     for index, raw in enumerate(nodes_raw):
-        context = f"Glyphic nodes[{index}]"
-        item = _object(raw, _GLYPHIC_NODE_FIELDS, context)
-        glyphic_id(item["id"], f"{context}.id")
-        glyphic_text(item["label"], f"{context}.label")
-        glyphic_id(item["group_id"], f"{context}.group_id", nullable=True)
-        glyphic_id(item["claim_id"], f"{context}.claim_id")
+        context = f"ELK nodes[{index}]"
+        item = _object(raw, _ELK_NODE_FIELDS, context)
+        elk_id(item["id"], f"{context}.id")
+        elk_text(item["label"], f"{context}.label")
+        elk_id(item["group_id"], f"{context}.group_id", nullable=True)
+        elk_id(item["claim_id"], f"{context}.claim_id")
         if item["kind"] not in {
             "component",
             "service",
@@ -1434,51 +1436,51 @@ def _validate_glyphic_semantic(payload: Any) -> None:
             "external",
             "container",
         }:
-            _fail("E_GLYPHIC_SEMANTIC", f"{context}.kind is unsupported")
+            _fail("E_ELK_SEMANTIC", f"{context}.kind is unsupported")
         nodes.append(item)
 
     edges: list[dict[str, Any]] = []
     for index, raw in enumerate(edges_raw):
-        context = f"Glyphic edges[{index}]"
-        item = _object(raw, _GLYPHIC_EDGE_FIELDS, context)
-        glyphic_id(item["source"], f"{context}.source")
-        glyphic_id(item["target"], f"{context}.target")
-        glyphic_text(item["label"], f"{context}.label", nullable=True)
-        glyphic_id(item["claim_id"], f"{context}.claim_id", nullable=True)
+        context = f"ELK edges[{index}]"
+        item = _object(raw, _ELK_EDGE_FIELDS, context)
+        elk_id(item["source"], f"{context}.source")
+        elk_id(item["target"], f"{context}.target")
+        elk_text(item["label"], f"{context}.label", nullable=True)
+        elk_id(item["claim_id"], f"{context}.claim_id", nullable=True)
         if (item["label"] is None) != (item["claim_id"] is None):
-            _fail("E_GLYPHIC_SEMANTIC", f"{context} label and claim_id must both be null or text")
+            _fail("E_ELK_SEMANTIC", f"{context} label and claim_id must both be null or text")
         edges.append(item)
 
     group_ids = {item["id"] for item in groups}
     node_ids = {item["id"] for item in nodes}
     all_ids = [item["id"] for item in groups] + [item["id"] for item in nodes]
     if len(set(all_ids)) != len(all_ids):
-        _fail("E_GLYPHIC_SEMANTIC", "Glyphic group and node ids must be unique")
+        _fail("E_ELK_SEMANTIC", "ELK group and node ids must be unique")
     parent_by_group = {item["id"]: item["parent_id"] for item in groups}
     for group in groups:
         parent_id = group["parent_id"]
         if parent_id is not None and parent_id not in group_ids:
-            _fail("E_GLYPHIC_SEMANTIC", f"Glyphic group {group['id']} references unknown parent")
+            _fail("E_ELK_SEMANTIC", f"ELK group {group['id']} references unknown parent")
         seen = {group["id"]}
         while parent_id is not None:
             if parent_id in seen:
-                _fail("E_GLYPHIC_SEMANTIC", "Glyphic group hierarchy contains a cycle")
+                _fail("E_ELK_SEMANTIC", "ELK group hierarchy contains a cycle")
             seen.add(parent_id)
             parent_id = parent_by_group[parent_id]
     for node in nodes:
         if node["group_id"] is not None and node["group_id"] not in group_ids:
-            _fail("E_GLYPHIC_SEMANTIC", f"Glyphic node {node['id']} references unknown group")
+            _fail("E_ELK_SEMANTIC", f"ELK node {node['id']} references unknown group")
     for edge in edges:
         if edge["source"] not in node_ids or edge["target"] not in node_ids:
-            _fail("E_GLYPHIC_SEMANTIC", "Glyphic edge references unknown node")
+            _fail("E_ELK_SEMANTIC", "ELK edge references unknown node")
 
     claim_ids = semantic["claim_ids"]
     if (
         not isinstance(claim_ids, list)
-        or any(not isinstance(item, str) or not _GLYPHIC_ID.fullmatch(item) for item in claim_ids)
+        or any(not isinstance(item, str) or not _ELK_ID.fullmatch(item) for item in claim_ids)
         or claim_ids != sorted(set(claim_ids))
     ):
-        _fail("E_GLYPHIC_SEMANTIC", "Glyphic claim_ids must be a sorted unique identifier list")
+        _fail("E_ELK_SEMANTIC", "ELK claim_ids must be a sorted unique identifier list")
     used_claim_ids = sorted(
         [semantic["accessibility_claim_id"]]
         + [item["claim_id"] for item in groups]
@@ -1486,7 +1488,7 @@ def _validate_glyphic_semantic(payload: Any) -> None:
         + [item["claim_id"] for item in edges if item["claim_id"] is not None]
     )
     if claim_ids != used_claim_ids:
-        _fail("E_GLYPHIC_SEMANTIC", "Glyphic claim_ids must exactly match semantic claims")
+        _fail("E_ELK_SEMANTIC", "ELK claim_ids must exactly match semantic claims")
 
 
 def _validate_engine_metadata(
@@ -1499,19 +1501,16 @@ def _validate_engine_metadata(
         payload,
         required=_ENGINE_METADATA_FIELDS,
         optional=set(),
-        context="Glyphic engine metadata",
+        context="ELK engine metadata",
     )
-    if metadata["engine_kind"] != "glyphic":
-        _fail("E_ENGINE_METADATA", "engine metadata must declare glyphic")
-    if metadata["source_commit"] != _GLYPHIC_SOURCE_COMMIT:
-        _fail("E_ENGINE_METADATA", "engine source_commit must match pinned Glyphic source")
+    if metadata["engine_kind"] != "elk":
+        _fail("E_ENGINE_METADATA", "engine metadata must declare elk")
     for field in (
         "package_sha256",
-        "tree_sha256",
+        "module_sha256",
         "license_sha256",
-        "lock_sha256",
         "input_sha256",
-        "theme_sha256",
+        "renderer_sha256",
         "output_sha256",
     ):
         value = metadata[field]
@@ -1524,21 +1523,21 @@ def _validate_engine_metadata(
     if metadata["validation"] != "pass" or metadata["fallback_state"] != "preserved":
         _fail("E_ENGINE_METADATA", "engine validation and fallback state must pass")
     if (
-        metadata["package_version"] != _GLYPHIC_VERSION
-        or metadata["core_version"] != _GLYPHIC_VERSION
-        or metadata["engine_schema_version"] != _GLYPHIC_SCHEMA_VERSION
-        or metadata["license_spdx"] != _GLYPHIC_LICENSE
-        or not isinstance(metadata["node_version"], str)
-        or not metadata["node_version"].startswith("22.")
-        or not isinstance(metadata["sri"], str)
-        or not re.fullmatch(r"sha512-[A-Za-z0-9+/]+={0,2}", metadata["sri"])
+        metadata["schema_version"] != 1
+        or metadata["package_name"] != "elkjs"
+        or metadata["package_version"] != _ELK_VERSION
+        or metadata["package_integrity"] != _ELK_INTEGRITY
+        or metadata["package_sha256"] != _ELK_PACKAGE_SHA256
+        or metadata["module_sha256"] != _ELK_MODULE_SHA256
+        or metadata["license_spdx"] != _ELK_LICENSE
+        or metadata["license_sha256"] != _ELK_LICENSE_SHA256
+        or metadata["node_version"] != "22.22.3"
     ):
-        _fail("E_ENGINE_METADATA", "engine version, runtime, SRI, or license is not pinned")
+        _fail("E_ENGINE_METADATA", "engine package, runtime, or license is not pinned")
     for field in (
+        "package_name",
         "package_version",
-        "core_version",
-        "engine_schema_version",
-        "sri",
+        "package_integrity",
         "license_spdx",
         "node_version",
         "platform",
@@ -1571,8 +1570,8 @@ def _validate_asset_manifest(
             _fail("E_SCHEMA_TYPE", f"{context} must be an object")
         engine_kind = value.get("engine_kind")
         production_kind = value.get("production_kind")
-        if engine_kind == "glyphic":
-            fields = _GLYPHIC_ASSET_FIELDS
+        if engine_kind == "elk":
+            fields = _ELK_ASSET_FIELDS
         elif production_kind == "hybrid":
             fields = _HYBRID_ASSET_FIELDS
         elif production_kind == "motion":
@@ -1588,7 +1587,7 @@ def _validate_asset_manifest(
         manifest_refs.append(reference)
         if asset["type"] not in {"svg", "png", "webp", "gif"}:
             _fail("E_BUNDLE_ASSET", f"{context}.type is unsupported")
-        if engine_kind not in {"hand-authored", "glyphic"}:
+        if engine_kind not in {"hand-authored", "elk"}:
             _fail("E_BUNDLE_ASSET", f"{context}.engine_kind is unsupported")
         if production_kind not in {"static", "hybrid", "motion"}:
             _fail("E_BUNDLE_ASSET", f"{context}.production_kind is unsupported")
@@ -1600,13 +1599,13 @@ def _validate_asset_manifest(
         bound_truth_ids = _string_list(asset["truth_ids"], f"{context}.truth_ids", allow_empty=False)
         if not set(bound_truth_ids).issubset(truth_ids):
             _fail("E_BUNDLE_CLAIM", f"{context} references unknown truth_id")
-        if engine_kind == "glyphic":
+        if engine_kind == "elk":
             if production_kind != "static":
-                _fail("E_BUNDLE_ASSET", "Glyphic output must use static production")
+                _fail("E_BUNDLE_ASSET", "ELK output must use static production")
             if asset["type"] != "svg" or not reference["path"].endswith(".svg"):
-                _fail("E_BUNDLE_ASSET", "Glyphic output must be standalone SVG")
+                _fail("E_BUNDLE_ASSET", "ELK output must be standalone SVG")
             semantic_payload, semantic_ref = _artifact_json(root, asset["semantic"], f"{context}.semantic")
-            _validate_glyphic_semantic(semantic_payload)
+            _validate_elk_semantic(semantic_payload)
             metadata_payload, _ = _artifact_json(
                 root,
                 asset["engine_metadata"],
@@ -1615,12 +1614,12 @@ def _validate_asset_manifest(
             fallback_ref = _reference(asset["fallback"], f"{context}.fallback")
             fallback_raw = _artifact_bytes(root, fallback_ref, f"{context}.fallback")
             if not fallback_ref["path"].endswith(".svg"):
-                _fail("E_BUNDLE_ASSET", "Glyphic fallback must be static SVG")
-            if not semantic_ref["path"].endswith(".glyphic.json"):
-                _fail("E_BUNDLE_ASSET", "Glyphic semantic source must use .glyphic.json")
+                _fail("E_BUNDLE_ASSET", "ELK fallback must be static SVG")
+            if not semantic_ref["path"].endswith(".diagram.json"):
+                _fail("E_BUNDLE_ASSET", "ELK semantic source must use .diagram.json")
             metadata_ref = _reference(asset["engine_metadata"], f"{context}.engine_metadata")
             if not metadata_ref["path"].endswith(".engine.json"):
-                _fail("E_BUNDLE_ASSET", "Glyphic metadata must use .engine.json")
+                _fail("E_BUNDLE_ASSET", "ELK metadata must use .engine.json")
             _validate_svg(fallback_raw, f"{context}.fallback")
             _validate_engine_metadata(
                 metadata_payload,
@@ -2088,8 +2087,8 @@ def _publish_path(value: str, kind: str) -> PurePosixPath:
         _fail("E_PR_PATH", "README candidate must target README.md or README_zh.md")
     if kind in {"asset", "semantic"} and path.parts[:2] != ("assets", "readme"):
         _fail("E_PR_PATH", f"{kind} candidate must stay under assets/readme")
-    if kind == "semantic" and not path.name.endswith(".glyphic.json"):
-        _fail("E_PR_PATH", "Glyphic semantic source must use .glyphic.json")
+    if kind == "semantic" and not path.name.endswith(".diagram.json"):
+        _fail("E_PR_PATH", "ELK semantic source must use .diagram.json")
     return path
 
 
@@ -2252,7 +2251,7 @@ def build_pr_bundle(
     semantic_references = [
         _reference(asset["semantic"], f"asset manifest.assets[{index}].semantic")
         for index, asset in enumerate(cast(list[dict[str, Any]], asset_manifest["assets"]))
-        if asset.get("engine_kind") == "glyphic"
+        if asset.get("engine_kind") == "elk"
     ]
     semantic_sources = sorted(
         (

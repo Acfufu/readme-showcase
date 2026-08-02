@@ -19,7 +19,6 @@ canonical_sha256 = _CONTRACTS.canonical_sha256
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
 validate_generated_bundle = _CORE.validate_generated_bundle
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_COMMIT = "ed79edb1624e2de78041611971a963efaea5e080"
 
 
 class BundleContractTests(unittest.TestCase):
@@ -53,7 +52,7 @@ class BundleContractTests(unittest.TestCase):
         root: Path,
         mode: str,
         *,
-        glyphic: bool = False,
+        elk: bool = False,
         production_kind: str = "static",
     ) -> tuple[dict[str, Any], Path]:
         plan = self.write_json(
@@ -65,7 +64,7 @@ class BundleContractTests(unittest.TestCase):
                 "languages": ["en"],
                 "sections": ["overview"],
                 "visual_intent": "project-structure",
-                "diagram_route": "glyphic" if glyphic else "static",
+                "diagram_route": "elk" if elk else "static",
                 "commands": [],
                 "evidence_ids": ["file:README.md"],
             },
@@ -81,11 +80,11 @@ class BundleContractTests(unittest.TestCase):
         if mode != "audit-only":
             semantic_value = (
                 json.loads(
-                    (REPO_ROOT / "tests/fixtures/glyphic/architecture.json").read_text(
+                    (REPO_ROOT / "tests/fixtures/elk/architecture.json").read_text(
                         encoding="utf-8",
                     )
                 )
-                if glyphic
+                if elk
                 else None
             )
             if production_kind == "hybrid":
@@ -118,17 +117,17 @@ class BundleContractTests(unittest.TestCase):
             asset: dict[str, object] = {
                 **raw,
                 "type": asset_type,
-                "engine_kind": "glyphic" if glyphic else "hand-authored",
+                "engine_kind": "elk" if elk else "hand-authored",
                 "production_kind": production_kind,
                 "alt": "Project architecture",
                 "caption": "Evidence-bound architecture.",
                 "truth_ids": ["file:README.md"],
             }
-            if glyphic:
+            if elk:
                 assert semantic_value is not None
                 semantic = self.write_json(
                     root,
-                    "assets/readme/diagram.glyphic.json",
+                    "assets/readme/diagram.diagram.json",
                     semantic_value,
                 )
                 fallback = self.write_bytes(
@@ -138,22 +137,22 @@ class BundleContractTests(unittest.TestCase):
                 )
                 metadata_value = {
                     "schema_version": 1,
-                    "engine_kind": "glyphic",
-                    "source_commit": SOURCE_COMMIT,
-                    "package_version": "1.3.1",
-                    "core_version": "1.3.1",
-                    "engine_schema_version": "1.1.1",
-                    "package_sha256": "1" * 64,
-                    "tree_sha256": "2" * 64,
-                    "sri": "sha512-ZmZmZmZmZmZmZmZm",
-                    "license_spdx": "FSL-1.1-ALv2",
-                    "license_sha256": "3" * 64,
-                    "lock_sha256": "4" * 64,
-                    "node_version": "22.17.0",
+                    "engine_kind": "elk",
+                    "package_name": "elkjs",
+                    "package_version": "0.9.3",
+                    "package_integrity": (
+                        "sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxf"
+                        "Omt8KjswHmI5EwCQcPMpOYhQ=="
+                    ),
+                    "package_sha256": "fb9bb80b980c72022fb4540b38aa0545242b4eb67b82250aeae2f0beb67eea25",
+                    "module_sha256": "b0745abd7f23cd91690a1587e377edbe19fd7233c783300290936720546216d4",
+                    "license_spdx": "EPL-2.0",
+                    "license_sha256": "89591d4578fb1ebd91501312a3d25f021bd865a2e436641c1cf7b1bc7e3c1617",
+                    "node_version": "22.22.3",
                     "platform": "darwin",
                     "architecture": "arm64",
                     "input_sha256": semantic["sha256"],
-                    "theme_sha256": "5" * 64,
+                    "renderer_sha256": "5" * 64,
                     "output_sha256": raw["sha256"],
                     "run_hashes": [raw["sha256"], raw["sha256"]],
                     "validation": "pass",
@@ -282,7 +281,7 @@ class BundleContractTests(unittest.TestCase):
                 for index, block in enumerate(_CORE.segment_markdown_blocks(readme_text))
             ]
         diagram_claims: list[dict[str, object]] = []
-        if glyphic and semantic_value is not None:
+        if elk and semantic_value is not None:
             labels = [
                 (
                     semantic_value["accessibility_claim_id"],
@@ -357,7 +356,7 @@ class BundleContractTests(unittest.TestCase):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         asset = manifest["assets"][0]
         asset.update(reference)
-        if asset["engine_kind"] == "glyphic":
+        if asset["engine_kind"] == "elk":
             metadata_path = root / asset["engine_metadata"]["path"]
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             metadata["output_sha256"] = reference["sha256"]
@@ -375,7 +374,7 @@ class BundleContractTests(unittest.TestCase):
     def test_readme_asset_only_and_audit_modes_validate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
-            for mode, glyphic in (
+            for mode, elk in (
                 ("readme", False),
                 ("asset-only", True),
                 ("audit-only", False),
@@ -383,7 +382,7 @@ class BundleContractTests(unittest.TestCase):
                 with self.subTest(mode=mode):
                     root = base / mode
                     root.mkdir()
-                    bundle, _ = self.make_bundle(root, mode, glyphic=glyphic)
+                    bundle, _ = self.make_bundle(root, mode, elk=elk)
                     self.assertEqual(validate_generated_bundle(bundle, root)["status"], "pass")
 
     def test_mode_mutation_and_stale_hash_fail_without_mutation(self) -> None:
@@ -417,11 +416,11 @@ class BundleContractTests(unittest.TestCase):
     def test_traversal_missing_pair_and_engine_mismatch_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            bundle, _ = self.make_bundle(root, "asset-only", glyphic=True)
+            bundle, _ = self.make_bundle(root, "asset-only", elk=True)
             bundle["candidate"]["assets"][0]["path"] = "../diagram.svg"
             self.assert_code(root, bundle, "E_PATH")
 
-            bundle, _ = self.make_bundle(root, "asset-only", glyphic=True)
+            bundle, _ = self.make_bundle(root, "asset-only", elk=True)
             manifest_path = root / bundle["artifacts"]["asset_manifest"]["path"]
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             del manifest["assets"][0]["semantic"]
@@ -429,7 +428,7 @@ class BundleContractTests(unittest.TestCase):
             bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(manifest)
             self.assert_code(root, bundle, "E_SCHEMA_MISSING_FIELD")
 
-            bundle, _ = self.make_bundle(root, "asset-only", glyphic=True)
+            bundle, _ = self.make_bundle(root, "asset-only", elk=True)
             metadata_path = root / "assets/readme/diagram.engine.json"
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             metadata["output_sha256"] = "9" * 64
@@ -441,7 +440,7 @@ class BundleContractTests(unittest.TestCase):
             bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(manifest)
             self.assert_code(root, bundle, "E_ENGINE_METADATA")
 
-            bundle, _ = self.make_bundle(root, "asset-only", glyphic=True)
+            bundle, _ = self.make_bundle(root, "asset-only", elk=True)
             metadata_path = root / "assets/readme/diagram.engine.json"
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             metadata["license_spdx"] = "MIT"
@@ -508,7 +507,7 @@ class BundleContractTests(unittest.TestCase):
             bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(manifest)
             self.assert_code(root, bundle, "E_README_ACCESSIBILITY")
 
-    def test_generic_svg_safety_and_glyphic_visible_text_are_hard_gates(self) -> None:
+    def test_generic_svg_safety_and_elk_visible_text_are_hard_gates(self) -> None:
         unsafe = (
             b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" '
             b'viewBox="0 0 10 10" role="img"><title>Unsafe</title>'
@@ -529,11 +528,11 @@ class BundleContractTests(unittest.TestCase):
             self.replace_primary_asset(root, bundle, unresolved)
             self.assert_code(root, bundle, "E_SVG_REFERENCE")
 
-            bundle, _ = self.make_bundle(root, "asset-only", glyphic=True)
+            bundle, _ = self.make_bundle(root, "asset-only", elk=True)
             semantic = json.loads(
                 (
                     root
-                    / "assets/readme/diagram.glyphic.json"
+                    / "assets/readme/diagram.diagram.json"
                 ).read_text(encoding="utf-8")
             )
             labels = (
@@ -553,7 +552,7 @@ class BundleContractTests(unittest.TestCase):
             )
             self.assert_code(root, bundle, "E_SVG_LABELS")
 
-            bundle, _ = self.make_bundle(root, "asset-only", glyphic=True)
+            bundle, _ = self.make_bundle(root, "asset-only", elk=True)
             manifest_path = root / bundle["artifacts"]["asset_manifest"]["path"]
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             fallback = manifest["assets"][0]["fallback"]

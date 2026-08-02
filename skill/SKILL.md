@@ -38,7 +38,7 @@ Ownership stays fixed:
 | --- | --- |
 | This Skill | Dataset, target evidence, retrieval, claims, modes, routing, evaluation, fallback, local PR bundle, approval gate |
 | Adapted `beautify-github-readme` rules | Story order, project-native title/palette/art direction/composition, visual and motion QA |
-| Optional verified Glyphic | `architecture` / `flowchart` / `c4` body layout, routing, wrapping, unchanged raw SVG bytes only |
+| Optional verified ELK | `architecture` / `flowchart` / `c4` body geometry only; project code owns safe SVG bytes |
 
 Dataset revision 2 contains 10 production `train` patterns and two isolated
 `test` patterns. Records are newly authored abstractions bound to pinned public
@@ -86,15 +86,13 @@ README_SHOWCASE_SKILL="${CODEX_HOME:-$HOME/.codex}/skills/readme-showcase"
    list every requested language in the plan and every locale-specific visual
    in the manifest. Text-bearing SVGs must use a locale-matched path such as
    `workflow-zh.svg`; only truly language-neutral text may share one asset via
-   `data-readme-language="neutral"`. If route is `glyphic`,
+   `data-readme-language="neutral"`. If route is `elk`,
    invoke optional adapter once; its two fresh runs are validation, not hidden
    retries:
 
    ```bash
-   node "$README_SHOWCASE_SKILL/scripts/render_glyphic.mjs" \
-     --module-root "$GLYPHIC_CORE_ROOT" \
-     --engine-lock "$GLYPHIC_ENGINE_LOCK" \
-     --input "$RUN/diagram.glyphic.json" \
+   node "$README_SHOWCASE_SKILL/scripts/render_elk.mjs" \
+     --input "$RUN/diagram.diagram.json" \
      --output "$RUN/diagram.svg" \
      --metadata "$RUN/diagram.engine.json"
    ```
@@ -143,21 +141,20 @@ branch, and base SHA.
 | Route | Select when | Result |
 | --- | --- | --- |
 | `none` | Diagram adds no material proof or comprehension | Keep facts and instructions in Markdown |
-| `static` | Project identity/composition matters more than automatic layout; diagram is compact; type is unsupported by Glyphic | Skill-authored project-native static SVG |
-| `glyphic` | Allowed `architecture`, `flowchart`, or `c4` body diagram has relationship-heavy grouping, routing, or label wrapping and verified engine is available | Strict semantic JSON plus unchanged standalone raw SVG |
+| `static` | Project identity/composition matters more than automatic layout; diagram is compact; type is unsupported by ELK | Skill-authored project-native static SVG |
+| `elk` | Allowed `architecture`, `flowchart`, or `c4` body diagram has relationship-heavy grouping, routing, or label wrapping and exact Node 22.22.3 is available | Strict semantic JSON plus project-serialized standalone SVG |
 
-Glyphic never owns hero/title bar, palette choice, claims, README copy,
+ELK never owns hero/title bar, palette choice, claims, README copy,
 surrounding composition, alt/caption, acceptance, fallback, or publishing.
-Reference raw SVG as a separate relative Markdown image with evidence-bound alt
-text and adjacent Markdown caption. Do not inline, wrap, sanitize, or post-edit
-engine bytes.
+Reference SVG as a separate relative Markdown image with evidence-bound alt
+text and adjacent Markdown caption. Do not inline or post-edit accepted bytes.
 
 Missing, mismatched, unsafe, oversized, timed-out, or nondeterministic engine
 results select `static`; preserve README, semantic source, raw SVG, metadata,
-and last-known-good asset bytes. Do not require Glyphic for README,
+and last-known-good asset bytes. Do not require ELK for README,
 asset-only, or audit-only mode. Read
-[references/glyphic-structure.md](references/glyphic-structure.md) before any
-Glyphic route.
+[references/elk-structure.md](references/elk-structure.md) before any
+ELK route.
 
 ## README mode
 
