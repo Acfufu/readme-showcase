@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import hashlib
 import json
 import re
 import stat
@@ -71,6 +72,12 @@ class ScannerPolicy:
             and any(posix_glob_matches(pattern, path) for pattern in self.include)
             and not any(posix_glob_matches(pattern, path) for pattern in self.exclude)
         )
+
+
+@dataclass(frozen=True)
+class ScannerPolicySnapshot:
+    policy: ScannerPolicy | None
+    sha256: str | None
 
 
 def _fail(message: str) -> None:
@@ -162,7 +169,7 @@ def _limits(value: object, profile: str) -> ProfileLimits:
     )
 
 
-def _read_config(path: Path) -> dict[str, Any]:
+def _read_config(path: Path) -> tuple[bytes, dict[str, Any]]:
     try:
         raw = read_regular_bytes(path, maximum=MAX_CONFIG_BYTES)
         text = raw.decode("utf-8")
@@ -173,25 +180,10 @@ def _read_config(path: Path) -> dict[str, Any]:
         _fail(f"configuration is not valid UTF-8 JSON: {path.name}")
     if not isinstance(value, dict):
         _fail("configuration must be an object")
-    return value
+    return raw, value
 
 
-def load_scanner_policy(root: Path) -> ScannerPolicy | None:
-    path = root / CONFIG_NAME
-    try:
-        info = path.lstat()
-    except FileNotFoundError:
-        return None
-    except OSError as exc:
-        _fail(f"cannot inspect configuration: {exc}")
-    if not stat.S_ISREG(info.st_mode):
-        _fail("configuration must be a regular file")
-    try:
-        payload = _read_config(path)
-    except ContractError as exc:
-        if exc.code == "E_SCANNER_CONFIG":
-            raise
-        _fail(f"cannot read configuration: {exc}")
+def _policy(payload: dict[str, Any]) -> ScannerPolicy:
     top = _object(payload, "configuration", frozenset({"scanner"}))
     if "scanner" not in top:
         _fail("configuration is missing scanner")
@@ -210,3 +202,35 @@ def load_scanner_policy(root: Path) -> ScannerPolicy | None:
     if secret_policy != "redact":
         _fail("scanner.secret_policy must be redact")
     return ScannerPolicy(profile, tracked_only, include, exclude, secret_policy, _limits(scanner.get("limits"), profile))
+
+
+def scanner_policy_snapshot(root: Path) -> ScannerPolicySnapshot:
+    path = root / CONFIG_NAME
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return ScannerPolicySnapshot(None, None)
+    except OSError as exc:
+        _fail(f"cannot inspect configuration: {exc}")
+    if not stat.S_ISREG(info.st_mode):
+        _fail("configuration must be a regular file")
+    try:
+        raw, payload = _read_config(path)
+    except ContractError as exc:
+        if exc.code == "E_SCANNER_CONFIG":
+            raise
+        _fail(f"cannot read configuration: {exc}")
+    return ScannerPolicySnapshot(_policy(payload), hashlib.sha256(raw).hexdigest())
+
+
+def load_scanner_policy(root: Path) -> ScannerPolicy | None:
+    return scanner_policy_snapshot(root).policy
+
+
+def assert_scanner_policy_unchanged(root: Path, expected: ScannerPolicySnapshot) -> None:
+    try:
+        current = scanner_policy_snapshot(root)
+    except ContractError as exc:
+        raise ContractError("E_SCAN_CONFIG_RACE", "scanner configuration changed during scan") from exc
+    if current.sha256 != expected.sha256:
+        raise ContractError("E_SCAN_CONFIG_RACE", "scanner configuration changed during scan")

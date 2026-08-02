@@ -143,6 +143,44 @@ class ScannerProfileTests(unittest.TestCase):
             self.assertEqual(result["scan_limits"]["max_total_bytes"], 2 * 1024 * 1024)
             self.assertEqual(result["scan_limits"]["max_seconds"], 5)
 
+    def test_config_mutation_during_tracked_observation_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_repository(Path(temporary))
+            self.write_config(root, {"scanner": {"include": ["src/**"]}})
+            original = service.tracked_paths
+
+            def mutate(target: Path) -> tuple[str, ...] | None:
+                paths = original(target)
+                (root / ".readme-showcase.json").write_text('{"scanner":{"unknown":true}}', encoding="utf-8")
+                return paths
+
+            with mock.patch.object(service, "tracked_paths", side_effect=mutate):
+                with self.assertRaisesRegex(ContractError, "configuration changed") as error:
+                    service.scan_repository_v1(root)
+
+            self.assertEqual(error.exception.code, "E_SCAN_CONFIG_RACE")
+
+    def test_deleted_or_linked_config_during_tracked_observation_fails_closed(self) -> None:
+        for mutation in ("delete", "symlink"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                root = self.make_repository(Path(temporary))
+                config = root / ".readme-showcase.json"
+                self.write_config(root, {"scanner": {"include": ["src/**"]}})
+                original = service.tracked_paths
+
+                def mutate(target: Path) -> tuple[str, ...] | None:
+                    paths = original(target)
+                    config.unlink()
+                    if mutation == "symlink":
+                        config.symlink_to(root / "src" / "main.py")
+                    return paths
+
+                with mock.patch.object(service, "tracked_paths", side_effect=mutate):
+                    with self.assertRaises(ContractError) as error:
+                        service.scan_repository_v1(root)
+
+                self.assertEqual(error.exception.code, "E_SCAN_CONFIG_RACE")
+
 
 if __name__ == "__main__":
     unittest.main()

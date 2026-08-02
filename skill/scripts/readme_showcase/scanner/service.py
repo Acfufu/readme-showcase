@@ -13,7 +13,14 @@ ContractError = importlib.import_module(
 ).ContractError
 from .git import base_sha, tracked_paths, tracked_state
 from .index import build_file_index
-from .policies import FIXED_EXCLUDED_DIRECTORIES, SECRET_NAMES, SECRET_SUFFIXES, is_secret_path, load_scanner_policy
+from .policies import (
+    FIXED_EXCLUDED_DIRECTORIES,
+    SECRET_NAMES,
+    SECRET_SUFFIXES,
+    assert_scanner_policy_unchanged,
+    is_secret_path,
+    scanner_policy_snapshot,
+)
 
 
 MAX_FILES = 2000
@@ -115,7 +122,8 @@ def _read(entry: Path, expected: os.stat_result, relative: str, maximum: int) ->
 
 def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str, object]:
     canonical_root = _root(root)
-    policy = load_scanner_policy(canonical_root)
+    policy_snapshot = scanner_policy_snapshot(canonical_root)
+    policy = policy_snapshot.policy
     limits = (
         ScanLimits(
             files=policy.limits.indexed_files,
@@ -126,6 +134,7 @@ def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str
         else limits or ScanLimits()
     )
     tracked = tracked_paths(canonical_root)
+    assert_scanner_policy_unchanged(canonical_root, policy_snapshot)
     if policy is not None:
         allowed = set(tracked or ()) if policy.tracked_only else None
     else:
@@ -140,6 +149,11 @@ def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str
     warnings: list[dict[str, str]] = []
     seen_files = seen_directories = total_bytes = 0
     pending = [canonical_root]
+
+    def finish(packet: dict[str, object]) -> dict[str, object]:
+        assert_scanner_policy_unchanged(canonical_root, policy_snapshot)
+        return packet
+
     while pending:
         directory = pending.pop()
         try:
@@ -153,9 +167,9 @@ def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str
             if allowed is not None and relative not in allowed and relative not in allowed_directories:
                 continue
             if time.monotonic() - started > limits.seconds:
-                return _incomplete(canonical_root, limits, "E_SCAN_TIME", relative)
+                return finish(_incomplete(canonical_root, limits, "E_SCAN_TIME", relative))
             if len(entry.relative_to(canonical_root).parts) - 1 > limits.depth:
-                return _incomplete(canonical_root, limits, "E_SCAN_DEPTH", relative)
+                return finish(_incomplete(canonical_root, limits, "E_SCAN_DEPTH", relative))
             try:
                 entry_stat = entry.lstat()
             except OSError as exc:
@@ -178,7 +192,7 @@ def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str
                     continue
                 seen_directories += 1
                 if seen_directories > limits.directories:
-                    return _incomplete(canonical_root, limits, "E_SCAN_DIRECTORY_COUNT", relative)
+                    return finish(_incomplete(canonical_root, limits, "E_SCAN_DIRECTORY_COUNT", relative))
                 children.append(entry)
                 continue
             if not stat.S_ISREG(entry_stat.st_mode):
@@ -186,7 +200,7 @@ def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str
                 continue
             seen_files += 1
             if seen_files > limits.files:
-                return _incomplete(canonical_root, limits, "E_SCAN_FILE_COUNT", relative)
+                return finish(_incomplete(canonical_root, limits, "E_SCAN_FILE_COUNT", relative))
             if policy is not None and not policy.selects(relative):
                 continue
             if is_secret_path(relative):
@@ -196,12 +210,12 @@ def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str
                 warnings.append({"code": "W_SCAN_BINARY", "path": relative})
                 continue
             if policy is not None and len(files) >= policy.limits.content_files:
-                return _incomplete(canonical_root, limits, "E_SCAN_FILE_COUNT", relative)
+                return finish(_incomplete(canonical_root, limits, "E_SCAN_FILE_COUNT", relative))
             if entry_stat.st_size > limits.file_bytes:
-                return _incomplete(canonical_root, limits, "E_SCAN_FILE_SIZE", relative)
+                return finish(_incomplete(canonical_root, limits, "E_SCAN_FILE_SIZE", relative))
             total_bytes += entry_stat.st_size
             if total_bytes > limits.total_bytes:
-                return _incomplete(canonical_root, limits, "E_SCAN_TOTAL_SIZE", relative)
+                return finish(_incomplete(canonical_root, limits, "E_SCAN_TOTAL_SIZE", relative))
             raw = _read(entry, entry_stat, relative, limits.file_bytes)
             if b"\0" in raw:
                 warnings.append({"code": "W_SCAN_BINARY", "path": relative})
@@ -232,7 +246,7 @@ def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str
         }
         for item in files
     ]
-    return {
+    return finish({
         "schema_version": 1,
         "status": "complete",
         "target": {"name": canonical_root.name, "base_sha": base_sha(canonical_root)},
@@ -240,4 +254,4 @@ def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str
         "files": files,
         "facts": facts,
         "warnings": warnings,
-    }
+    })
