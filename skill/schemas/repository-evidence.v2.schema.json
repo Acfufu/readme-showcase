@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/repository-evidence.v2.schema.json",
+  "title": "Repository Evidence v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "facts", "evidence_sha256"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "facts": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {"$ref": "#/$defs/fact"}
+    },
+    "evidence_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/|~/)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\\\u0000]+$"
+    },
+    "jsonValue": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "boolean"},
+        {"type": "integer"},
+        {"type": "string", "maxLength": 4096},
+        {"type": "array", "items": {"$ref": "#/$defs/jsonValue"}},
+        {
+          "type": "object",
+          "propertyNames": {"maxLength": 4096},
+          "additionalProperties": {"$ref": "#/$defs/jsonValue"}
+        }
+      ]
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path"],
+          "properties": {"path": {"$ref": "#/$defs/path"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "line_start", "line_end"],
+          "properties": {
+            "path": {"$ref": "#/$defs/path"},
+            "line_start": {"type": "integer", "minimum": 1},
+            "line_end": {"type": "integer", "minimum": 1}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "symbol"],
+          "properties": {
+            "path": {"$ref": "#/$defs/path"},
+            "symbol": {
+              "type": "string",
+              "maxLength": 512,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:(?:::|\\.)[A-Za-z_][A-Za-z0-9_]*)*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "json_pointer"],
+          "properties": {
+            "path": {"$ref": "#/$defs/path"},
+            "json_pointer": {"type": "string", "maxLength": 2048, "pattern": "^(?:/(?:[^~/]|~[01])*)*$"}
+          }
+        }
+      ]
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "kind", "source", "semantic_key", "value", "source_sha256", "evidence_sha256", "confidence"],
+      "properties": {
+        "fact_id": {"type": "string", "pattern": "^[a-z]+:[0-9a-f]{64}$"},
+        "kind": {
+          "enum": ["file-presence", "file-snippet", "config-value", "package-metadata", "code-symbol", "cli-entrypoint", "test-observation", "command-observation", "git-metadata", "documentation-statement"]
+        },
+        "source": {"$ref": "#/$defs/source"},
+        "semantic_key": {"type": "string", "minLength": 1, "maxLength": 512},
+        "value": {"$ref": "#/$defs/jsonValue"},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "evidence_sha256": {"$ref": "#/$defs/sha256"},
+        "confidence": {"enum": ["observed", "derived", "documented"]},
+        "derivation": {"type": "string", "minLength": 1, "maxLength": 2048}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "file-presence"}}},
+          "then": {"properties": {"source": {"type": "object", "maxProperties": 1}}},
+          "else": {"properties": {"source": {"type": "object", "minProperties": 2}}}
+        },
+        {
+          "if": {"properties": {"confidence": {"const": "derived"}}},
+          "then": {"required": ["derivation"]},
+          "else": {"not": {"required": ["derivation"]}}
+        }
+      ]
+    }
+  }
+}
