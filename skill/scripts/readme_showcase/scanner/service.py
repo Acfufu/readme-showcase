@@ -462,7 +462,7 @@ def scan_repository_v2(
         "scan_limits": limits.as_dict(),
         "project_type": project_type,
         "coverage": {
-            "tracked_files": len(tracked or ()),
+            "tracked_files": len(tracked) if tracked is not None else indexed_files,
             "indexed_files": indexed_files,
             "selected_files": len(files) + len(skipped),
             "content_files": len(files),

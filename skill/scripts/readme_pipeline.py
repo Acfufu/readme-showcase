@@ -19,6 +19,7 @@ _BENCHMARK = importlib.import_module(f"{_PREFIX}benchmark_adapter")
 _RUNNER = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.orchestration.runner")
 _RUN_LOGGING = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.orchestration.logging")
 _RUN_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.run")
+_SCANNER = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.scanner.service")
 ContractError = _CONTRACTS.ContractError
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
 canonical_sha256 = _CONTRACTS.canonical_sha256
@@ -62,10 +63,15 @@ def _validate_dataset(arguments: argparse.Namespace) -> dict[str, object]:
 
 
 def _scan(arguments: argparse.Namespace) -> dict[str, object]:
-    evidence = scan_repository(arguments.root)
+    if arguments.schema_version == 1:
+        if arguments.project_type is not None:
+            raise ContractError("E_SCHEMA_VERSION", "--project-type requires --schema-version 2")
+        evidence = scan_repository(arguments.root)
+    else:
+        evidence = _SCANNER.scan_repository_v2(arguments.root, arguments.project_type or "unknown")
     write_canonical_json_atomic(arguments.output, evidence)
     return {
-        "schema_version": 1,
+        "schema_version": arguments.schema_version,
         "status": evidence["status"],
         "file_count": len(evidence["files"]),
         "evidence_sha256": canonical_sha256(evidence),
@@ -233,6 +239,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan = subcommands.add_parser("scan")
     _path_argument(scan, "--root")
     _path_argument(scan, "--output")
+    scan.add_argument("--schema-version", type=int, choices=(1, 2), default=1)
+    scan.add_argument("--project-type", choices=("cli", "library", "app", "extension", "service", "unknown"))
     scan.set_defaults(handler=_scan)
 
     retrieve = subcommands.add_parser("retrieve")

@@ -51,6 +51,10 @@
       "selected_files == content_files + skipped_files",
       "skipped_files == len(skipped)",
       "content_bytes == sum(files[*].bytes)",
+      "indexed_files <= tracked_files",
+      "content_files <= indexed_files",
+      "selected_files - required-evidence-missing skips <= indexed_files",
+      "complete requires tracked_files == indexed_files",
       "file and skip paths are disjoint, unique, and ordered",
       "minimum evidence and status match project_type"
     ]

@@ -209,6 +209,14 @@ def validate_repository_scan_v2(payload: Any) -> dict[str, Any]:
         or coverage["content_bytes"] != sum(item["bytes"] for item in files)
     ):
         _fail("E_SCAN_COVERAGE", "repository scan coverage counters do not reconcile")
+    virtual_skips = sum(item["reason"] == "required-evidence-missing" for item in skipped)
+    if (
+        coverage["indexed_files"] > coverage["tracked_files"]
+        or coverage["content_files"] > coverage["indexed_files"]
+        or coverage["selected_files"] - virtual_skips > coverage["indexed_files"]
+        or (packet["status"] == "complete" and coverage["tracked_files"] != coverage["indexed_files"])
+    ):
+        _fail("E_SCAN_COVERAGE", "repository scan tracked/indexed/selected counters are impossible")
 
     policy = _object(packet["policy"], _POLICY_FIELDS, "repository scan.policy")
     required = _sorted_strings(policy["required_evidence"], "policy.required_evidence")

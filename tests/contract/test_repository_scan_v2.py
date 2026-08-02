@@ -119,6 +119,32 @@ class RepositoryScanV2ContractTests(unittest.TestCase):
             with self.subTest(case=case["name"]):
                 self.assert_code(case["code"], validate_repository_scan_v2, case["payload"])
 
+    def test_impossible_coverage_and_capability_packets_cannot_publish(self) -> None:
+        valid = json.loads((FIXTURES / "contracts" / "repository-scan-v2.valid.json").read_text(encoding="utf-8"))
+        impossible = copy.deepcopy(valid)
+        impossible["coverage"]["tracked_files"] = 1
+        impossible["coverage"]["indexed_files"] = 4
+        self.assert_code("E_SCAN_COVERAGE", validate_repository_scan_v2, impossible)
+        self.assert_code("E_SCAN_COVERAGE", scan_allows_publish, impossible)
+
+        complete = copy.deepcopy(valid)
+        complete["status"] = "complete"
+        complete["skipped"] = []
+        complete["coverage"]["skipped_files"] = 0
+        complete["coverage"]["selected_files"] = 3
+        complete["policy"]["publish_eligible"] = True
+        complete["policy"]["allowed_consumers"] = ["audit", "publish", "readme"]
+        complete["coverage"]["tracked_files"] = 99
+        self.assert_code("E_SCAN_COVERAGE", validate_repository_scan_v2, complete)
+        self.assert_code("E_SCAN_COVERAGE", scan_allows_publish, complete)
+
+        forged_partial = copy.deepcopy(valid)
+        forged_partial["policy"]["publish_eligible"] = True
+        forged_partial["policy"]["allowed_consumers"] = ["audit", "publish", "readme"]
+        schema = json.loads((ROOT / "skill" / "schemas" / "repository-scan.v2.schema.json").read_text(encoding="utf-8"))
+        self.assertTrue(list(Draft202012Validator(schema).iter_errors(forged_partial)))
+        self.assert_code("E_SCAN_POLICY", scan_allows_publish, forged_partial)
+
     def test_partial_and_incomplete_never_authorize_publish(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.make_cli(Path(temporary))
@@ -185,6 +211,90 @@ class RepositoryScanV2ContractTests(unittest.TestCase):
             self.assertEqual(canonical_json_bytes(legacy), before)
             self.assert_code("E_SCAN_ROOT", service.scan_repository_v1, root / "missing")
             self.assertEqual(hashlib.sha256(canonical_v1_scan_bytes(legacy)).hexdigest(), hashlib.sha256(before).hexdigest())
+
+    def test_cli_v2_complete_partial_incomplete_and_fail_fast_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            complete = base / "complete"
+            complete.mkdir()
+            (complete / "README.md").write_text("# Demo\n", encoding="utf-8")
+            (complete / "package.json").write_text("{}\n", encoding="utf-8")
+            complete_output = base / "complete.json"
+            complete_run = self.cli(complete, complete_output, "--schema-version", "2", "--project-type", "unknown")
+            self.assertEqual(complete_run.returncode, 0, complete_run.stderr)
+            self.assertEqual(json.loads(complete_output.read_text(encoding="utf-8"))["status"], "complete")
+
+            partial_base = base / "partial"
+            partial_base.mkdir()
+            partial = self.make_cli(partial_base)
+            (partial / ".readme-showcase.json").write_text(
+                json.dumps({"scanner": {"include": ["bin/**", "package.json", "tests/**", "zzz.txt"], "limits": {"max_content_files": 3}}}),
+                encoding="utf-8",
+            )
+            partial_output = base / "partial.json"
+            partial_run = self.cli(partial, partial_output, "--schema-version", "2", "--project-type", "cli")
+            self.assertEqual(partial_run.returncode, 0, partial_run.stderr)
+            self.assertEqual(json.loads(partial_output.read_text(encoding="utf-8"))["status"], "partial")
+
+            incomplete = base / "incomplete"
+            incomplete.mkdir()
+            (incomplete / "README.md").write_text("# Only docs\n", encoding="utf-8")
+            incomplete_output = base / "incomplete.json"
+            incomplete_run = self.cli(incomplete, incomplete_output, "--schema-version", "2", "--project-type", "cli")
+            self.assertEqual(incomplete_run.returncode, 1, incomplete_run.stderr)
+            self.assertEqual(json.loads(incomplete_output.read_text(encoding="utf-8"))["status"], "incomplete")
+
+            invalid = base / "invalid"
+            invalid.mkdir()
+            (invalid / ".readme-showcase.json").write_text('{"scanner":{"unknown":true}}', encoding="utf-8")
+            absent = base / "absent.json"
+            invalid_run = self.cli(invalid, absent, "--schema-version", "2", "--project-type", "unknown")
+            self.assertEqual(invalid_run.returncode, 2)
+            self.assertIn("E_SCANNER_CONFIG", invalid_run.stderr)
+            self.assertFalse(absent.exists())
+            previous = base / "previous.json"
+            previous.write_bytes(b"last-good\n")
+            invalid_again = self.cli(invalid, previous, "--schema-version", "2", "--project-type", "unknown")
+            self.assertEqual(invalid_again.returncode, 2)
+            self.assertEqual(previous.read_bytes(), b"last-good\n")
+            missing_output = base / "missing-root.json"
+            missing_run = self.cli(base / "does-not-exist", missing_output, "--schema-version", "2", "--project-type", "unknown")
+            self.assertEqual(missing_run.returncode, 2)
+            self.assertIn("E_SCAN_ROOT", missing_run.stderr)
+            self.assertFalse(missing_output.exists())
+
+    def test_cli_default_and_explicit_v1_are_byte_identical(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base / "target"
+            root.mkdir()
+            (root / "README.md").write_text("# Demo\n", encoding="utf-8")
+            default_output = base / "default.json"
+            explicit_output = base / "explicit.json"
+            default = self.cli(root, default_output)
+            explicit = self.cli(root, explicit_output, "--schema-version", "1")
+            self.assertEqual(default.returncode, 0, default.stderr)
+            self.assertEqual(explicit.returncode, 0, explicit.stderr)
+            self.assertEqual(default.stdout, explicit.stdout)
+            self.assertEqual(default_output.read_bytes(), explicit_output.read_bytes())
+
+    def cli(self, root: Path, output: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                os.sys.executable,
+                "skill/scripts/readme_pipeline.py",
+                "scan",
+                "--root",
+                str(root),
+                "--output",
+                str(output),
+                *arguments,
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
 
 if __name__ == "__main__":
