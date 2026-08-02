@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  python:
+  legacy-all:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

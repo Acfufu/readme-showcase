@@ -16,6 +16,8 @@ class CiContractTests(unittest.TestCase):
         self.workflow = WORKFLOW.read_text(encoding="utf-8")
 
     def test_python_lane_is_node_free_and_covers_supported_versions(self) -> None:
+        self.assertIn("legacy-all:", self.workflow)
+        self.assertIn("python -m unittest discover -s tests -v", self.workflow)
         for version in ("3.10", "3.11", "3.12", "3.13"):
             self.assertIn(f'"{version}"', self.workflow)
         self.assertIn('README_SHOWCASE_SKIP_NODE: "1"', self.workflow)
