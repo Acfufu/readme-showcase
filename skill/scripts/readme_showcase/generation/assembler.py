@@ -195,16 +195,16 @@ def _validate_claim_content(
         locale_claims = grouped[locale]
         if len(locale_blocks) != len(set(locale_blocks)):
             raise ContractError("E_BUNDLE_CLAIM", f"candidate README {locale} has ambiguous duplicate blocks")
-        if len(locale_claims) != len(locale_blocks):
-            raise ContractError("E_CLAIM_COVERAGE", f"candidate README {locale} blocks and claims differ")
         identities: set[tuple[str, str, int, str]] = set()
-        for ordinal, (claim, block) in enumerate(zip(locale_claims, locale_blocks, strict=True)):
+        for ordinal, (claim, block) in enumerate(zip(locale_claims, locale_blocks)):
             identity = ("markdown_blocks", locale, ordinal, claim["claim_id"])
             if identity in identities:
                 raise ContractError("E_CLAIM_DUPLICATE", "claim block identity is duplicated")
             identities.add(identity)
             if hashlib.sha256(block).hexdigest() != claim["content_sha256"]:
                 raise ContractError("E_BUNDLE_HASH", f"claim {claim['claim_id']} differs from candidate README block {ordinal}")
+        if len(locale_claims) != len(locale_blocks):
+            raise ContractError("E_CLAIM_COVERAGE", f"candidate README {locale} blocks and claims differ")
     if markdown and not blocks:
         raise ContractError("E_CLAIM_COVERAGE", "markdown claims require a candidate README")
 

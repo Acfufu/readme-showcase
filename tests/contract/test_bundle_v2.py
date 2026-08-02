@@ -192,6 +192,35 @@ class BundleV2ContractTests(unittest.TestCase):
             artifacts[name] = {"path": paths[name], "sha256": canonical_sha256(value)}
         return assemble_generated_bundle(root, mode="readme", target={"repository": "owner/repo", "base_sha": "a" * 40}, candidate=candidate, artifacts=artifacts)
 
+    def rewrite_candidate(self, root: Path, bundle: dict[str, Any], raw: bytes) -> None:
+        (root / "README.generated.md").write_bytes(raw)
+        bundle["candidate"]["readme"]["sha256"] = hashlib.sha256(raw).hexdigest()
+        candidate = {key: bundle["candidate"][key] for key in ("readme", "assets")}
+        bundle["candidate"]["candidate_sha256"] = canonical_sha256(candidate)
+        evaluation = {"schema_version": 2, "status": "pass", "candidate_sha256": bundle["candidate"]["candidate_sha256"]}
+        write_canonical_json_atomic(root / "evaluation.json", evaluation)
+        bundle["artifacts"]["evaluation"]["sha256"] = canonical_sha256(evaluation)
+
+    def make_two_block_bundle(self, root: Path) -> dict[str, Any]:
+        bundle = self.make_bundle(root)
+        self.rewrite_candidate(root, bundle, b"# Overview\n\nDetails\n")
+        claims = json.loads((root / "claim-map.json").read_text(encoding="utf-8"))
+        claims["markdown_blocks"].append({
+            **copy.deepcopy(claims["markdown_blocks"][0]),
+            "claim_id": "markdown:en:details",
+            "content_sha256": "1" * 64,
+        })
+        claims["markdown_blocks"].sort(key=lambda claim: claim["claim_id"])
+        write_canonical_json_atomic(root / "claim-map.json", claims)
+        bundle["artifacts"]["claim_map"]["sha256"] = canonical_sha256(claims)
+        return assemble_generated_bundle(
+            root,
+            mode=bundle["mode"],
+            target=bundle["target"],
+            candidate={key: bundle["candidate"][key] for key in ("readme", "assets")},
+            artifacts=bundle["artifacts"],
+        )
+
     def test_bundle_exact_hashes_security_atomicity_and_concurrency(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -224,23 +253,23 @@ class BundleV2ContractTests(unittest.TestCase):
     def test_readme_claim_content_binding_rejects_self_consistent_rewrite(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            bundle = self.make_bundle(root)
-            replacement = b"# Unrelated\n"
-            (root / "README.generated.md").write_bytes(replacement)
-            bundle["candidate"]["readme"]["sha256"] = hashlib.sha256(replacement).hexdigest()
-            candidate = {
-                "readme": bundle["candidate"]["readme"],
-                "assets": bundle["candidate"]["assets"],
-            }
-            bundle["candidate"]["candidate_sha256"] = canonical_sha256(candidate)
-            evaluation = {
-                "schema_version": 2,
-                "status": "pass",
-                "candidate_sha256": bundle["candidate"]["candidate_sha256"],
-            }
-            write_canonical_json_atomic(root / "evaluation.json", evaluation)
-            bundle["artifacts"]["evaluation"]["sha256"] = canonical_sha256(evaluation)
+            bundle = self.make_two_block_bundle(root)
+            self.rewrite_candidate(root, bundle, b"# Unrelated\n")
             self.assert_code("E_BUNDLE_HASH", validate_generated_bundle_v2, bundle, root)
+
+    def test_readme_claim_content_binding_preserves_pure_coverage_errors(self) -> None:
+        with self.subTest(case="missing block with matching prefix"):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                bundle = self.make_two_block_bundle(root)
+                self.rewrite_candidate(root, bundle, b"# Overview\n")
+                self.assert_code("E_CLAIM_COVERAGE", validate_generated_bundle_v2, bundle, root)
+        with self.subTest(case="extra block with matching prefix"):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                bundle = self.make_bundle(root)
+                self.rewrite_candidate(root, bundle, b"# Overview\n\nDetails\n")
+                self.assert_code("E_CLAIM_COVERAGE", validate_generated_bundle_v2, bundle, root)
 
     def test_readme_claim_content_binding_is_canonical_bilingual_and_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
