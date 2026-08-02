@@ -1466,9 +1466,9 @@ def _validate_asset_manifest(
                 )
     if manifest_refs != candidate_assets:
         _fail("E_BUNDLE_ASSET", "candidate assets and asset manifest differ")
-
-
 def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, object]:
+    if isinstance(payload, dict) and payload.get("schema_version") == 2 and set(payload) != {"schema_version"}:
+        return cast(dict[str, object], importlib.import_module("skill.scripts.readme_showcase.generation.assembler" if __package__.startswith("skill.") else "scripts.readme_showcase.generation.assembler").validate_generated_bundle_v2(payload, artifact_root))
     bundle = validate_contract(
         payload,
         required=_BUNDLE_FIELDS,

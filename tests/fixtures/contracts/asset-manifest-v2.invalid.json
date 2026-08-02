@@ -1,0 +1,8 @@
+{
+  "cases": [
+    {"name":"traversal","code":"E_PATH","payload":{"schema_version":2,"assets":[{"asset_id":"hero","path":"../hero.png","locale":"en","provenance":{"kind":"derived","path":"source/README.md","sha256":"e53be369774bc183e99d72aa289f1ec139f6c67d4c51e38634b17e575af67d4d"},"artifact_sha256":"235e038991789e2eae934ad370c87ea2edf1255811ac9cc5353e4ef1865c679c","candidate_sha256":"235e038991789e2eae934ad370c87ea2edf1255811ac9cc5353e4ef1865c679c","evidence_ids":["FACT_ID"]}]}},
+    {"name":"hash-drift","code":"E_BUNDLE_HASH","semantic":true,"payload":{"schema_version":2,"assets":[{"asset_id":"hero","path":"assets/hero.png","locale":"en","provenance":{"kind":"derived","path":"source/README.md","sha256":"e53be369774bc183e99d72aa289f1ec139f6c67d4c51e38634b17e575af67d4d"},"artifact_sha256":"235e038991789e2eae934ad370c87ea2edf1255811ac9cc5353e4ef1865c679c","candidate_sha256":"0000000000000000000000000000000000000000000000000000000000000000","evidence_ids":["FACT_ID"]}]}},
+    {"name":"unknown-field","code":"E_SCHEMA_UNKNOWN_FIELD","payload":{"schema_version":2,"assets":[],"unknown":true}},
+    {"name":"provenance-drift","code":"E_BUNDLE_HASH","semantic":true,"payload":{"schema_version":2,"assets":[{"asset_id":"hero","path":"assets/hero.png","locale":"en","provenance":{"kind":"derived","path":"source/README.md","sha256":"0000000000000000000000000000000000000000000000000000000000000000"},"artifact_sha256":"235e038991789e2eae934ad370c87ea2edf1255811ac9cc5353e4ef1865c679c","candidate_sha256":"235e038991789e2eae934ad370c87ea2edf1255811ac9cc5353e4ef1865c679c","evidence_ids":["FACT_ID"]}]}}
+  ]
+}

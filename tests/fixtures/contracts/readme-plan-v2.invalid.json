@@ -1,0 +1,7 @@
+{
+  "cases": [
+    {"name":"unknown-field","code":"E_SCHEMA_UNKNOWN_FIELD","payload":{"schema_version":2,"mode":"readme","languages":["en"],"sections":["overview"],"visual_intent":"hero","diagram_route":"static","commands":[],"evidence_ids":["FACT_ID"],"unknown":true}},
+    {"name":"float","code":"E_SCHEMA_FLOAT","semantic":true,"payload":{"schema_version":2.0,"mode":"readme","languages":["en"],"sections":["overview"],"visual_intent":"hero","diagram_route":"static","commands":[],"evidence_ids":["FACT_ID"]}},
+    {"name":"zero-evidence","code":"E_CLAIM_EVIDENCE","payload":{"schema_version":2,"mode":"readme","languages":["en"],"sections":["overview"],"visual_intent":"hero","diagram_route":"static","commands":[],"evidence_ids":[]}}
+  ]
+}

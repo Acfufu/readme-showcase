@@ -9,6 +9,7 @@ from ...pipeline_contracts import ContractError, canonical_json_bytes, validate_
 
 
 README_PLAN_SCHEMA_VERSION = 1
+README_PLAN_V2_SCHEMA_VERSION = 2
 PLAN_MODES = frozenset({"readme", "asset-only", "audit-only"})
 PLAN_LANGUAGES = frozenset({"en", "zh"})
 DIAGRAM_ROUTES = frozenset({"none", "static", "elk"})
@@ -32,6 +33,7 @@ _SECRET_ASSIGNMENT_CANDIDATE = re.compile(
     r"(?<![A-Za-z0-9_])(?P<quote>[\"'`]?)"
     r"(?P<key>[A-Za-z][A-Za-z0-9_-]*)(?P=quote)\s*[:=]"
 )
+_EVIDENCE_ID = re.compile(r"[a-z]+:[0-9a-f]{64}\Z")
 
 
 def _reject_float(value: Any, path: str = "$") -> None:
@@ -113,15 +115,22 @@ def _strings(
 
 def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, Any]:
     _reject_float(payload)
-    plan = validate_contract(
-        payload,
-        required={
-            "schema_version", "mode", "languages", "sections", "visual_intent",
-            "diagram_route", "commands", "evidence_ids",
-        },
-        optional=set(),
-        context="README plan",
-    )
+    fields = {
+        "schema_version", "mode", "languages", "sections", "visual_intent",
+        "diagram_route", "commands", "evidence_ids",
+    }
+    if not isinstance(payload, dict):
+        raise ContractError("E_SCHEMA_TYPE", "README plan must be a JSON object")
+    version = payload.get("schema_version")
+    if type(version) is not int or version not in {README_PLAN_SCHEMA_VERSION, README_PLAN_V2_SCHEMA_VERSION}:
+        raise ContractError("E_SCHEMA_VERSION", "README plan requires schema_version 1 or 2")
+    unknown = sorted(set(payload) - fields)
+    missing = sorted(fields - set(payload))
+    if unknown:
+        raise ContractError("E_SCHEMA_UNKNOWN_FIELD", f"README plan contains unknown field: {unknown[0]}")
+    if missing:
+        raise ContractError("E_SCHEMA_MISSING_FIELD", f"README plan is missing required field: {missing[0]}")
+    plan = payload
     normalized_mode = normalize_generation_text(plan["mode"], "README plan.mode")
     if normalized_mode not in PLAN_MODES or (mode is not None and normalized_mode != mode):
         raise ContractError("E_BUNDLE_PLAN", "README plan mode is unsupported")
@@ -131,8 +140,13 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
     diagram_route = normalize_generation_text(plan["diagram_route"], "README plan.diagram_route")
     if diagram_route not in DIAGRAM_ROUTES:
         raise ContractError("E_BUNDLE_PLAN", "README plan diagram route is unsupported")
+    evidence_ids = _strings(plan["evidence_ids"], "README plan.evidence_ids")
+    if version == README_PLAN_V2_SCHEMA_VERSION and not evidence_ids:
+        raise ContractError("E_CLAIM_EVIDENCE", "README plan v2 requires normative evidence")
+    if version == README_PLAN_V2_SCHEMA_VERSION and any(not _EVIDENCE_ID.fullmatch(item) for item in evidence_ids):
+        raise ContractError("E_CLAIM_EVIDENCE", "README plan v2 evidence IDs must be normative Evidence v2 IDs")
     normalized = {
-        "schema_version": README_PLAN_SCHEMA_VERSION,
+        "schema_version": version,
         "mode": normalized_mode,
         "languages": languages,
         "sections": _strings(plan["sections"], "README plan.sections"),
@@ -141,10 +155,17 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
         ),
         "diagram_route": diagram_route,
         "commands": _strings(plan["commands"], "README plan.commands"),
-        "evidence_ids": _strings(plan["evidence_ids"], "README plan.evidence_ids"),
+        "evidence_ids": evidence_ids,
     }
     return copy.deepcopy(normalized)
 
 
 def canonical_readme_plan_bytes(payload: Any, *, mode: str | None = None) -> bytes:
     return canonical_json_bytes(validate_readme_plan(payload, mode=mode))
+
+
+def validate_readme_plan_v2(payload: Any, *, mode: str | None = None) -> dict[str, Any]:
+    plan = validate_readme_plan(payload, mode=mode)
+    if plan["schema_version"] != README_PLAN_V2_SCHEMA_VERSION:
+        raise ContractError("E_SCHEMA_VERSION", "README plan producer requires schema_version 2")
+    return plan

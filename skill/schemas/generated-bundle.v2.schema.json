@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/generated-bundle.v2.schema.json",
+  "title": "Generated README Bundle v2",
+  "$comment": "Python semantic validation reads regular files and verifies every candidate, artifact, evidence, provenance, and evaluation hash.",
+  "x-python-semantic-validation": {"validator": "skill.scripts.readme_showcase.generation.assembler.validate_generated_bundle_v2", "codes": ["E_PATH", "E_BUNDLE_HASH", "E_CLAIM_LANGUAGE"]},
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "mode", "target", "candidate", "artifacts"],
+  "properties": {
+    "schema_version": {"const": 2}, "mode": {"enum": ["readme", "asset-only", "audit-only"]},
+    "target": {"type": "object", "additionalProperties": false, "required": ["repository", "base_sha"], "properties": {"repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"}, "base_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}}},
+    "candidate": {"type": "object", "additionalProperties": false, "required": ["readme", "assets", "candidate_sha256"], "properties": {"readme": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/reference"}]}, "assets": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/reference"}}, "candidate_sha256": {"$ref": "#/$defs/sha256"}}},
+    "artifacts": {"type": "object", "additionalProperties": false, "required": ["plan", "retrieval", "evidence", "claim_map", "asset_manifest", "evaluation"], "properties": {"plan": {"$ref": "#/$defs/reference"}, "retrieval": {"$ref": "#/$defs/reference"}, "evidence": {"$ref": "#/$defs/reference"}, "claim_map": {"$ref": "#/$defs/reference"}, "asset_manifest": {"$ref": "#/$defs/reference"}, "evaluation": {"$ref": "#/$defs/reference"}}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!/|~/)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\\\u0000]+$"},
+    "reference": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"$ref": "#/$defs/path"}, "sha256": {"$ref": "#/$defs/sha256"}}}
+  }
+}

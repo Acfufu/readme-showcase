@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/readme-plan.v2.schema.json",
+  "title": "README Plan v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode", "languages", "sections", "visual_intent", "diagram_route", "commands", "evidence_ids"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "mode": {"enum": ["readme", "asset-only", "audit-only"]},
+    "languages": {"type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true, "items": {"enum": ["en", "zh"]}},
+    "sections": {"$ref": "#/$defs/textArray"},
+    "visual_intent": {"$ref": "#/$defs/text"},
+    "diagram_route": {"enum": ["none", "static", "elk"]},
+    "commands": {"$ref": "#/$defs/textArray"},
+    "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000]+$"},
+    "textArray": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}}
+  }
+}

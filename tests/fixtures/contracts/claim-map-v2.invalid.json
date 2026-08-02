@@ -1,0 +1,9 @@
+{
+  "cases": [
+    {"name":"zero-evidence","code":"E_CLAIM_EVIDENCE","payload":{"schema_version":2,"markdown_blocks":[{"claim_id":"markdown:en:x","content_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","claim_kind":"factual","evidence_ids":[],"language_pair_id":null,"support_level":"direct"}],"diagram_labels":[]}},
+    {"name":"composed-one","code":"E_CLAIM_EVIDENCE","payload":{"schema_version":2,"markdown_blocks":[{"claim_id":"markdown:en:x","content_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","claim_kind":"factual","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"composed"}],"diagram_labels":[]}},
+    {"name":"unknown-field","code":"E_SCHEMA_UNKNOWN_FIELD","payload":{"schema_version":2,"markdown_blocks":[],"diagram_labels":[],"unknown":true}},
+    {"name":"dangling-evidence","code":"E_CLAIM_EVIDENCE","semantic":true,"payload":{"schema_version":2,"markdown_blocks":[{"claim_id":"markdown:en:x","content_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","claim_kind":"factual","evidence_ids":["config:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"],"language_pair_id":null,"support_level":"direct"}],"diagram_labels":[]}},
+    {"name":"bilingual-drift","code":"E_CLAIM_LANGUAGE","semantic":true,"payload":{"schema_version":2,"markdown_blocks":[{"claim_id":"markdown:en:x","content_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","claim_kind":"factual","evidence_ids":["FACT_ID"],"language_pair_id":"x","support_level":"direct"},{"claim_id":"markdown:zh:x","content_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","claim_kind":"factual","evidence_ids":["FACT_ID"],"language_pair_id":"x","support_level":"documented-only"}],"diagram_labels":[]}}
+  ]
+}
