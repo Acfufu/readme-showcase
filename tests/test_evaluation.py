@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from skill.scripts.pipeline_contracts import (
+    ContractError,
     canonical_json_bytes,
     canonical_sha256,
     write_canonical_json_atomic,
@@ -26,6 +27,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 evaluate_generated_bundle = importlib.import_module(
     "skill.scripts.pipeline_core"
 ).evaluate_generated_bundle
+build_pr_bundle = importlib.import_module(
+    "skill.scripts.pipeline_core"
+).build_pr_bundle
 
 
 def reversed_objects(value: Any) -> Any:
@@ -51,15 +55,24 @@ class EvaluationTests(unittest.TestCase):
     def helper(self) -> claim_coverage.ClaimCoverageTests:
         return claim_coverage.ClaimCoverageTests(methodName="runTest")
 
-    def v2_bundle(self, root: Path, quality: str) -> dict[str, Any]:
+    def v2_bundle(
+        self,
+        root: Path,
+        quality: str,
+        *,
+        repository: str = "owner/repo",
+        base_sha: str = "a" * 40,
+        readme_name: str = "README.generated.md",
+        asset_name: str = "assets/hero.png",
+    ) -> dict[str, Any]:
         source = b"source evidence\n"
         asset_raw = b"asset bytes\n"
         readme_raw = b"# Overview\n"
         (root / "source").mkdir()
         (root / "source" / "README.md").write_bytes(source)
-        (root / "assets").mkdir()
-        (root / "assets" / "hero.png").write_bytes(asset_raw)
-        (root / "README.generated.md").write_bytes(readme_raw)
+        (root / asset_name).parent.mkdir(parents=True)
+        (root / asset_name).write_bytes(asset_raw)
+        (root / readme_name).write_bytes(readme_raw)
         fact = build_fact(
             kind="file-presence", path="source/README.md", locator=None,
             semantic_key="presence", value=True, source_bytes=source,
@@ -90,7 +103,7 @@ class EvaluationTests(unittest.TestCase):
         assets = {
             "schema_version": 2,
             "assets": [{
-                "asset_id": "hero", "path": "assets/hero.png", "locale": "en",
+                "asset_id": "hero", "path": asset_name, "locale": "en",
                 "provenance": {
                     "kind": "derived", "path": "source/README.md",
                     "sha256": hashlib.sha256(source).hexdigest(),
@@ -106,8 +119,8 @@ class EvaluationTests(unittest.TestCase):
             "records": ([{"section_intents": ["overview"]}] if quality == "high" else []),
         }
         candidate = {
-            "readme": {"path": "README.generated.md", "sha256": hashlib.sha256(readme_raw).hexdigest()},
-            "assets": [{"path": "assets/hero.png", "sha256": hashlib.sha256(asset_raw).hexdigest()}],
+            "readme": {"path": readme_name, "sha256": hashlib.sha256(readme_raw).hexdigest()},
+            "assets": [{"path": asset_name, "sha256": hashlib.sha256(asset_raw).hexdigest()}],
         }
         evaluation = {"schema_version": 2, "status": "pass", "candidate_sha256": canonical_sha256(candidate)}
         values = {
@@ -125,7 +138,7 @@ class EvaluationTests(unittest.TestCase):
             artifacts[name] = {"path": paths[name], "sha256": canonical_sha256(value)}
         return assemble_generated_bundle(
             root, mode="readme",
-            target={"repository": "owner/repo", "base_sha": "a" * 40},
+            target={"repository": repository, "base_sha": base_sha},
             candidate=candidate, artifacts=artifacts,
         )
 
@@ -213,6 +226,74 @@ class EvaluationTests(unittest.TestCase):
                 hashlib.sha256(canonical_json_bytes(report)).hexdigest(),
                 "323de83bbb43fb68822a08ffb247406f226af01a040c58a9c6c92e1529c73052",
             )
+
+    def test_v2_evaluate_to_pr_bundle_uses_hard_gate_not_advisory_score(self) -> None:
+        from tests.test_pr_bundle import PrBundleTests
+
+        helper = PrBundleTests(methodName="runTest")
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            target, _ = helper.target(base)
+            (target / "source").mkdir()
+            (target / "source" / "README.md").write_bytes(b"source evidence\n")
+            helper.git(target, "add", "source/README.md")
+            helper.git(target, "commit", "-m", "add evidence source")
+            base_sha = helper.git(target, "rev-parse", "HEAD")
+            ready = {}
+            reports = {}
+            bundles = {}
+            for quality in ("low", "high"):
+                run_root = base / f"run-{quality}"
+                run_root.mkdir()
+                bundle = self.v2_bundle(
+                    run_root,
+                    quality,
+                    repository="owner/target",
+                    base_sha=base_sha,
+                    readme_name="README.md",
+                    asset_name="assets/readme/hero.png",
+                )
+                report = evaluate_generated_bundle(bundle, run_root)
+                bundles[quality] = (bundle, run_root)
+                reports[quality] = report
+                ready[quality] = build_pr_bundle(bundle, report, run_root, target)
+            self.assertEqual(ready["low"]["status"], "ready")
+            self.assertEqual(ready["high"]["status"], "ready")
+            self.assertNotIn("write_authority", ready["low"])
+            self.assertNotIn("write_authority", ready["high"])
+            self.assertNotEqual(
+                reports["low"]["advisory"],
+                reports["high"]["advisory"],
+            )
+
+            malformed = copy.deepcopy(reports["low"])
+            malformed["advisory"]["claim_coverage"]["covered"] = 2
+            bundle, run_root = bundles["low"]
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, malformed, run_root, target)
+            self.assertEqual(raised.exception.code, "E_EVALUATION_METRIC")
+
+            crafted = copy.deepcopy(reports["low"])
+            crafted["advisory"]["claim_coverage"] = {
+                "basis_points": 10000,
+                "covered": 1,
+                "reasons": [],
+                "status": "measured",
+                "total": 1,
+            }
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, crafted, run_root, target)
+            self.assertEqual(raised.exception.code, "E_PR_EVALUATION")
+
+            hard_fail = copy.deepcopy(reports["low"])
+            hard_fail["status"] = "fail"
+            hard_fail["hard_gate"] = {
+                "status": "fail",
+                "findings": [{"code": "E_README_AUDIT", "message": "failed"}],
+            }
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, hard_fail, run_root, target)
+            self.assertEqual(raised.exception.code, "E_PR_EVALUATION")
 
     def test_hard_failure_cannot_be_masked_by_advisory_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

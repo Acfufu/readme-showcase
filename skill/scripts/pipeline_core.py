@@ -853,8 +853,48 @@ def _validate_evidence_checkout(
     artifact_root: Path,
     target_root: Path,
     expected_sha256: str,
+    *,
+    bundle: dict[str, Any],
 ) -> None:
     try:
+        if bundle.get("schema_version") == 2:
+            artifacts = cast(dict[str, Any], bundle["artifacts"])
+            reference = _reference(
+                artifacts["evidence"],
+                "bundle artifacts.evidence",
+            )
+            raw = _artifact_bytes(
+                artifact_root,
+                reference,
+                "bundle artifacts.evidence",
+            )
+            evidence = json.loads(raw.decode("utf-8"))
+            if evidence.get("evidence_sha256") != expected_sha256:
+                _fail("E_PR_EVIDENCE", "repository evidence changed after validation")
+            source_hashes: dict[str, str] = {}
+            for index, fact in enumerate(cast(list[dict[str, Any]], evidence["facts"])):
+                source = cast(dict[str, Any], fact["source"])
+                relative = _relative_path(
+                    source["path"],
+                    f"repository evidence.facts[{index}].source.path",
+                )
+                digest = fact["source_sha256"]
+                previous = source_hashes.setdefault(relative.as_posix(), digest)
+                if previous != digest:
+                    _fail("E_PR_EVIDENCE", "repository evidence source hashes conflict")
+            for path, digest in sorted(source_hashes.items()):
+                current = read_regular_bytes(
+                    target_root.joinpath(*PurePosixPath(path).parts),
+                    maximum=MAX_FILE_BYTES,
+                    path_code="E_PR_EVIDENCE",
+                    size_code="E_PR_EVIDENCE",
+                )
+                if hashlib.sha256(current).hexdigest() != digest:
+                    _fail(
+                        "E_PR_EVIDENCE",
+                        f"repository evidence differs from target: {path}",
+                    )
+            return
         raw = read_regular_bytes(
             artifact_root / "repository-evidence.json",
             maximum=MAX_TOTAL_BYTES,
@@ -1640,6 +1680,8 @@ def _validate_evaluation_report(
     payload: Any,
     *,
     bundle_sha256: str,
+    bundle_schema_version: int,
+    expected_advisory: dict[str, dict[str, object]] | None = None,
 ) -> None:
     report = validate_contract(
         payload,
@@ -1665,6 +1707,14 @@ def _validate_evaluation_report(
         set(_ADVISORY_METRICS),
         "evaluation report.advisory",
     )
+    if bundle_schema_version == 2:
+        validated_advisory = _EVALUATION.validate_advisory_metrics(advisory)
+        if validated_advisory != expected_advisory:
+            _fail(
+                "E_PR_EVALUATION",
+                "evaluation advisory metrics differ from bundle evidence",
+            )
+        return
     for name in _ADVISORY_METRICS:
         pair = _object(
             advisory[name],
@@ -1833,12 +1883,15 @@ def build_pr_bundle(
     else:
         _fail("E_PR_PATH", "pipeline run directory must stay outside target repository")
 
-    bundle = validate_contract(
-        payload,
-        required=_BUNDLE_FIELDS,
-        optional=set(),
-        context="generated README bundle",
-    )
+    if isinstance(payload, dict) and payload.get("schema_version") == 2:
+        bundle = _object(payload, _BUNDLE_FIELDS, "generated README bundle")
+    else:
+        bundle = validate_contract(
+            payload,
+            required=_BUNDLE_FIELDS,
+            optional=set(),
+            context="generated README bundle",
+        )
     target = _object(bundle["target"], _TARGET_FIELDS, "bundle target")
     repository = _text(target["repository"], "bundle target.repository")
     base_sha = target["base_sha"]
@@ -1882,9 +1935,19 @@ def build_pr_bundle(
         artifact_root,
         target_root,
         cast(str, validation["evidence_sha256"]),
+        bundle=bundle,
     )
     bundle_sha256 = canonical_sha256(bundle)
-    _validate_evaluation_report(evaluation, bundle_sha256=bundle_sha256)
+    _validate_evaluation_report(
+        evaluation,
+        bundle_sha256=bundle_sha256,
+        bundle_schema_version=cast(int, bundle["schema_version"]),
+        expected_advisory=(
+            _EVALUATION.evaluate_v2_advisory(bundle, artifact_root)
+            if bundle["schema_version"] == 2
+            else None
+        ),
+    )
     candidate = cast(dict[str, Any], bundle["candidate"])
     references: list[tuple[dict[str, str], str]] = []
     if candidate["readme"] is not None:
