@@ -54,6 +54,63 @@ class ReadmeHardGateTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_localized_readme_rejects_unlocalized_text_svg(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "workflow.svg").write_text(VALID_SVG, encoding="utf-8")
+            readme = root / "README_zh.md"
+            readme.write_text(
+                "# 演示\n\n![工作流](workflow.svg)\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_audit(readme)
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("E_SVG_LOCALE", result.stdout)
+
+            (root / "workflow-zh.svg").write_text(VALID_SVG, encoding="utf-8")
+            readme.write_text(
+                "# 演示\n\n![工作流](workflow-zh.svg)\n",
+                encoding="utf-8",
+            )
+            renamed_only = self.run_audit(readme)
+            self.assertEqual(renamed_only.returncode, 1)
+            self.assertIn("contains no visible Chinese text", renamed_only.stdout)
+
+            (root / "workflow-zh.svg").write_text(
+                VALID_SVG.replace("Architecture", "工作流").replace("Agent", "证据"),
+                encoding="utf-8",
+            )
+            readme.write_text(
+                "# 演示\n\n![工作流](workflow-zh.svg)\n",
+                encoding="utf-8",
+            )
+            localized = self.run_audit(readme)
+            self.assertEqual(
+                localized.returncode,
+                0,
+                localized.stdout + localized.stderr,
+            )
+
+            (root / "workflow.svg").write_text(
+                VALID_SVG.replace(
+                    "<svg ",
+                    '<svg data-readme-language="neutral" ',
+                ),
+                encoding="utf-8",
+            )
+            readme.write_text(
+                "# 演示\n\n![工作流](workflow.svg)\n",
+                encoding="utf-8",
+            )
+            neutral = self.run_audit(readme)
+            self.assertEqual(
+                neutral.returncode,
+                0,
+                neutral.stdout + neutral.stderr,
+            )
+
     def test_broken_anchor_missing_alt_and_root_escape_report_lines(self) -> None:
         cases = {
             "anchor": ("# Demo\n\n[Broken](#missing)\n", "broken anchor", 3),

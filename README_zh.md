@@ -1,6 +1,7 @@
 <p align="center">
-  <img src="./assets/readme/hero-zh.gif" width="100%" alt="README Showcase 将仓库事实整理成清晰的 GitHub 项目主页">
+  <img src="./assets/readme/hero-zh.svg" width="100%" alt="README Showcase 将仓库证据整理成经过验证、可供审查的 GitHub 项目主页">
 </p>
+<p align="center"><sub>证据约束的 README 设计，默认停在本地。</sub></p>
 
 <p align="center">
   <a href="./README.md">English</a> · <strong>简体中文</strong>
@@ -11,10 +12,41 @@
   <img src="https://img.shields.io/badge/runtime-Codex-c54a36" alt="面向 Codex">
   <img src="https://img.shields.io/badge/dependencies-stdlib_only-686257" alt="审计脚本只使用 Python 标准库">
 </p>
-`readme-showcase` 是一条由单一 Agent 执行的 evidence-to-PR 流水线：根据
-仓库中已验证的行为，重新设计 GitHub README 项目主页。Markdown 承载可搜索
-事实；视觉资产只有在能够证明身份、输出、流程或架构时才会加入。评估阶段只
-生成带指纹的本地 PR bundle，不会自动写入远端。
+
+`readme-showcase` 是一个 Codex Skill，把当前仓库证据整理成清晰的 GitHub
+项目主页。单一 README Agent 负责扫描事实、检索有许可证的抽象编辑模式、
+编写项目原生文案与视觉、核验全部声明和资产，最后停在带指纹的本地 PR bundle。
+
+<p align="center">
+  <a href="#两分钟安装"><strong>安装</strong></a> ·
+  <a href="#选择模式"><strong>选择模式</strong></a> ·
+  <a href="#本地验证"><strong>验证</strong></a> ·
+  <a href="#安全边界"><strong>安全</strong></a>
+</p>
+
+## 从仓库到可审查 README
+
+| 输入 | 本地流水线 | 可审查结果 |
+| --- | --- | --- |
+| 当前仓库文件与真实行为 | 确定性扫描、仅 train 检索、单 Agent 编写、硬门禁评估 | README 候选、视觉资产、声明映射、资产清单、评估报告、带指纹 PR bundle |
+
+当前仓库本地实测：
+
+```text
+dataset  12 条授权记录  通过
+scan     64 个仓库文件  完成
+retrieve 5 条生产模式   可用
+install  本地 Skill 树  当前版本
+```
+
+> [!IMPORTANT]
+> 评估通过只授权本地交付。创建分支、提交、推送与 Pull Request 仍需另行批准，
+> 且批准必须绑定精确目标与指纹。
+
+<details>
+<summary><strong>实现归属、来源与精确复用</strong></summary>
+
+<br>
 
 ## 一条流水线，三个责任方
 
@@ -175,9 +207,12 @@ flowchart TD
 | Glyphic | Hero/标题/调色板/文案/声明/构图/评估/发布权 | 这些决策属于目标证据、原始 Agent 与改编 BGR 规则。 |
 | Glyphic | SVG 后处理、wrapper、inline 或 base64 嵌入 | 原始引擎字节保持 hash 绑定并可独立审计；失败时改走静态 fallback。 |
 
-## 证据先于装饰
+</details>
 
-![仓库证据依次经过检查、选择、起草、展示和验证五个审查阶段](assets/readme/workflow.svg)
+## 证据轨道如何工作
+
+![仓库证据依次经过扫描、检索、编写、评估和带指纹本地交付](assets/readme/workflow-zh.gif)
+_五个本地阶段；是否发布远端仍是独立决定。_
 
 Skill 遵循一条阅读顺序：
 
@@ -193,7 +228,7 @@ Skill 遵循一条阅读顺序：
 
 无依据的声明会被删除，纯装饰视觉不会加入，发布始终需要另行授权。
 
-## 安装并运行
+## 两分钟安装
 
 ```bash
 git clone https://github.com/Acfufu/readme-showcase.git
@@ -223,7 +258,7 @@ $readme-showcase 围绕已验证行为和可运行的快速开始，重新设计
 首次可观察行为：skill 会先检查仓库证据，再选择 README 模式；如果范围不清楚，
 则会询问要重做完整 README，还是仅制作视觉资产。
 
-## 三种模式，一条边界
+## 选择模式
 
 | 模式 | 变更范围 | 适用场景 |
 | --- | --- | --- |
@@ -241,7 +276,7 @@ README，除非另外批准嵌入。仅审计模式会在生成、PR bundle 与�
 $readme-showcase 根据这个仓库的真实架构创建静态工作流 SVG，不要修改 README。
 ```
 
-## 自带内容
+## 仓库内容
 
 ```text
 dataset/retrieval/manifest.json       # 12 条有许可证的抽象 pattern
@@ -258,7 +293,7 @@ scripts/build_glyphic_engine_lock.py  # 隔离外部引擎 lock builder
 .github/workflows/ci.yml              # 无 Node matrix + 隔离集成
 ```
 
-## 验证结果
+## 本地验证
 
 审计生成的 README：
 
@@ -280,13 +315,14 @@ python3 -m unittest discover -s tests -v
 `audit_readme.py` 只使用 Python 标准库。动态渲染还需要 Pillow、`ffmpeg`
 以及 `rsvg-convert` 或 macOS `sips`。
 
-## 边界
+## 安全边界
 
 - 仓库证据决定声明和章节。
 - 命令与变化频繁的事实保留为可复制 Markdown。
 - 确定性视觉默认使用静态 SVG；GIF 需要明确选择。
 - Glyphic 是可选、外部、精确版本锁定的能力；默认路径不需要它。
 - 生成资产使用目标仓库的 `assets/readme/` 约定。
+- 本地化 README 使用语言匹配的文字型 SVG；确属语言中性的视觉可用 `data-readme-language="neutral"` 明确豁免。
 - 评估 Pass 只授权生成本地 PR bundle。
 - 提交、推送、发布和远程修改都需要明确授权。
 

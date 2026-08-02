@@ -167,6 +167,9 @@ Follow repository convention and user scope:
 - Add reciprocal links near the opening.
 - Keep claims, commands, paths, and status equivalent; localize meaning rather than translating mechanically.
 - Preserve product names, protocols, APIs, file paths, and commands unless the product localizes them.
+- Build a language-by-asset inventory before generation. Every text-bearing visual needs one locale-matched file, such as `workflow.svg` plus `workflow-zh.svg`.
+- Share an SVG across languages only when its visible text is genuinely language-neutral; mark that exception on the root element with `data-readme-language="neutral"`.
+- Audit every README variant. Passing `README.md` never implies `README_zh.md` assets passed.
 
 ## Validation
 
@@ -180,4 +183,5 @@ Verify:
 - Badges, releases, license, security, support, anchors, and language links exist.
 - Unsupported sections from reference READMEs were not copied.
 - Each language variant carries the same product truth.
+- Each localized README references locale-matched or explicitly neutral text-bearing assets.
 - Markdown remains readable, searchable, and copyable when images fail.

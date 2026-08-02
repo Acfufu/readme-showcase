@@ -1,82 +1,79 @@
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="1200" height="540" viewBox="0 0 1200 540"
+     width="1200" height="500" viewBox="0 0 1200 500"
+     data-readme-language="en"
      role="img" aria-labelledby="title desc">
-  <title id="title">README Showcase evidence workflow</title>
-  <desc id="desc">Repository evidence moves through five review desks: inspect, select, draft, visualize, and verify.</desc>
+  <title id="title">README Showcase evidence rail</title>
+  <desc id="desc">Repository evidence moves through scan, retrieval, drafting, evaluation, and a local handoff; remote publishing stays locked behind separate approval.</desc>
 
-  <rect width="1200" height="540" rx="24" fill="#1D1B17"/>
+  <rect width="1200" height="500" rx="28" fill="#F4F7FB"/>
+  <rect x="22" y="22" width="1156" height="456" rx="20" fill="#FFFFFF" stroke="#C9D5E3" stroke-width="2"/>
 
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
-    <text x="54" y="58" fill="#D8D0C2" font-size="18" font-weight="700"
-          letter-spacing="3">THE EVIDENCE DESK / WORKFLOW</text>
-    <text x="54" y="112" fill="#FFFDF7" font-size="42" font-weight="750">
-      Every claim passes five desks.
-    </text>
-    <text x="1146" y="58" fill="#C54A36" font-size="18" font-weight="800"
-          text-anchor="end">NO PROOF, NO CLAIM.</text>
+    <text x="56" y="68" fill="#52677F" font-size="18" font-weight="800" letter-spacing="2">EVIDENCE RAIL / LOCAL PIPELINE</text>
+    <text x="56" y="116" fill="#0B1727" font-size="38" font-weight="800">Every public claim keeps its source.</text>
+    <rect x="906" y="52" width="238" height="44" rx="22" fill="#FFF1D2"/>
+    <text x="1025" y="81" fill="#9A6200" font-size="18" font-weight="800" text-anchor="middle">NO APPROVAL · NO PUSH</text>
 
-    <line x1="54" y1="146" x2="1146" y2="146" stroke="#686257" stroke-width="2"/>
+    <path d="M112 221H1002" stroke="#9DB0C4" stroke-width="4"/>
+    <path d="m992 211 12 10-12 10" fill="none" stroke="#9DB0C4" stroke-width="4"/>
 
-    <g transform="translate(54 178)">
-      <g>
-        <text x="0" y="22" fill="#C54A36" font-size="20" font-weight="800">01</text>
-        <text x="0" y="63" fill="#FFFDF7" font-size="26" font-weight="700">INSPECT</text>
-        <text x="0" y="98" fill="#B9B1A4" font-size="19">Audience</text>
-        <text x="0" y="126" fill="#B9B1A4" font-size="19">Value + proof</text>
-        <text x="0" y="154" fill="#B9B1A4" font-size="19">Limits</text>
+    <g id="stages">
+      <g transform="translate(56 174)">
+        <circle cx="56" cy="47" r="38" fill="#0B1727"/>
+        <text x="56" y="54" fill="#FFFFFF" font-size="22" font-weight="800" text-anchor="middle">01</text>
+        <text x="56" y="112" fill="#0B1727" font-size="21" font-weight="800" text-anchor="middle">SCAN</text>
+        <text x="56" y="139" fill="#52677F" font-size="18" text-anchor="middle">Repository facts</text>
       </g>
 
-      <line x1="180" y1="0" x2="180" y2="190" stroke="#686257"/>
-      <g transform="translate(218 0)">
-        <text x="0" y="22" fill="#C54A36" font-size="20" font-weight="800">02</text>
-        <text x="0" y="63" fill="#FFFDF7" font-size="26" font-weight="700">SELECT</text>
-        <text x="0" y="98" fill="#B9B1A4" font-size="19">Project type</text>
-        <text x="0" y="126" fill="#B9B1A4" font-size="19">Editing mode</text>
-        <text x="0" y="154" fill="#B9B1A4" font-size="19">Sections</text>
+      <g transform="translate(266 174)">
+        <circle cx="56" cy="47" r="38" fill="#123E3B"/>
+        <text x="56" y="54" fill="#FFFFFF" font-size="22" font-weight="800" text-anchor="middle">02</text>
+        <text x="56" y="112" fill="#0B1727" font-size="21" font-weight="800" text-anchor="middle">RETRIEVE</text>
+        <text x="56" y="139" fill="#52677F" font-size="18" text-anchor="middle">Train patterns only</text>
       </g>
 
-      <line x1="398" y1="0" x2="398" y2="190" stroke="#686257"/>
-      <g transform="translate(436 0)">
-        <text x="0" y="22" fill="#C54A36" font-size="20" font-weight="800">03</text>
-        <text x="0" y="63" fill="#FFFDF7" font-size="26" font-weight="700">DRAFT</text>
-        <text x="0" y="98" fill="#B9B1A4" font-size="19">Value → proof</text>
-        <text x="0" y="126" fill="#B9B1A4" font-size="19">Mechanism</text>
-        <text x="0" y="154" fill="#B9B1A4" font-size="19">First success</text>
+      <g transform="translate(476 174)">
+        <circle cx="56" cy="47" r="38" fill="#123E3B"/>
+        <text x="56" y="54" fill="#FFFFFF" font-size="22" font-weight="800" text-anchor="middle">03</text>
+        <text x="56" y="112" fill="#0B1727" font-size="21" font-weight="800" text-anchor="middle">DRAFT</text>
+        <text x="56" y="139" fill="#52677F" font-size="18" text-anchor="middle">Copy + visuals</text>
       </g>
 
-      <line x1="616" y1="0" x2="616" y2="190" stroke="#686257"/>
-      <g transform="translate(654 0)">
-        <text x="0" y="22" fill="#C54A36" font-size="20" font-weight="800">04</text>
-        <text x="0" y="63" fill="#FFFDF7" font-size="26" font-weight="700">VISUALIZE</text>
-        <text x="0" y="98" fill="#B9B1A4" font-size="19">Markdown first</text>
-        <text x="0" y="126" fill="#B9B1A4" font-size="19">SVG as proof</text>
-        <text x="0" y="154" fill="#B9B1A4" font-size="19">GIF by opt-in</text>
+      <g transform="translate(686 174)">
+        <circle cx="56" cy="47" r="38" fill="#123E3B"/>
+        <text x="56" y="54" fill="#FFFFFF" font-size="22" font-weight="800" text-anchor="middle">04</text>
+        <text x="56" y="112" fill="#0B1727" font-size="21" font-weight="800" text-anchor="middle">EVALUATE</text>
+        <text x="56" y="139" fill="#52677F" font-size="18" text-anchor="middle">Claims + assets</text>
       </g>
 
-      <line x1="834" y1="0" x2="834" y2="190" stroke="#686257"/>
-      <g transform="translate(872 0)">
-        <text x="0" y="22" fill="#C54A36" font-size="20" font-weight="800">05</text>
-        <text x="0" y="63" fill="#FFFDF7" font-size="26" font-weight="700">VERIFY</text>
-        <text x="0" y="98" fill="#B9B1A4" font-size="19">Claims</text>
-        <text x="0" y="126" fill="#B9B1A4" font-size="19">Links + assets</text>
-        <text x="0" y="154" fill="#B9B1A4" font-size="19">Runnable result</text>
+      <g transform="translate(896 174)">
+        <circle cx="56" cy="47" r="38" fill="#0B1727"/>
+        <text x="56" y="54" fill="#FFFFFF" font-size="22" font-weight="800" text-anchor="middle">05</text>
+        <text x="56" y="112" fill="#0B1727" font-size="21" font-weight="800" text-anchor="middle">HANDOFF</text>
+        <text x="56" y="139" fill="#52677F" font-size="18" text-anchor="middle">Fingerprint bundle</text>
       </g>
     </g>
 
-    <rect x="54" y="408" width="1092" height="82" rx="5"
-          fill="#F3EFE5"/>
-    <text x="82" y="441" fill="#686257" font-size="16" font-weight="800"
-          letter-spacing="2">RELEASE GATES</text>
-    <text x="82" y="472" fill="#1D1B17" font-size="20" font-weight="650">
-      Unsupported claim → remove
-    </text>
-    <line x1="416" y1="441" x2="416" y2="475" stroke="#B9B1A4"/>
-    <text x="444" y="472" fill="#1D1B17" font-size="20" font-weight="650">
-      No visual gain → keep Markdown
-    </text>
-    <line x1="806" y1="441" x2="806" y2="475" stroke="#B9B1A4"/>
-    <text x="834" y="472" fill="#1D1B17" font-size="20" font-weight="650">
-      No approval → do not publish
-    </text>
+    <g id="artifacts" transform="translate(56 366)">
+      <rect width="198" height="72" rx="12" fill="#EDF3F8"/>
+      <text x="18" y="30" fill="#52677F" font-size="17" font-weight="700">TRUTH</text>
+      <text x="18" y="55" fill="#0B1727" font-size="20" font-weight="800">claim-map.json</text>
+
+      <rect x="216" width="198" height="72" rx="12" fill="#EDF3F8"/>
+      <text x="234" y="30" fill="#52677F" font-size="17" font-weight="700">VISUALS</text>
+      <text x="234" y="55" fill="#0B1727" font-size="20" font-weight="800">asset-manifest</text>
+
+      <rect x="432" width="198" height="72" rx="12" fill="#EDF3F8"/>
+      <text x="450" y="30" fill="#52677F" font-size="17" font-weight="700">GATES</text>
+      <text x="450" y="55" fill="#0B1727" font-size="20" font-weight="800">evaluation report</text>
+
+      <rect x="648" width="222" height="72" rx="12" fill="#DDF7F3"/>
+      <text x="666" y="30" fill="#39756F" font-size="17" font-weight="700">LOCAL RESULT</text>
+      <text x="666" y="55" fill="#0B1727" font-size="20" font-weight="800">PR bundle · PASS</text>
+
+      <rect x="888" width="200" height="72" rx="12" fill="#FFF1D2"/>
+      <text x="906" y="30" fill="#9A6200" font-size="17" font-weight="700">REMOTE WRITE</text>
+      <text x="906" y="55" fill="#6D4700" font-size="20" font-weight="800">Separate approval</text>
+    </g>
   </g>
 </svg>

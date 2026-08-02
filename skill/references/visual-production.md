@@ -91,14 +91,23 @@ Store project assets under the repository's established convention or:
 ```text
 assets/readme/
 ├── hero.svg
+├── hero-zh.svg
 ├── hero.gif
 ├── hero-motion.json
 ├── workflow.svg
+├── workflow-zh.svg
 ├── showcase.webp
 └── section-*.svg
 ```
 
 Do not add unused variants or generic templates.
+
+For multilingual README work, inventory visuals beside content before drawing.
+Generate each text-bearing SVG once per requested locale and use a locale suffix
+or directory. A shared asset is allowed only when its visible text is genuinely
+language-neutral; declare that on the SVG root with
+`data-readme-language="neutral"`. Renaming an untranslated asset does not count
+as localization.
 
 ## Choose a Structure Implementation
 
@@ -172,6 +181,11 @@ Render every asset and inspect:
 - generic motifs unrelated to the project;
 - unreadable proof or excessive density;
 - accidental remote resources or sanitizer-sensitive SVG features.
+- matching language between each localized README and every text-bearing SVG.
+
+Run `audit_readme.py` once per README variant. Its `E_SVG_LOCALE` hard gate
+rejects an unlocalized text-bearing SVG, a conflicting language marker, and a
+Chinese SVG with no visible Chinese text.
 
 When two versions communicate equally well, keep the simpler one.
 

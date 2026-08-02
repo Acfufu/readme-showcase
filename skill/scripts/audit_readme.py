@@ -336,6 +336,47 @@ def visible_svg_text(raw: bytes) -> list[str]:
     return [label for label in labels if label]
 
 
+def audit_svg_language(path: Path, expected: str) -> list[str]:
+    try:
+        raw = read_regular_bytes(
+            path,
+            maximum=MAX_SVG_BYTES,
+            path_code="E_SVG_UNSAFE",
+            size_code="E_SVG_LIMIT",
+        )
+        root, _ = _bounded_svg_root(raw.decode("utf-8"))
+    except (ContractError, OSError, UnicodeDecodeError):
+        return []
+    labels = visible_svg_text(raw)
+    if root is None or not labels:
+        return []
+    marker = root.attrib.get("data-readme-language", "").strip().lower()
+    if marker == "neutral":
+        return []
+    localized_path = re.search(
+        rf"(?:^|[/_.-]){re.escape(expected)}(?:[/_.-]|$)",
+        path.as_posix(),
+        flags=re.I,
+    )
+    if marker not in {"", expected} or (not marker and localized_path is None):
+        return [
+            "E_SVG_LOCALE: text-bearing SVG must use matching locale path or "
+            "data-readme-language=neutral"
+        ]
+    if expected == "zh" and re.search(r"[\u3400-\u9fff]", " ".join(labels)) is None:
+        return ["E_SVG_LOCALE: Chinese SVG contains no visible Chinese text"]
+    return []
+
+
+def _readme_language(path: Path) -> str | None:
+    match = re.fullmatch(
+        r"README[_\-.]([A-Za-z]{2,3})(?:[-_][A-Za-z]{2,4})?\.md",
+        path.name,
+        flags=re.I,
+    )
+    return match.group(1).lower() if match else None
+
+
 def _anchors(path: Path) -> set[str]:
     try:
         text = _masked_markdown(
@@ -459,6 +500,7 @@ def audit_readme(path: Path, *, root: Path | None = None) -> tuple[list[str], in
     ).decode("utf-8")
     masked = _masked_markdown(text)
     warnings: list[str] = []
+    language = _readme_language(readme)
     image_count = 0
     link_count = 0
     for src, alt, line in image_references(text):
@@ -476,6 +518,11 @@ def audit_readme(path: Path, *, root: Path | None = None) -> tuple[list[str], in
                 f"line {line}: {src}: {issue}"
                 for issue in audit_svg(target)
             )
+            if language is not None:
+                warnings.extend(
+                    f"line {line}: {src}: {issue}"
+                    for issue in audit_svg_language(target, language)
+                )
     links = [
         (match.group(2), _line(masked, match.start()))
         for match in MARKDOWN_LINK.finditer(masked)
@@ -533,7 +580,7 @@ def main() -> int:
         for warning in warnings:
             print(f"- {warning}")
         return 1
-    print("OK: README links, accessibility, and SVG safety passed")
+    print("OK: README links, accessibility, SVG safety, and locale parity passed")
     return 0
 
 

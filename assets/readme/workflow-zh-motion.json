@@ -1,0 +1,42 @@
+{
+  "width": 1200,
+  "fps": 30,
+  "duration": 5.0,
+  "colors": 192,
+  "dither": "none",
+  "clip_to_base_alpha": true,
+  "max_size_mb": 2.0,
+  "reveals": [
+    {
+      "id": "stages",
+      "axis": "x",
+      "start": 0.3,
+      "end": 1.65,
+      "exit": {
+        "start": 4.35,
+        "end": 4.95
+      }
+    }
+  ],
+  "layers": [
+    {
+      "id": "artifacts",
+      "enter": {
+        "start": 0.9,
+        "end": 1.8,
+        "from": [
+          0,
+          24
+        ]
+      },
+      "exit": {
+        "start": 4.35,
+        "end": 4.95,
+        "to": [
+          0,
+          12
+        ]
+      }
+    }
+  ]
+}

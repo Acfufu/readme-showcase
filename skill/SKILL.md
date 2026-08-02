@@ -82,7 +82,11 @@ README_SHOWCASE_SKILL="${CODEX_HOME:-$HOME/.codex}/skills/readme-showcase"
    ```
 
 4. Write `readme-plan.json`, candidate files, `claim-map.json`, and
-   `asset-manifest.json` directly from target evidence. If route is `glyphic`,
+   `asset-manifest.json` directly from target evidence. For multilingual work,
+   list every requested language in the plan and every locale-specific visual
+   in the manifest. Text-bearing SVGs must use a locale-matched path such as
+   `workflow-zh.svg`; only truly language-neutral text may share one asset via
+   `data-readme-language="neutral"`. If route is `glyphic`,
    invoke optional adapter once; its two fresh runs are validation, not hidden
    retries:
 
@@ -211,7 +215,8 @@ Animation is an output variant, not a third mode. Offer it only when motion expl
 
 - Run `python3 "$README_SHOWCASE_SKILL/scripts/audit_readme.py" /path/to/README.md`
   in README mode or after approved embedding.
-- Verify claims, commands, releases, badges, links, anchors, local image paths, alt text, SVG basics, language switches, and observable success steps.
+- Verify claims, commands, releases, badges, links, anchors, local image paths, alt text, SVG basics, locale-matched text-bearing assets, language switches, and observable success steps.
+- Audit every localized README separately. A primary-language Pass does not cover companion README assets.
 - Inspect assets at approximately `900px` desktop width and `360px` mobile width.
 - Report what changed, what stayed intentionally plain, what was not verified, and which files were deliberately left untouched.
 - Show preview and diff before any publish action. Attribution is optional, requires an explicit request for a repository the user owns or maintains, and never changes delivery eligibility.

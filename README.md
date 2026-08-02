@@ -1,6 +1,7 @@
 <p align="center">
-  <img src="./assets/readme/hero.gif" width="100%" alt="README Showcase turns repository facts into clear GitHub homepages">
+  <img src="./assets/readme/hero.svg" width="100%" alt="README Showcase turns repository evidence into a verified, reviewable GitHub homepage">
 </p>
+<p align="center"><sub>Evidence-bound README design. Local by default.</sub></p>
 
 <p align="center">
   <strong>English</strong> · <a href="./README_zh.md">简体中文</a>
@@ -12,11 +13,42 @@
   <img src="https://img.shields.io/badge/dependencies-stdlib_only-686257" alt="Audit script uses Python standard library only">
 </p>
 
-`readme-showcase` is a one-Agent, evidence-to-PR pipeline for redesigning GitHub
-README homepages from verified repository behavior. Markdown carries
-searchable facts; visuals earn their place by proving identity, output,
-sequence, or architecture. Evaluation produces a local fingerprinted PR bundle,
-never an automatic remote write.
+`readme-showcase` is a Codex Skill that turns current repository evidence into a
+clear GitHub homepage. One README Agent scans facts, retrieves licensed abstract
+patterns for editorial comparison, drafts project-native copy and visuals,
+checks every claim and asset, then stops at a fingerprinted local PR bundle.
+
+<p align="center">
+  <a href="#install-in-two-minutes"><strong>Install</strong></a> ·
+  <a href="#choose-your-mode"><strong>Choose a mode</strong></a> ·
+  <a href="#verify-locally"><strong>Verify</strong></a> ·
+  <a href="#safety-boundaries"><strong>Safety</strong></a>
+</p>
+
+## From repository to reviewable README
+
+| Input | Local pipeline | Reviewable result |
+| --- | --- | --- |
+| Current repository files and behavior | Deterministic scan, train-only retrieval, one-Agent drafting, hard-gate evaluation | README candidate, visual assets, claim map, asset manifest, evaluation report, fingerprint PR bundle |
+
+Current repository, exercised locally:
+
+```text
+dataset  12 licensed records  PASS
+scan     64 repository files COMPLETE
+retrieve 5 production patterns AVAILABLE
+install  local Skill tree     CURRENT
+```
+
+> [!IMPORTANT]
+> Evaluation success authorizes a local handoff only. Branches, commits, pushes,
+> and pull requests require separate approval bound to the exact target and
+> fingerprint.
+
+<details>
+<summary><strong>Implementation ownership, provenance, and exact reuse</strong></summary>
+
+<br>
 
 ## One pipeline, three owners
 
@@ -180,9 +212,12 @@ features deprecated.
 | Glyphic | Hero/title/palette/copy/claims/composition/evaluation/publish ownership | Those decisions belong to target evidence, original Agent, and adapted BGR rules. |
 | Glyphic | SVG post-editing, wrapping, inlining, or base64 embedding | Raw engine bytes stay hash-bound and independently auditable; any failure selects static fallback. |
 
-## Evidence before decoration
+</details>
 
-![Five review desks move repository evidence through inspect, select, draft, visualize, and verify](assets/readme/workflow.svg)
+## How the evidence rail works
+
+![Repository evidence moves through scan, retrieval, drafting, evaluation, and local fingerprinted handoff](assets/readme/workflow.svg)
+_Five local stages; remote publishing remains a separate decision._
 
 The skill follows one reading order:
 
@@ -199,7 +234,7 @@ The skill follows one reading order:
 Unsupported claims are removed. Decorative visuals stay out. Publishing always
 requires separate approval.
 
-## Install and run
+## Install in two minutes
 
 ```bash
 git clone https://github.com/Acfufu/readme-showcase.git
@@ -231,7 +266,7 @@ $readme-showcase Redesign this repository README around verified behavior and a 
 First observable behavior: skill inspects repository evidence, then selects
 README mode or asks whether scope is whole-README versus asset-only when unclear.
 
-## Three modes, one boundary
+## Choose your mode
 
 | Mode | Changes | Use it for |
 | --- | --- | --- |
@@ -250,7 +285,7 @@ Example asset-only request:
 $readme-showcase Create a static workflow SVG from this repository's real architecture. Do not edit the README.
 ```
 
-## What ships
+## What is included
 
 ```text
 dataset/retrieval/manifest.json       # 12 licensed abstract pattern records
@@ -267,7 +302,7 @@ scripts/build_glyphic_engine_lock.py  # isolated external-engine lock builder
 .github/workflows/ci.yml              # Node-free matrix + isolated integrations
 ```
 
-## Verify a result
+## Verify locally
 
 Audit any generated README:
 
@@ -289,13 +324,14 @@ python3 -m unittest discover -s tests -v
 `audit_readme.py` uses Python standard library only. Motion rendering additionally
 needs Pillow, `ffmpeg`, and either `rsvg-convert` or macOS `sips`.
 
-## Boundaries
+## Safety boundaries
 
 - Repository evidence controls claims and sections.
 - Commands and changing facts remain copyable Markdown.
 - Static SVG is default for deterministic visuals; GIF is opt-in.
 - Glyphic is optional, external, exact-version locked, and never needed for the default path.
 - Generated assets use target repository's `assets/readme/` convention.
+- Localized READMEs use locale-matched text-bearing SVGs; explicitly neutral visuals may opt out with `data-readme-language="neutral"`.
 - Evaluation Pass authorizes only a local PR bundle.
 - Commits, pushes, publishing, and remote changes need explicit approval.
 

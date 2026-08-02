@@ -38,6 +38,8 @@ class SkillWorkflowTests(unittest.TestCase):
         self.assertIn("Retrieval patterns are not target facts", flat)
         self.assertIn("Never delegate README truth or writing", flat)
         self.assertIn("Never publish from evaluation success alone", flat)
+        self.assertIn("locale-matched text-bearing assets", flat)
+        self.assertIn('data-readme-language="neutral"', text)
 
 
 if __name__ == "__main__":
