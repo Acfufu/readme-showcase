@@ -6,8 +6,8 @@ from typing import Any, cast
 
 from ...pipeline_contracts import ContractError
 from ..diagnostics import Diagnostic, DiagnosticReport
-from ..errors import contract_error_from_diagnostic, diagnostic_from_contract_error
-from .policy import AGGREGATE_CONTENT, classify_error_code
+from ..errors import diagnostic_from_contract_error
+from .policy import AGGREGATE_CONTENT, classify_error_code, require_content_diagnostic
 
 
 ValidationCheck = Callable[[], Diagnostic | None]
@@ -34,9 +34,7 @@ def validate_checks(checks: Iterable[ValidationCheck]) -> DiagnosticReport:
             capture_content_error(diagnostics, error)
         else:
             if diagnostic is not None:
-                if classify_error_code(diagnostic.code) != AGGREGATE_CONTENT:
-                    raise contract_error_from_diagnostic(diagnostic)
-                diagnostics.append(diagnostic)
+                diagnostics.append(require_content_diagnostic(diagnostic))
     return DiagnosticReport.build(diagnostics)
 
 

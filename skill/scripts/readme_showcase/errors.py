@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+from types import MappingProxyType
+
 from ..pipeline_contracts import ContractError
 from .diagnostics import Diagnostic
 
 
-AGGREGATABLE_CODES = frozenset(
+CONTENT_DIAGNOSTIC_POLICY = MappingProxyType(
     {
-        "E_CLAIM_COVERAGE",
-        "E_CLAIM_LANGUAGE",
-        "E_README_ACCESSIBILITY",
-        "E_README_COMMAND",
-        "E_README_LANGUAGE",
+        "E_CLAIM_COVERAGE": ("error", "content"),
+        "E_CLAIM_LANGUAGE": ("error", "content"),
+        "E_README_ACCESSIBILITY": ("error", "content"),
+        "E_README_COMMAND": ("error", "content"),
+        "E_README_LANGUAGE": ("error", "content"),
     }
 )
+AGGREGATABLE_CODES = frozenset(CONTENT_DIAGNOSTIC_POLICY)
 
 FAIL_FAST_CODES = frozenset(
     {
