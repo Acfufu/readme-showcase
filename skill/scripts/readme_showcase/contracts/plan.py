@@ -18,17 +18,19 @@ _URL = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>(){}\[\]\"']+")
 _JSON_POINTER = re.compile(r"/(?:[^~/\s]|~[01])*(?:/(?:[^~/\s]|~[01])*)*\Z")
 _LABELED_JSON_POINTER = re.compile(
     r"(?i)\b(?:json\s+pointer|rfc\s*6901\s+pointer)\s*(?::|=)?\s*"
-    r"(?P<pointer>/[^\s<>(){}\[\],;]+)"
+    r'(?P<pointer>/[^\s<>(){}\[\],;]*|"")'
 )
 _PARENT_TRAVERSAL = re.compile(r"(?<![A-Za-z0-9_.])\.\.(?:$|[/\\])")
 _POSIX_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_/])/(?![/\s])")
 _HOME_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_])~/")
 _WINDOWS_DRIVE = re.compile(r"(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]")
 _WINDOWS_UNC = re.compile(r"(?:^|[^A-Za-z0-9_:])(?:\\\\|//)[^\\/\s]+[\\/][^\\/\s]+")
-_SECRET_ASSIGNMENT = re.compile(
-    r"(?i)(?<![A-Za-z0-9_])[\"']?"
-    r"(?:api[_-]?key|api[_-]?token|access[_-]?token|auth[_-]?token|password|private[_-]?key|secret)"
-    r"[\"']?\s*[:=]"
+_SECRET_KEY_NAMES = frozenset(
+    {"apikey", "apitoken", "accesstoken", "authtoken", "password", "privatekey", "secret"}
+)
+_SECRET_ASSIGNMENT_CANDIDATE = re.compile(
+    r"(?<![A-Za-z0-9_])(?P<quote>[\"'`]?)"
+    r"(?P<key>[A-Za-z][A-Za-z0-9_-]*)(?P=quote)\s*[:=]"
 )
 
 
@@ -55,9 +57,17 @@ def _masked_safe_references(value: str, *, allow_json_pointer: bool) -> str:
         mask(0, len(value))
     for match in _LABELED_JSON_POINTER.finditer(value):
         pointer = match.group("pointer")
-        if _JSON_POINTER.fullmatch(pointer):
+        if pointer == '""' or _JSON_POINTER.fullmatch(pointer):
             mask(*match.span("pointer"))
     return "".join(characters)
+
+
+def _contains_secret_assignment(value: str) -> bool:
+    for match in _SECRET_ASSIGNMENT_CANDIDATE.finditer(value):
+        key = match.group("key").casefold().replace("_", "").replace("-", "")
+        if key in _SECRET_KEY_NAMES:
+            return True
+    return False
 
 
 def normalize_generation_text(
@@ -79,7 +89,7 @@ def normalize_generation_text(
         or _HOME_ABSOLUTE.search(inspected)
         or _WINDOWS_DRIVE.search(inspected)
         or _WINDOWS_UNC.search(inspected)
-        or _SECRET_ASSIGNMENT.search(normalized)
+        or _contains_secret_assignment(normalized)
     ):
         raise ContractError("E_GENERATION_REQUEST_VALUE", f"{path} contains an absolute path or secret assignment")
     return normalized

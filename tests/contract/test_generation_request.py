@@ -163,6 +163,14 @@ class GenerationRequestContractTests(unittest.TestCase):
             '"API_TOKEN"="fixture-secret"',
             "'password':'fixture-secret'",
             '{"private_key":"fixture-secret"}',
+            "`API_KEY`=x",
+            "`api-token`=x",
+            "`AcCeSs_ToKeN`=x",
+            "`AUTH-TOKEN`=x",
+            "`Password`=x",
+            "`PRIVATE_KEY`=x",
+            "`SeCrEt`=x",
+            "RFC6901 pointer=/a~b/c",
             "RFC6901 pointer=/a~2b/c",
             "x=/Users/example/secret.txt",
             "python ../outside.py",
@@ -187,9 +195,13 @@ class GenerationRequestContractTests(unittest.TestCase):
         benign = (
             "see https://example.com/docs/setup?next=/quick-start",
             "source https://github.com/owner/repo/blob/main/README.md",
+            "JSON Pointer=/",
+            "RFC6901 pointer=/a",
             "RFC6901 pointer=/a~1b/c~0d",
+            'RFC6901 pointer=""',
             "JSON Pointer=/scripts/~1test",
             "NOT_API_TOKEN=label",
+            "`NOT_API_TOKEN`=label",
             "ordinary and/or prose",
             "version 1.2.3 and section A/B",
         )
@@ -206,6 +218,8 @@ class GenerationRequestContractTests(unittest.TestCase):
             normalize_generation_text("/scripts/test", "fixture", allow_json_pointer=True),
             "/scripts/test",
         )
+        self.assertEqual(normalize_generation_text("/", "fixture", allow_json_pointer=True), "/")
+        self.assert_code("E_SCHEMA_TYPE", normalize_generation_text, "", "fixture")
         self.assertEqual(
             normalize_generation_text("JSON Pointer: /scripts/test", "fixture", allow_json_pointer=True),
             "JSON Pointer: /scripts/test",
