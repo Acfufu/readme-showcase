@@ -28,6 +28,11 @@ _SCANNER_SERVICE = importlib.import_module(
     if __package__ in (None, "")
     else "skill.scripts.readme_showcase.scanner.service"
 )
+_VALIDATION_BUNDLE = importlib.import_module(
+    "scripts.readme_showcase.validation.bundle"
+    if __package__ in (None, "")
+    else "skill.scripts.readme_showcase.validation.bundle"
+)
 ContractError = _CONTRACTS.ContractError
 canonical_sha256 = _CONTRACTS.canonical_sha256
 read_regular_bytes = _CONTRACTS.read_regular_bytes
@@ -1466,9 +1471,9 @@ def _validate_asset_manifest(
                 )
     if manifest_refs != candidate_assets:
         _fail("E_BUNDLE_ASSET", "candidate assets and asset manifest differ")
-def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, object]:
-    if isinstance(payload, dict) and payload.get("schema_version") == 2 and set(payload) != {"schema_version"}:
-        return cast(dict[str, object], importlib.import_module("skill.scripts.readme_showcase.generation.assembler" if __package__.startswith("skill.") else "scripts.readme_showcase.generation.assembler").validate_generated_bundle_v2(payload, artifact_root))
+
+
+def _validate_generated_bundle_v1(payload: Any, artifact_root: Path) -> dict[str, object]:
     bundle = validate_contract(
         payload,
         required=_BUNDLE_FIELDS,
@@ -1496,7 +1501,6 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
         _fail("E_BUNDLE_ASSET", "bundle candidate.assets must be path-sorted")
     for index, reference in enumerate(candidate_assets):
         _artifact_bytes(artifact_root, reference, f"bundle candidate.assets[{index}]")
-
     readme_path_value: str | None = None
     readme_text: str | None = None
     if mode == "readme":
@@ -1588,6 +1592,17 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
     }
 
 
+def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, object]:
+    return cast(
+        dict[str, object],
+        _VALIDATION_BUNDLE.validate_generated_bundle(
+            payload,
+            artifact_root,
+            validate_v1=_validate_generated_bundle_v1,
+        ),
+    )
+
+
 def _empty_advisory_metrics() -> dict[str, dict[str, int]]:
     return {
         name: {"covered": 0, "total": 0}
@@ -1611,7 +1626,6 @@ def evaluate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
             },
             "advisory": _empty_advisory_metrics(),
         }
-
     bundle = cast(dict[str, Any], payload)
     candidate = cast(dict[str, Any], bundle["candidate"])
     artifacts = cast(dict[str, Any], bundle["artifacts"])
