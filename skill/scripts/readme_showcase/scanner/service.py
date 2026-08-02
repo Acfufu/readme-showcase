@@ -13,6 +13,7 @@ ContractError = importlib.import_module(
 ).ContractError
 from .git import base_sha, tracked_paths, tracked_state
 from .index import build_file_index
+from .policies import FIXED_EXCLUDED_DIRECTORIES, SECRET_NAMES, SECRET_SUFFIXES, is_secret_path, load_scanner_policy
 
 
 MAX_FILES = 2000
@@ -21,17 +22,7 @@ MAX_FILE_BYTES = 512 * 1024
 MAX_TOTAL_BYTES = 4 * 1024 * 1024
 MAX_DEPTH = 12
 MAX_SECONDS = 5
-EXCLUDED_DIRECTORIES = frozenset(
-    {
-        ".agents", ".claude", ".codex", ".cursor", ".git", ".hg", ".omo",
-        ".svn", ".trellis", ".venv", "__pycache__", "build", "dist",
-        "evaluation-only", "node_modules", "vendor", "venv",
-    }
-)
-SECRET_NAMES = frozenset(
-    {".env", ".env.local", "credentials", "credentials.json", "id_dsa", "id_ed25519", "id_rsa"}
-)
-SECRET_SUFFIXES = frozenset({".key", ".p12", ".pem"})
+EXCLUDED_DIRECTORIES = FIXED_EXCLUDED_DIRECTORIES
 BINARY_SUFFIXES = frozenset(
     {".avi", ".gif", ".gz", ".ico", ".jpeg", ".jpg", ".mov", ".mp4", ".pdf", ".png", ".tar", ".webm", ".webp", ".woff", ".woff2", ".zip"}
 )
@@ -124,9 +115,21 @@ def _read(entry: Path, expected: os.stat_result, relative: str, maximum: int) ->
 
 def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str, object]:
     canonical_root = _root(root)
-    limits = limits or ScanLimits()
+    policy = load_scanner_policy(canonical_root)
+    limits = (
+        ScanLimits(
+            files=policy.limits.indexed_files,
+            total_bytes=policy.limits.total_bytes,
+            seconds=policy.limits.seconds,
+        )
+        if policy is not None
+        else limits or ScanLimits()
+    )
     tracked = tracked_paths(canonical_root)
-    allowed = set(tracked) if tracked is not None else None
+    if policy is not None:
+        allowed = set(tracked or ()) if policy.tracked_only else None
+    else:
+        allowed = set(tracked) if tracked is not None else None
     allowed_directories = {
         "/".join(path.split("/")[:index])
         for path in (tracked or ())
@@ -184,12 +187,16 @@ def scan_repository_v1(root: Path, limits: ScanLimits | None = None) -> dict[str
             seen_files += 1
             if seen_files > limits.files:
                 return _incomplete(canonical_root, limits, "E_SCAN_FILE_COUNT", relative)
-            if entry.name.lower() in SECRET_NAMES or entry.suffix.lower() in SECRET_SUFFIXES:
+            if policy is not None and not policy.selects(relative):
+                continue
+            if is_secret_path(relative):
                 warnings.append({"code": "W_SCAN_SECRET", "path": relative})
                 continue
             if entry.suffix.lower() in BINARY_SUFFIXES:
                 warnings.append({"code": "W_SCAN_BINARY", "path": relative})
                 continue
+            if policy is not None and len(files) >= policy.limits.content_files:
+                return _incomplete(canonical_root, limits, "E_SCAN_FILE_COUNT", relative)
             if entry_stat.st_size > limits.file_bytes:
                 return _incomplete(canonical_root, limits, "E_SCAN_FILE_SIZE", relative)
             total_bytes += entry_stat.st_size

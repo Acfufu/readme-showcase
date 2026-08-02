@@ -1,0 +1,9 @@
+{
+  "scanner": {
+    "tracked_only": true,
+    "profile": "balanced",
+    "include": ["src/**", "docs/**"],
+    "exclude": ["docs/generated/**"],
+    "secret_policy": "redact"
+  }
+}
