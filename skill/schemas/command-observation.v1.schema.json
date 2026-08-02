@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://readme-showcase.local/schemas/command-observation.v1.schema.json",
+  "title": "Command observation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "command_id", "command", "argv", "cwd", "exit_code", "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes", "observed_at_base_sha", "input_hashes", "source_provenance", "runner", "observed_at", "timeout_ms", "max_output_bytes", "verification"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "command_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.:-]{0,127}$"},
+    "command": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000]+$"},
+    "argv": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000]+$"}},
+    "cwd": {"$ref": "#/$defs/relativePathOrDot"},
+    "exit_code": {"type": "integer", "minimum": -255, "maximum": 255},
+    "stdout_sha256": {"$ref": "#/$defs/sha256"},
+    "stderr_sha256": {"$ref": "#/$defs/sha256"},
+    "stdout_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576},
+    "stderr_bytes": {"type": "integer", "minimum": 0, "maximum": 1048576},
+    "observed_at_base_sha": {"type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"},
+    "input_hashes": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/hashBinding"}},
+    "source_provenance": {"$ref": "#/$defs/hashBinding"},
+    "runner": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "controlled", "clean_environment", "network"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.:-]{0,127}$"},
+        "controlled": {"type": "boolean"},
+        "clean_environment": {"type": "boolean"},
+        "network": {"enum": ["blocked-by-allowlist", "unknown"]}
+      }
+    },
+    "observed_at": {"type": "string", "format": "date-time"},
+    "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 120000},
+    "max_output_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+    "verification": {"enum": ["imported-unverified", "verified"]}
+  },
+  "allOf": [{
+    "if": {"properties": {"verification": {"const": "verified"}}, "required": ["verification"]},
+    "then": {"properties": {"runner": {"properties": {"controlled": {"const": true}, "clean_environment": {"const": true}, "network": {"const": "blocked-by-allowlist"}}}}}
+  }],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "relativePath": {"type": "string", "maxLength": 4096, "pattern": "^(?!/)(?!~/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*(?:^|/)\\.(?:/|$))(?!.*\\\\)(?!.*\\u0000)[^/]+(?:/[^/]+)*$"},
+    "relativePathOrDot": {"anyOf": [{"const": "."}, {"$ref": "#/$defs/relativePath"}]},
+    "hashBinding": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"$ref": "#/$defs/relativePath"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    }
+  }
+}
