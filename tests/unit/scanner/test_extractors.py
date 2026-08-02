@@ -45,6 +45,35 @@ class ExtractorTests(unittest.TestCase):
         self.assertNotIn("decoy", json.dumps(first))
         self.assertTrue(all(validate_fact(fact) == fact for fact in first["facts"]))
 
+    def test_actions_text_rules_require_plausible_jobs_context(self) -> None:
+        cases = {
+            "malformed-jobs": (
+                "jobs: [\n  os: [ubuntu-latest]\n  runs-on: macos-latest\n  run: curl decoy.invalid\n",
+                [],
+                ["W_EXTRACT_CI_STRUCTURE"],
+            ),
+            "env-and-block-decoys": (
+                "jobs:\n  build:\n    env:\n      os: [windows-latest]\n      runs-on: windows-latest\n"
+                "    description: \"\n      runs-on: windows-latest\n      run: curl quoted.invalid\n    \"\n"
+                "    runs-on: ubuntu-latest\n    steps:\n      - name: 'runs-on: windows-latest'\n"
+                "      - run: |\n          echo run: curl decoy.invalid\n          run: curl decoy.invalid\n",
+                ["ci-os"],
+                [],
+            ),
+            "valid-matrix-list-scalar": (
+                "jobs:\n  test:\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-latest]\n"
+                "        python-version: ['3.10', '3.11']\n    runs-on: ubuntu-latest\n"
+                "    steps:\n      - run: python -m unittest\n",
+                ["ci-os", "ci-os-families", "ci-python-versions", "ci-os", "ci-command:9"],
+                [],
+            ),
+        }
+        for name, (text, keys, warnings) in cases.items():
+            with self.subTest(case=name):
+                result = ExtractorService().extract_files([(".github/workflows/ci.yml", text.encode())])
+                self.assertEqual([fact["semantic_key"] for fact in result["facts"]], keys)
+                self.assertEqual([warning["code"] for warning in result["warnings"]], warnings)
+
     def test_readme_identity_and_documented_command_ignore_html_comment(self) -> None:
         raw = b"# Demo CLI\n\n```sh\n$ demo --help\n```\n<!-- $ decoy --secret -->\n"
         result = ExtractorService().extract_files([("README.md", raw)])
@@ -59,8 +88,15 @@ class ExtractorTests(unittest.TestCase):
         self.assertIn(("node-engine:node", '">=20"'), values)
         self.assertIn(("node-script:test", '"node --test"'), values)
         self.assertIn(("test-count", "1"), values)
+        self.assertIn(("test-framework", '"node:test"'), values)
         self.assertIn(("javascript-shebang", '"node"'), values)
         self.assertNotIn("decoy", json.dumps(result))
+
+    def test_javascript_test_count_ignores_string_comment_and_regex_decoys(self) -> None:
+        raw = b'''import test from "node:test";\nconst one = 'test("string")';\n// test("comment", () => {});\nconst pattern = /test\\(/;\ntest("real", () => {});\n'''
+        result = ExtractorService().extract_files([("test/example.test.js", raw)])
+        count = next(fact["value"] for fact in result["facts"] if fact["semantic_key"] == "test-count")
+        self.assertEqual(count, 1)
 
     def test_generic_config_redacts_secret_keys_and_source_hash_rejects_stale_bytes(self) -> None:
         raw = b'{"feature": {"enabled": true}, "api_token": "never-emit"}\n'
@@ -153,6 +189,10 @@ class ExtractorTests(unittest.TestCase):
         invalid["verification"] = "imported-unverified"
         with self.assertRaisesRegex(ValueError, "verified"):
             adapt_verified_command_observation(invalid, path="evidence/tests.json", source_bytes=raw)
+        missing = copy.deepcopy(envelope)
+        del missing["input_hashes"]
+        with self.assertRaisesRegex(ValueError, "input_hashes"):
+            adapt_verified_command_observation(missing, path="evidence/tests.json", source_bytes=raw)
 
     @staticmethod
     def tree_hash(root: Path) -> str:

@@ -12,6 +12,19 @@ from .graph import EvidenceGraph
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _V1_FIELDS = {"fact_id", "kind", "path", "evidence_sha256"}
+_OBSERVATION_BINDINGS = {
+    "command_id",
+    "command",
+    "cwd",
+    "exit_code",
+    "stdout_sha256",
+    "stderr_sha256",
+    "input_hashes",
+    "runner",
+    "verification",
+}
+
+
 def adapt_v1_file_fact(fact: Mapping[str, Any]) -> dict[str, Any]:
     legacy = copy.deepcopy(dict(fact))
     if set(legacy) != _V1_FIELDS or legacy.get("kind") != "repository-file":
@@ -47,9 +60,12 @@ def adapt_verified_command_observation(
     source_bytes: bytes | None = None,
     source_sha256: str | None = None,
 ) -> dict[str, Any]:
-    """Copy an upstream-verified envelope into Evidence v2 without executing it."""
+    """Copy upstream-verified bindings; M5-T2 owns their schema and validation."""
     if observation.get("verification") != "verified":
         raise ValueError("command observation must already be verified")
+    missing = sorted(_OBSERVATION_BINDINGS - observation.keys())
+    if missing or not ({"base_sha", "observed_at_base_sha"} & observation.keys()):
+        raise ValueError(f"verified command observation is missing {(missing or ['base_sha'])[0]}")
     command_id = observation.get("command_id")
     if not isinstance(command_id, str) or not command_id:
         raise ValueError("verified command observation command_id is invalid")

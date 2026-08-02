@@ -210,6 +210,35 @@ def _yaml_list(value: str) -> list[str]:
     return sorted(set(result))
 
 
+def _yaml_values(value: str) -> list[str]:
+    value = value.split(" #", 1)[0].strip()
+    listed = _yaml_list(value)
+    if listed:
+        return listed
+    return [value] if re.fullmatch(r"[A-Za-z0-9_.-]+", value) else []
+
+
+def _yaml_mapping(line: str) -> tuple[str, str] | None:
+    match = re.fullmatch(r"([A-Za-z0-9_.-]+):(?:\s*(.*))?", line)
+    return (match.group(1), (match.group(2) or "").strip()) if match else None
+
+
+def _yaml_open_quote(value: str) -> str | None:
+    if not value or value[0] not in {"'", '"'}:
+        return None
+    quote = value[0]
+    return quote if value.count(quote) % 2 else None
+
+
+def _os_families(values: list[str]) -> list[str]:
+    return sorted({
+        "linux" if value.startswith("ubuntu") else
+        "macos" if value.startswith("macos") else
+        "windows" if value.startswith("windows") else value
+        for value in values
+    })
+
+
 class GitHubActionsExtractor:
     def matches(self, path: PurePosixPath) -> bool:
         return len(path.parts) >= 3 and path.parts[:2] == (".github", "workflows") and path.suffix.lower() in {".yml", ".yaml"}
@@ -217,32 +246,139 @@ class GitHubActionsExtractor:
     def extract(self, path: str, raw: bytes, text: str) -> tuple[list[dict[str, Any]], list[dict[str, object]]]:
         facts: list[dict[str, Any]] = []
         lines, limited = _bounded_lines(text)
+        jobs = False
+        job_indent: int | None = None
+        property_indent: int | None = None
+        context: str | None = None
+        nested_indent: int | None = None
+        block_indent: int | None = None
+        quote_marker: str | None = None
+        step_seen = False
+
+        def malformed(number: int) -> tuple[list[dict[str, Any]], list[dict[str, object]]]:
+            warnings = [_warning("W_EXTRACT_CI_STRUCTURE", path, number)]
+            if limited:
+                warnings.append(_warning("W_EXTRACT_TEXT_LIMIT", path))
+            return [], warnings
+
+        def add_os(number: int, values: list[str], *, families: bool = False) -> None:
+            facts.append(_fact(raw, path, "config-value", {"line_start": number, "line_end": number}, "ci-os", values, "documented"))
+            if families:
+                facts.append(_fact(
+                    raw, path, "config-value", {"line_start": number, "line_end": number},
+                    "ci-os-families", _os_families(values), "derived",
+                    "runner labels mapped to documented operating-system families",
+                ))
+
         for number, line in enumerate(lines, 1):
+            prefix = line[: len(line) - len(line.lstrip(" \t"))]
+            if "\t" in prefix:
+                return malformed(number)
+            indent = len(prefix)
             stripped = line.strip()
+            if quote_marker is not None:
+                if stripped.count(quote_marker) % 2:
+                    quote_marker = None
+                continue
             if not stripped or stripped.startswith("#"):
                 continue
-            match = re.fullmatch(r"os:\s*(\[[^\]]*\])\s*(?:#.*)?", stripped)
-            if match and (values := _yaml_list(match.group(1))):
-                facts.append(_fact(raw, path, "config-value", {"line_start": number, "line_end": number}, "ci-os", values, "documented"))
-                families = sorted({"linux" if value.startswith("ubuntu") else "macos" if value.startswith("macos") else "windows" if value.startswith("windows") else value for value in values})
-                facts.append(_fact(raw, path, "config-value", {"line_start": number, "line_end": number}, "ci-os-families", families, "derived", "runner labels mapped to documented operating-system families"))
+            if block_indent is not None:
+                if indent > block_indent:
+                    continue
+                block_indent = None
+            mapping_text = stripped[2:].strip() if stripped.startswith("- ") else stripped
+            mapping = _yaml_mapping(mapping_text)
+            if mapping and (quote_marker := _yaml_open_quote(mapping[1])) is not None:
                 continue
-            match = re.fullmatch(r"runs-on:\s*([A-Za-z0-9_.-]+)\s*(?:#.*)?", stripped)
-            if match:
-                facts.append(_fact(raw, path, "config-value", {"line_start": number, "line_end": number}, "ci-os", [match.group(1)], "documented"))
+            if mapping and re.fullmatch(r"[|>][+-]?[0-9]?", mapping[1]):
+                block_indent = indent
                 continue
-            match = re.fullmatch(r"python-version:\s*(\[[^\]]*\])\s*(?:#.*)?", stripped)
-            if match and (values := _yaml_list(match.group(1))):
-                facts.append(_fact(raw, path, "config-value", {"line_start": number, "line_end": number}, "ci-python-versions", values, "documented"))
+
+            if indent == 0:
+                if re.match(r"jobs\s*:", stripped):
+                    if stripped.split("#", 1)[0].strip() != "jobs:" or jobs:
+                        return malformed(number)
+                    jobs = True
+                    job_indent = property_indent = nested_indent = None
+                    context = None
+                elif jobs:
+                    jobs = False
                 continue
-            match = re.fullmatch(r"node-version:\s*(\[[^\]]*\]|[A-Za-z0-9_.-]+)\s*(?:#.*)?", stripped)
-            if match:
-                values = _yaml_list(match.group(1)) or [match.group(1)]
-                facts.append(_fact(raw, path, "config-value", {"line_start": number, "line_end": number}, "ci-node-versions", values, "documented"))
+            if not jobs:
                 continue
-            match = re.fullmatch(r"-?\s*run:\s+(.+)", stripped)
-            if match and not match.group(1).lstrip().startswith(("#", "//")):
-                facts.append(_fact(raw, path, "documentation-statement", {"line_start": number, "line_end": number}, f"ci-command:{number}", match.group(1)[:512], "documented"))
+            if job_indent is None:
+                if not mapping or mapping[1]:
+                    return malformed(number)
+                job_indent = indent
+                continue
+            if indent == job_indent:
+                if not mapping or mapping[1]:
+                    return malformed(number)
+                property_indent = nested_indent = None
+                context = None
+                step_seen = False
+                continue
+            if indent < job_indent:
+                return malformed(number)
+            if property_indent is None:
+                if not mapping:
+                    return malformed(number)
+                property_indent = indent
+            if indent < property_indent:
+                return malformed(number)
+
+            if indent == property_indent:
+                if not mapping:
+                    return malformed(number)
+                key, value = mapping
+                nested_indent = None
+                step_seen = False
+                if key == "runs-on":
+                    if values := _yaml_values(value):
+                        add_os(number, values)
+                    context = None
+                elif key in {"strategy", "steps", "env"} and not value:
+                    context = key
+                elif key in {"os", "python-version", "node-version", "run"}:
+                    return malformed(number)
+                else:
+                    context = None
+                continue
+
+            if context == "strategy":
+                if nested_indent is None and mapping == ("matrix", ""):
+                    nested_indent = indent
+                    continue
+                if nested_indent is None and mapping and mapping[0] == "matrix":
+                    return malformed(number)
+                if nested_indent is not None and indent > nested_indent and mapping:
+                    key, value = mapping
+                    values = _yaml_values(value)
+                    if key == "os" and values:
+                        add_os(number, values, families=True)
+                    elif key == "python-version" and values:
+                        facts.append(_fact(raw, path, "config-value", {"line_start": number, "line_end": number}, "ci-python-versions", values, "documented"))
+                    elif key == "node-version" and values:
+                        facts.append(_fact(raw, path, "config-value", {"line_start": number, "line_end": number}, "ci-node-versions", values, "documented"))
+                continue
+
+            if context == "steps":
+                step_indent = property_indent + 2
+                if indent == step_indent and stripped.startswith("- "):
+                    step_seen = True
+                    item = _yaml_mapping(stripped[2:].strip())
+                    if item and item[0] == "run" and item[1] and not item[1].startswith(("'", '"', "|", ">")):
+                        facts.append(_fact(raw, path, "documentation-statement", {"line_start": number, "line_end": number}, f"ci-command:{number}", item[1][:512], "documented"))
+                    continue
+                if indent == step_indent + 2 and step_seen and mapping and mapping[0] == "run" and mapping[1] and not mapping[1].startswith(("'", '"', "|", ">")):
+                    facts.append(_fact(raw, path, "documentation-statement", {"line_start": number, "line_end": number}, f"ci-command:{number}", mapping[1][:512], "documented"))
+                    continue
+                if mapping and mapping[0] == "run":
+                    return malformed(number)
+            elif context != "env" and mapping and mapping[0] in {"runs-on", "os", "python-version", "node-version", "run"}:
+                return malformed(number)
+        if quote_marker is not None:
+            return malformed(len(lines) or 1)
         return facts, [_warning("W_EXTRACT_TEXT_LIMIT", path)] if limited else []
 
 
@@ -288,26 +424,42 @@ def _is_main_guard(node: ast.expr) -> bool:
 def _javascript_code_lines(text: str) -> list[tuple[int, str]]:
     result: list[tuple[int, str]] = []
     block = False
+    quote: str | None = None
+    escaped = False
     for number, line in enumerate(text.splitlines()[:MAX_LINES], 1):
         cleaned = ""
         index = 0
         while index < len(line):
+            character = line[index]
+            if quote is not None:
+                cleaned += " "
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == quote:
+                    quote = None
+                index += 1
+                continue
             if block:
                 end = line.find("*/", index)
                 if end < 0:
                     break
+                cleaned += " " * (end + 2 - index)
                 block, index = False, end + 2
-            else:
-                start = line.find("/*", index)
-                comment = line.find("//", index)
-                if comment >= 0 and (start < 0 or comment < start):
-                    cleaned += line[index:comment]
-                    break
-                if start < 0:
-                    cleaned += line[index:]
-                    break
-                cleaned += line[index:start]
-                block, index = True, start + 2
+                continue
+            if line.startswith("//", index):
+                break
+            if line.startswith("/*", index):
+                cleaned += "  "
+                block, index = True, index + 2
+                continue
+            if character in {"'", '"', "`"}:
+                cleaned += " "
+                quote, index = character, index + 1
+                continue
+            cleaned += character
+            index += 1
         result.append((number, cleaned))
     return result
 
@@ -337,7 +489,13 @@ class TestLayoutExtractor:
         else:
             code = _javascript_code_lines(text)
             tests = [number for number, line in code if re.search(r"\b(?:it|test)\s*\(", line)]
-            framework = "node:test" if "node:test" in "\n".join(line for _, line in code) else "javascript"
+            framework = "javascript"
+            for (_, cleaned), original in zip(code, text.splitlines()[:MAX_LINES], strict=True):
+                if "import" in cleaned and "from" in cleaned and re.fullmatch(
+                    r"\s*import\s+.+\s+from\s+['\"]node:test['\"]\s*;?\s*", original
+                ):
+                    framework = "node:test"
+                    break
             line = tests[0] if tests else 1
         return [
             _fact(raw, path, "test-observation", {"line_start": line, "line_end": line}, "test-framework", framework),
