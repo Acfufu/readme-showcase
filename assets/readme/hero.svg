@@ -1,66 +1,57 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      width="1200" height="420" viewBox="0 0 1200 420"
+     data-readme-language="en"
      role="img" aria-labelledby="title desc">
   <title id="title">README Showcase</title>
-  <desc id="desc">Repository evidence enters a local pipeline and leaves as a verified, reviewable GitHub README.</desc>
+  <desc id="desc">An editorial evidence desk turns repository facts into a verified GitHub homepage and keeps remote publishing locked.</desc>
 
-  <rect width="1200" height="420" rx="28" fill="#07111F"/>
-  <path d="M0 332H1200" stroke="#1B2C42" stroke-width="2"/>
-  <path d="M650 0V420" stroke="#1B2C42" stroke-width="2"/>
+  <rect width="1200" height="420" rx="26" fill="#F4F0E7"/>
+  <rect x="18" y="18" width="1164" height="384" rx="18" fill="none" stroke="#1D1B17" stroke-width="2"/>
+  <path d="M640 18V402" stroke="#C9C1B4" stroke-width="2"/>
 
   <g id="identity" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
-    <g transform="translate(52 42)">
-      <rect width="12" height="12" rx="3" fill="#4AD6C8"/>
-      <text x="24" y="12" fill="#90A4BC" font-size="18" font-weight="700" letter-spacing="2">CODEX SKILL · EVIDENCE PIPELINE</text>
-    </g>
+    <text x="58" y="66" fill="#6B675F" font-size="18" font-weight="700" letter-spacing="3">CODEX SKILL / EVIDENCE-DRIVEN README</text>
+    <text x="58" y="144" fill="#1D1B17" font-size="64" font-weight="800" letter-spacing="-2">README</text>
+    <text x="58" y="207" fill="#1D1B17" font-size="64" font-weight="800" letter-spacing="-2">SHOWCASE</text>
+    <rect id="title-highlight" x="58" y="232" width="534" height="5" fill="#C84B3C"/>
+    <text x="58" y="282" fill="#4C4943" font-size="24">Repository truth → a clear GitHub homepage.</text>
 
-    <text x="52" y="132" fill="#F5F8FC" font-size="66" font-weight="800" letter-spacing="-2">README</text>
-    <text x="52" y="196" fill="#F5F8FC" font-size="66" font-weight="800" letter-spacing="-2">SHOWCASE</text>
-    <text x="52" y="244" fill="#B8C6D8" font-size="24">Repository facts in. Reviewable homepage out.</text>
-
-    <g id="invocation" transform="translate(52 278)">
-      <rect width="536" height="48" rx="10" fill="#101D2E" stroke="#27405E"/>
-      <text x="20" y="31" fill="#4AD6C8" font-size="20" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$readme-showcase</text>
-      <text x="508" y="31" fill="#F2B84B" font-size="20" text-anchor="end">LOCAL FIRST</text>
+    <g id="command-prompt" transform="translate(58 316)">
+      <rect width="534" height="58" rx="8" fill="#1D1B17"/>
+      <circle cx="510" cy="29" r="7" fill="#C84B3C"/>
+      <text x="24" y="37" fill="#F4F0E7" font-size="20" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$readme-showcase</text>
     </g>
   </g>
 
-  <g id="evidence-console" transform="translate(690 42)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
-    <rect width="458" height="288" rx="18" fill="#0D1929" stroke="#27405E" stroke-width="2"/>
-    <text x="24" y="36" fill="#90A4BC" font-size="18" font-weight="700" letter-spacing="1.5">CURRENT REPOSITORY</text>
-    <rect x="354" y="16" width="80" height="32" rx="16" fill="#123E3B"/>
-    <text x="394" y="38" fill="#65E4D7" font-size="17" font-weight="800" text-anchor="middle">READY</text>
+  <g id="evidence-docket" transform="rotate(1 904 202)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <rect x="684" y="48" width="452" height="310" rx="8" fill="#FBF8F1" stroke="#1D1B17" stroke-width="2"/>
+    <text x="714" y="88" fill="#6B675F" font-size="18" font-weight="700" letter-spacing="2">EVIDENCE FILE / LOCAL RUN</text>
+    <path d="M714 108H1106" stroke="#C9C1B4" stroke-width="2"/>
 
-    <g transform="translate(24 72)">
-      <rect width="112" height="72" rx="12" fill="#14243A"/>
-      <text x="16" y="29" fill="#90A4BC" font-size="17" font-weight="700">SCANNED</text>
-      <text x="16" y="56" fill="#F5F8FC" font-size="22" font-weight="800">64 files</text>
-      <path d="M122 36H156" stroke="#4AD6C8" stroke-width="3"/>
-      <path d="m148 28 8 8-8 8" fill="none" stroke="#4AD6C8" stroke-width="3"/>
-
-      <rect x="166" width="112" height="72" rx="12" fill="#14243A"/>
-      <text x="182" y="29" fill="#90A4BC" font-size="17" font-weight="700">MATCHED</text>
-      <text x="182" y="56" fill="#F5F8FC" font-size="22" font-weight="800">5 patterns</text>
-      <path d="M288 36H322" stroke="#4AD6C8" stroke-width="3"/>
-      <path d="m314 28 8 8-8 8" fill="none" stroke="#4AD6C8" stroke-width="3"/>
-
-      <rect x="332" width="78" height="72" rx="12" fill="#123E3B"/>
-      <text x="371" y="30" fill="#65E4D7" font-size="17" font-weight="800" text-anchor="middle">GATE</text>
-      <text x="371" y="57" fill="#F5F8FC" font-size="22" font-weight="800" text-anchor="middle">PASS</text>
+    <g fill="#1D1B17" font-size="21">
+      <text x="714" y="151" font-weight="800">01</text>
+      <text x="768" y="151">Map repository facts</text>
+      <text x="714" y="198" font-weight="800">02</text>
+      <text x="768" y="198">Choose story by project type</text>
+      <text x="714" y="245" font-weight="800">03</text>
+      <text x="768" y="245">Bind every claim to proof</text>
+      <text x="714" y="292" font-weight="800">04</text>
+      <text x="768" y="292">Verify before local handoff</text>
     </g>
 
-    <g transform="translate(24 172)">
-      <text x="0" y="18" fill="#90A4BC" font-size="17" font-weight="700">OUTPUT</text>
-      <text x="0" y="52" fill="#F5F8FC" font-size="24" font-weight="750">Fingerprint PR bundle</text>
-      <rect x="0" y="72" width="410" height="1" fill="#27405E"/>
-      <circle cx="8" cy="98" r="6" fill="#F2B84B"/>
-      <text x="24" y="104" fill="#F2B84B" font-size="18" font-weight="700">Remote write locked until exact approval</text>
+    <g id="verification-stamp" transform="translate(930 300) rotate(-7)">
+      <rect x="0" y="0" width="168" height="47" rx="5" fill="#FBF8F1" stroke="#C84B3C" stroke-width="3"/>
+      <text x="84" y="31" fill="#C84B3C" font-size="18" font-weight="800" letter-spacing="1" text-anchor="middle">CLAIMS VERIFIED</text>
     </g>
   </g>
 
-  <g id="metadata" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="700">
-    <text x="52" y="380" fill="#90A4BC">12 LICENSED PATTERNS</text>
-    <text x="302" y="380" fill="#90A4BC">STATIC SVG DEFAULT</text>
-    <text x="554" y="380" fill="#4AD6C8">0 AUTOMATIC REMOTE WRITES</text>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17" font-weight="700">
+    <text x="674" y="389" fill="#6B675F">VALUE</text>
+    <path d="M730 383H766" stroke="#C84B3C" stroke-width="2"/>
+    <text x="782" y="389" fill="#6B675F">PROOF</text>
+    <path d="M840 383H876" stroke="#C84B3C" stroke-width="2"/>
+    <text x="892" y="389" fill="#6B675F">FIRST USE</text>
+    <path d="M984 383H1020" stroke="#C84B3C" stroke-width="2"/>
+    <text x="1036" y="389" fill="#2F6B5F">LOCAL ONLY</text>
   </g>
 </svg>

@@ -1,66 +1,57 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      width="1200" height="420" viewBox="0 0 1200 420"
+     data-readme-language="zh"
      role="img" aria-labelledby="title desc">
   <title id="title">README Showcase</title>
-  <desc id="desc">仓库证据进入本地流水线，输出经过验证、可供审查的 GitHub README。</desc>
+  <desc id="desc">编辑证据台把仓库事实整理成经过验证的 GitHub 项目主页，并保持远程发布锁定。</desc>
 
-  <rect width="1200" height="420" rx="28" fill="#07111F"/>
-  <path d="M0 332H1200" stroke="#1B2C42" stroke-width="2"/>
-  <path d="M650 0V420" stroke="#1B2C42" stroke-width="2"/>
+  <rect width="1200" height="420" rx="26" fill="#F4F0E7"/>
+  <rect x="18" y="18" width="1164" height="384" rx="18" fill="none" stroke="#1D1B17" stroke-width="2"/>
+  <path d="M640 18V402" stroke="#C9C1B4" stroke-width="2"/>
 
   <g id="identity" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
-    <g transform="translate(52 42)">
-      <rect width="12" height="12" rx="3" fill="#4AD6C8"/>
-      <text x="24" y="12" fill="#90A4BC" font-size="18" font-weight="700" letter-spacing="2">CODEX SKILL · 证据流水线</text>
-    </g>
+    <text x="58" y="66" fill="#6B675F" font-size="18" font-weight="700" letter-spacing="3">CODEX SKILL / 证据驱动 README</text>
+    <text x="58" y="144" fill="#1D1B17" font-size="64" font-weight="800" letter-spacing="-2">README</text>
+    <text x="58" y="207" fill="#1D1B17" font-size="64" font-weight="800" letter-spacing="-2">SHOWCASE</text>
+    <rect id="title-highlight" x="58" y="232" width="534" height="5" fill="#C84B3C"/>
+    <text x="58" y="282" fill="#4C4943" font-size="24">仓库事实 → 清晰可信的 GitHub 项目主页。</text>
 
-    <text x="52" y="132" fill="#F5F8FC" font-size="66" font-weight="800" letter-spacing="-2">README</text>
-    <text x="52" y="196" fill="#F5F8FC" font-size="66" font-weight="800" letter-spacing="-2">SHOWCASE</text>
-    <text x="52" y="244" fill="#B8C6D8" font-size="24">输入仓库事实，输出可审查主页。</text>
-
-    <g id="invocation" transform="translate(52 278)">
-      <rect width="536" height="48" rx="10" fill="#101D2E" stroke="#27405E"/>
-      <text x="20" y="31" fill="#4AD6C8" font-size="20" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$readme-showcase</text>
-      <text x="508" y="31" fill="#F2B84B" font-size="20" font-weight="700" text-anchor="end">本地优先</text>
+    <g id="command-prompt" transform="translate(58 316)">
+      <rect width="534" height="58" rx="8" fill="#1D1B17"/>
+      <circle cx="510" cy="29" r="7" fill="#C84B3C"/>
+      <text x="24" y="37" fill="#F4F0E7" font-size="20" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$readme-showcase</text>
     </g>
   </g>
 
-  <g id="evidence-console" transform="translate(690 42)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
-    <rect width="458" height="288" rx="18" fill="#0D1929" stroke="#27405E" stroke-width="2"/>
-    <text x="24" y="36" fill="#90A4BC" font-size="18" font-weight="700" letter-spacing="1.5">当前仓库</text>
-    <rect x="354" y="16" width="80" height="32" rx="16" fill="#123E3B"/>
-    <text x="394" y="38" fill="#65E4D7" font-size="17" font-weight="800" text-anchor="middle">就绪</text>
+  <g id="evidence-docket" transform="rotate(1 904 202)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
+    <rect x="684" y="48" width="452" height="310" rx="8" fill="#FBF8F1" stroke="#1D1B17" stroke-width="2"/>
+    <text x="714" y="88" fill="#6B675F" font-size="18" font-weight="700" letter-spacing="2">证据档案 / 本地运行</text>
+    <path d="M714 108H1106" stroke="#C9C1B4" stroke-width="2"/>
 
-    <g transform="translate(24 72)">
-      <rect width="112" height="72" rx="12" fill="#14243A"/>
-      <text x="16" y="29" fill="#90A4BC" font-size="17" font-weight="700">扫描结果</text>
-      <text x="16" y="56" fill="#F5F8FC" font-size="22" font-weight="800">64 文件</text>
-      <path d="M122 36H156" stroke="#4AD6C8" stroke-width="3"/>
-      <path d="m148 28 8 8-8 8" fill="none" stroke="#4AD6C8" stroke-width="3"/>
-
-      <rect x="166" width="112" height="72" rx="12" fill="#14243A"/>
-      <text x="182" y="29" fill="#90A4BC" font-size="17" font-weight="700">检索结果</text>
-      <text x="182" y="56" fill="#F5F8FC" font-size="22" font-weight="800">5 条模式</text>
-      <path d="M288 36H322" stroke="#4AD6C8" stroke-width="3"/>
-      <path d="m314 28 8 8-8 8" fill="none" stroke="#4AD6C8" stroke-width="3"/>
-
-      <rect x="332" width="78" height="72" rx="12" fill="#123E3B"/>
-      <text x="371" y="30" fill="#65E4D7" font-size="17" font-weight="800" text-anchor="middle">门禁</text>
-      <text x="371" y="57" fill="#F5F8FC" font-size="22" font-weight="800" text-anchor="middle">通过</text>
+    <g fill="#1D1B17" font-size="21">
+      <text x="714" y="151" font-weight="800">01</text>
+      <text x="768" y="151">映射仓库事实</text>
+      <text x="714" y="198" font-weight="800">02</text>
+      <text x="768" y="198">按项目类型选择叙事</text>
+      <text x="714" y="245" font-weight="800">03</text>
+      <text x="768" y="245">每条声明绑定证据</text>
+      <text x="714" y="292" font-weight="800">04</text>
+      <text x="768" y="292">本地交付前完成验证</text>
     </g>
 
-    <g transform="translate(24 172)">
-      <text x="0" y="18" fill="#90A4BC" font-size="17" font-weight="700">输出</text>
-      <text x="0" y="52" fill="#F5F8FC" font-size="24" font-weight="750">带指纹 PR bundle</text>
-      <rect x="0" y="72" width="410" height="1" fill="#27405E"/>
-      <circle cx="8" cy="98" r="6" fill="#F2B84B"/>
-      <text x="24" y="104" fill="#F2B84B" font-size="18" font-weight="700">精确批准前禁止远端写入</text>
+    <g id="verification-stamp" transform="translate(930 300) rotate(-7)">
+      <rect x="0" y="0" width="168" height="47" rx="5" fill="#FBF8F1" stroke="#C84B3C" stroke-width="3"/>
+      <text x="84" y="31" fill="#C84B3C" font-size="19" font-weight="800" letter-spacing="2" text-anchor="middle">声明已验证</text>
     </g>
   </g>
 
-  <g id="metadata" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif" font-size="18" font-weight="700">
-    <text x="52" y="380" fill="#90A4BC">12 条授权模式</text>
-    <text x="276" y="380" fill="#90A4BC">默认静态 SVG</text>
-    <text x="500" y="380" fill="#4AD6C8">0 次自动远端写入</text>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif" font-size="17" font-weight="700">
+    <text x="674" y="389" fill="#6B675F">价值</text>
+    <path d="M722 383H758" stroke="#C84B3C" stroke-width="2"/>
+    <text x="774" y="389" fill="#6B675F">证明</text>
+    <path d="M822 383H858" stroke="#C84B3C" stroke-width="2"/>
+    <text x="874" y="389" fill="#6B675F">首次使用</text>
+    <path d="M958 383H994" stroke="#C84B3C" stroke-width="2"/>
+    <text x="1010" y="389" fill="#2F6B5F">仅本地</text>
   </g>
 </svg>

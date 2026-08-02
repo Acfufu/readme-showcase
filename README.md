@@ -1,350 +1,169 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="README Showcase turns repository evidence into a verified, reviewable GitHub homepage">
+  <img src="./assets/readme/hero.gif" width="100%" alt="README Showcase maps repository evidence into a verified, reviewable GitHub homepage">
 </p>
-<p align="center"><sub>Evidence-bound README design. Local by default.</sub></p>
+<p align="center"><sub><a href="./assets/readme/hero.svg">Static SVG</a> · Evidence-bound README design · Local by default</sub></p>
 
 <p align="center">
   <strong>English</strong> · <a href="./README_zh.md">简体中文</a>
 </p>
 
-<p align="center">
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-1d1b17" alt="GPL-3.0 license"></a>
-  <img src="https://img.shields.io/badge/runtime-Codex-c54a36" alt="Built for Codex">
-  <img src="https://img.shields.io/badge/dependencies-stdlib_only-686257" alt="Audit script uses Python standard library only">
-</p>
-
-`readme-showcase` is a Codex Skill that turns current repository evidence into a
-clear GitHub homepage. One README Agent scans facts, retrieves licensed abstract
-patterns for editorial comparison, drafts project-native copy and visuals,
-checks every claim and asset, then stops at a fingerprinted local PR bundle.
+`readme-showcase` is a Codex Skill for repository maintainers. It reads the
+current codebase, chooses a narrative that fits the project, creates only
+evidence-backed copy and visuals, verifies the result, and stops at a local
+fingerprinted handoff.
 
 <p align="center">
-  <a href="#install-in-two-minutes"><strong>Install</strong></a> ·
-  <a href="#choose-your-mode"><strong>Choose a mode</strong></a> ·
-  <a href="#verify-locally"><strong>Verify</strong></a> ·
-  <a href="#safety-boundaries"><strong>Safety</strong></a>
+  <a href="#quick-start"><strong>Quick start</strong></a> ·
+  <a href="#from-evidence-to-handoff"><strong>Workflow</strong></a> ·
+  <a href="#choose-a-mode"><strong>Modes</strong></a> ·
+  <a href="#safety-boundary"><strong>Safety</strong></a>
 </p>
-
-## From repository to reviewable README
-
-| Input | Local pipeline | Reviewable result |
-| --- | --- | --- |
-| Current repository files and behavior | Deterministic scan, train-only retrieval, one-Agent drafting, hard-gate evaluation | README candidate, visual assets, claim map, asset manifest, evaluation report, fingerprint PR bundle |
-
-Current repository, exercised locally:
-
-```text
-dataset  12 licensed records  PASS
-scan     64 repository files COMPLETE
-retrieve 5 production patterns AVAILABLE
-install  local Skill tree     CURRENT
-```
 
 > [!IMPORTANT]
-> Evaluation success authorizes a local handoff only. Branches, commits, pushes,
-> and pull requests require separate approval bound to the exact target and
-> fingerprint.
+> A passing evaluation authorizes a local preview only. Commits, pushes,
+> publishing, and pull requests always require separate explicit approval.
 
-<details>
-<summary><strong>Implementation ownership, provenance, and exact reuse</strong></summary>
+## From evidence to handoff
 
-<br>
+![Repository facts and licensed editorial patterns pass through one README Agent, claim and asset gates, and a fingerprinted local handoff](assets/readme/workflow.svg)
 
-## One pipeline, three owners
+_Glyphic-generated raw SVG. The Skill owns every claim, label, palette choice,
+caption, acceptance decision, and publish boundary._
 
-### 1. `beautify-github-readme` source workflow
-
-This is the editorial and visual workflow adapted from
-[`oil-oil/beautify-github-readme`](https://github.com/oil-oil/beautify-github-readme).
-Its showcase-contribution stage is deliberately excluded.
-
-```mermaid
-flowchart TD
-    M["1 · Confirm mode<br/>README / asset-only / audit-only"] --> I["2 · Inspect repository evidence"]
-    I --> A{"Audit-only?"}
-    A -- "Yes" --> V["8 · Preview and verify"]
-    A -- "No" --> C{"Hero has two viable implementations?"}
-    C -- "Yes" --> O["3 · Confirm pure SVG / hybrid"]
-    C -- "No" --> S["4 · Extract project story"]
-    O --> S
-    S --> D["5 · Define project-native palette, type, motif, composition"]
-    D --> E["6 · Execute selected mode"]
-    E --> L["7 · Build static visual layer<br/>motion only when explicitly approved"]
-    L --> V
-    V --> U{"User approves?"}
-    U -- "No" --> S
-    U -- "Yes" --> H["10 · Safe handoff<br/>preview + diff + explicit write approval"]
-    H --> R["Local result or separately authorized GitHub write"]
-    X["9 · Upstream showcase contribution<br/>EXCLUDED HERE"]:::excluded
-    U -. "upstream-only path" .-> X
-    classDef excluded fill:#e5e7eb,stroke:#6b7280,color:#374151,stroke-dasharray:5 5;
-```
-
-### 2. Dataset-to-PR pipeline with explicit ownership
-
-```mermaid
-flowchart TD
-    subgraph RS["ORIGINAL README SHOWCASE · PRODUCT OWNER · 19/19 TODOS"]
-        direction TB
-        DS["Dataset revision 2<br/>12 pinned commits → human-authored abstractions<br/>10 train · 2 isolated test"]
-        RT["Target evidence scan<br/>→ deterministic retrieval"]
-        AG["One README Agent<br/>truth · route · candidate"]
-        EV["Claims + assets → evaluation<br/>hard gates + integer advice"]
-        PA{"Fingerprint PR bundle<br/>exact approval + fresh preflight?"}
-        PR["GitHub connector action<br/>branch → commit → push → PR"]
-        NW["No remote write"]
-        FB["Skill-authored static SVG fallback"]
-        DS --> RT --> AG --> EV --> PA
-        PA -- "Yes" --> PR
-        PA -- "No / drift" --> NW
-    end
-
-    subgraph BGR["BEAUTIFY-GITHUB-README · DERIVED RULES · 7/8 PACKS"]
-        direction TB
-        ST["Evidence-first story<br/>+ project-native art direction"]
-        TP["Project title/title bar<br/>+ local/system-font palette"]
-        CO["Caption · spacing · placement<br/>900px + 360px · light + dark"]
-        SH["Preview + diff + publish safety"]
-        ST --> TP --> CO --> SH
-    end
-
-    subgraph GL["GLYPHIC · OPTIONAL STRUCTURE ENGINE · 1 PRIMARY TODO"]
-        direction TB
-        SJ["Strict JSON + verified lock<br/>Node 22 · core 1.3.1 · schema 1.1.1"]
-        PS["processSVG<br/>groups · nodes · routing · wrapping"]
-        RAW["Standalone raw SVG<br/>exact engine bytes"]
-        SJ --> PS --> RAW
-    end
-
-    AG --> ST
-    AG --> SJ
-    TP --> SJ
-    RAW --> CO
-    RAW --> EV
-    CO --> EV
-    SH --> PA
-    PS -- "missing / mismatch / unsafe / timeout / nondeterministic" --> FB
-    FB --> EV
-
-    classDef rs fill:#dbeafe,stroke:#1d4ed8,color:#172554,stroke-width:2px;
-    classDef bgr fill:#ffedd5,stroke:#c2410c,color:#7c2d12,stroke-width:2px;
-    classDef glyphic fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:2px;
-    class DS,RT,AG,EV,PA,PR,NW,FB rs;
-    class ST,TP,CO,SH bgr;
-    class SJ,PS,RAW glyphic;
-```
-
-Dataset content is intentionally small and abstract. Production retrieval can
-see ten `train` records from GitHub CLI, Deno, FastAPI, Flask, HTTPX, Pydantic,
-Requests, Ruff, Tokio, and Vite. Next.js and pytest are isolated `test` records
-and cannot enter production retrieval. Every record stores facets, newly
-authored `summary` / `structure` / `proof`, a pinned repository commit and
-material hash, reviewed SPDX/license evidence, and split. It stores no copied
-README text, code, badges, logos, images, animation, or benchmark answers.
-See [dataset source ledger](dataset/README.md).
-
-### 3. Glyphic source boundary and failure transition
-
-```mermaid
-flowchart TD
-    E["Target evidence"] --> C["Skill-owned claims<br/>palette + accessible body title"]
-    C --> J["Strict project envelope<br/>diagram.glyphic.json"]
-    J --> V{"Schema + label/evidence gate"}
-    subgraph GL["GLYPHIC USED ONLY HERE"]
-        P["Fresh subprocess<br/>verified external processSVG"]
-        T1["Temporary raw SVG · run 1"]
-        T2["Temporary raw SVG · run 2"]
-        P --> T1
-        P --> T2
-    end
-    V -- "Pass" --> P
-    T1 --> H{"Reject-only SVG gate<br/>bytes equal?"}
-    T2 --> H
-    H -- "Yes" --> A["Atomic promote semantic source<br/>raw SVG + metadata"]
-    A --> M["README relative image<br/>Skill-owned alt / caption / composition"]
-    V -- "Fail" --> F["Leave README + last-known-good unchanged"]
-    H -- "No / unsafe" --> F
-    F --> S["Skill-owned static SVG route"]
-    classDef glyphic fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:2px;
-    class P,T1,T2 glyphic;
-```
-
-### Responsibility boundary
-
-| Layer | Owns | Must not own |
+| What you need | What the Skill does | What you receive |
 | --- | --- | --- |
-| Original `readme-showcase` | Dataset, target evidence, retrieval, one Agent, schemas, claims, evaluation, fallback, PR bundle, approval, install | Upstream/engine source, unrelated target files, unapproved remote state |
-| Adapted `beautify-github-readme` rules | Story order, title/title bar, palette selection, project-native art direction, composition, visual/motion policy, preview safety | Target facts, approval fingerprint, engine internals |
-| Optional Glyphic | `architecture` / `flowchart` / `c4` body groups, nodes, layout, routing, wrapping, raw SVG bytes | Hero, title/title bar, palette choice, copy, claims, alt/caption, composition, fallback, evaluation, publish |
+| A homepage grounded in the real project | Scans repository evidence before drafting | README copy with traceable claims |
+| A visual system that belongs to the project | Derives story, palette, typography, and composition from repository semantics | Editable static sources and optional GitHub-safe GIFs |
+| A safe review boundary | Audits links, commands, assets, localization, and hard gates | Evaluation report and fingerprinted local bundle |
 
-### Exact reuse
+The retrieval dataset contains 12 licensed, human-reviewed abstract patterns:
+10 are available to production retrieval and two remain isolated test records.
+Patterns guide editorial structure only; they never become facts about the
+target repository.
 
-| Measurement | Used |
-| --- | ---: |
-| Original product ownership | `19/19 Todos = 100%` |
-| BGR reference packs mapped | `7/8 = 87.5%` |
-| BGR direct Todo touchpoints | `7/19 = 36.84%` |
-| Additional BGR safe-handoff Todos | `2/19 = 10.53%` |
-| BGR exact unchanged script lines | `649/692 = 93.79%` |
-| Current adapted audit + motion scripts | `992 lines` |
-| BGR showcase assets copied | `0/29 = 0%` |
-| Glyphic primary implementation | `1/19 = 5.26%` |
-| Glyphic-touching Todos | `7/19 = 36.84%` |
-| Glyphic packages/source tracked | `0` |
+## Quick start
 
-Counts overlap: rules can influence a product-owned Todo without taking product
-ownership.
-
-### Excluded here, and why
-
-“Excluded” means not adopted by this project; it does not declare upstream
-features deprecated.
-
-| Source | Excluded part | Reason |
-| --- | --- | --- |
-| BGR | `showcase-contribution` pack / stage 9 | This product hands off locally and requires fingerprint-bound approval; it does not submit to an upstream gallery or auto-open PRs. |
-| BGR | Upstream heroes, badges, examples, and case-study assets | Target identity and evidence must remain project-native; copied assets would weaken truth and licensing boundaries. |
-| BGR | Automatic ImageGen or GIF selection | Raster generation and motion are opt-in because they add nondeterminism, dependencies, and review cost. |
-| BGR | BGR as runtime/product core | Only editorial and visual rules are reused; original pipeline keeps truth, evaluation, fallback, and publishing authority. |
-| Glyphic | Full application, MCP/API/hosted service, required package, vendored source, tracked `node_modules` | Optional external execution keeps FSL software and Node/native dependencies outside default Skill/runtime. |
-| Glyphic | Canvas/freeform, Gantt, date-sensitive charts, PNG, ReactFlow, raster output | Approved scope is three relationship-heavy, static GitHub-safe SVG body diagrams. |
-| Glyphic | Coordinates, icons, custom fonts/URLs/images, arbitrary metadata | Strict semantic projection prevents hidden claims, remote resources, unsafe SVG, and brittle composition. |
-| Glyphic | Hero/title/palette/copy/claims/composition/evaluation/publish ownership | Those decisions belong to target evidence, original Agent, and adapted BGR rules. |
-| Glyphic | SVG post-editing, wrapping, inlining, or base64 embedding | Raw engine bytes stay hash-bound and independently auditable; any failure selects static fallback. |
-
-</details>
-
-## How the evidence rail works
-
-![Repository evidence moves through scan, retrieval, drafting, evaluation, and local fingerprinted handoff](assets/readme/workflow.svg)
-_Five local stages; remote publishing remains a separate decision._
-
-The skill follows one reading order:
-
-> **Value → Proof → Mechanism → First use → Detail**
-
-| Desk | Question it must answer |
-| --- | --- |
-| Inspect | Who is this for, what works, and where are the limits? |
-| Select | Which project type, sections, and editing mode fit the evidence? |
-| Draft | What is the shortest truthful route from value to first success? |
-| Visualize | Does an SVG, screenshot, or opt-in GIF improve understanding? |
-| Verify | Do claims, commands, links, assets, and language variants hold up? |
-
-Unsupported claims are removed. Decorative visuals stay out. Publishing always
-requires separate approval.
-
-## Install in two minutes
+Requirements: macOS or Linux, Python 3.10+, and Codex. The default path has no
+third-party Python dependency.
 
 ```bash
-git clone https://github.com/Acfufu/readme-showcase.git
-cd readme-showcase
-
-python3 scripts/install_skill.py
-python3 scripts/install_skill.py --check
+npx --yes github:Acfufu/readme-showcase
+npx --yes github:Acfufu/readme-showcase --check
 ```
 
-Expected statuses:
+Observable success:
 
 ```text
 "status":"installed"
 "status":"current"
 ```
 
-Upgrade uses a verified sibling staging directory, atomically swaps the Skill,
-and keeps the prior tree at
-`.../skills/readme-showcase.backup.<UTC>.<hash>`. A failed copy, hash check, or
-swap restores the old target. The installed tree contains no Glyphic package,
-engine lock, `node_modules`, or credentials.
-
-Start a new Codex task so skill discovery reloads, then invoke:
+After the first npm release, shorten `github:Acfufu/readme-showcase` to
+`readme-showcase`. Start a new Codex task so Skill discovery reloads, then run:
 
 ```text
 $readme-showcase Redesign this repository README around verified behavior and a runnable quick start.
 ```
 
-First observable behavior: skill inspects repository evidence, then selects
-README mode or asks whether scope is whole-README versus asset-only when unclear.
+The first visible action is repository inspection. If scope is unclear, the
+Skill asks whether the job is a whole README, assets only, or an audit.
 
-## Choose your mode
+## Choose a mode
 
-| Mode | Changes | Use it for |
+| Mode | Changes | Best for |
 | --- | --- | --- |
-| README | Copy, reading order, proof, Markdown, justified visuals | A complete repository homepage |
-| Asset-only | Requested visual files only | A hero, workflow, badge, diagram, or coordinated set |
-| Audit-only | Findings only; no candidate README or assets | Evidence, safety, parity, and publish-readiness review |
+| README | Reading order, copy, proof, Markdown, and justified visuals | A complete GitHub homepage |
+| Asset-only | Requested hero, diagram, badge, or coordinated asset set | Visual work without changing README content |
+| Audit-only | Findings and evidence only | Truth, safety, localization, and publish-readiness review |
 
-README mode may change README structure and justified assets. Asset-only mode
-leaves README byte-for-byte unchanged unless embedding receives separate
-approval. Audit-only mode stops before generation, PR bundling, and publish
-gates. GIF generation requires explicit opt-in.
+Motion and hybrid raster composition are explicit opt-ins, not separate modes.
+Glyphic is optional and limited to relationship-heavy `architecture`,
+`flowchart`, or `c4` body diagrams.
 
-Example asset-only request:
+## How the local pipeline works
+
+1. **Validate** the pinned retrieval manifest and its license evidence.
+2. **Scan** the target repository into deterministic evidence facts.
+3. **Retrieve** up to five train-only editorial patterns.
+4. **Draft** the README, claim map, asset manifest, and any justified visuals.
+5. **Evaluate** claims, links, commands, assets, accessibility, and localization.
+6. **Handoff** a fingerprinted local bundle after every hard gate passes.
+
+The installed Skill includes eight deterministic pipeline commands:
 
 ```text
-$readme-showcase Create a static workflow SVG from this repository's real architecture. Do not edit the README.
+validate-dataset  scan  retrieve  validate-bundle  evaluate
+import-benchmark  build-pr-bundle  check-publish-gate
 ```
 
-## What is included
+<details>
+<summary><strong>Optional Glyphic and motion boundaries</strong></summary>
 
-```text
-dataset/retrieval/manifest.json       # 12 licensed abstract pattern records
-skill/
-├── SKILL.md                          # one-Agent workflow and scope gates
-├── agents/openai.yaml                # Codex discovery metadata
-├── references/                       # structure, BGR delta, Glyphic, visuals
-└── scripts/
-    ├── readme_pipeline.py            # eight deterministic pipeline commands
-    ├── render_glyphic.mjs            # optional verified structure adapter
-    ├── audit_readme.py               # README and SVG hard gates
-    └── render_motion_gif.py          # opt-in motion renderer
-scripts/build_glyphic_engine_lock.py  # isolated external-engine lock builder
-.github/workflows/ci.yml              # Node-free matrix + isolated integrations
-```
+<br>
+
+- Glyphic runs from a caller-supplied, hash-locked Node 22 tree with
+  `@glyphicjs/core@1.3.1`.
+- The adapter accepts strict semantic JSON, renders twice in fresh processes,
+  and accepts only byte-identical, standalone, GitHub-safe SVG.
+- Raw Glyphic SVG is never post-edited. Any mismatch selects the project-owned
+  static fallback and leaves the last-known-good asset unchanged.
+- GIF motion starts from an approved static SVG. The editable SVG and motion
+  JSON remain beside the derived GIF.
+- Glyphic packages, engine locks, `node_modules`, credentials, and generated
+  benchmark answers are never installed into the Skill tree.
+
+</details>
+
+## Safety boundary
+
+- Repository evidence owns public claims.
+- Retrieved patterns are editorial references, never target facts.
+- Commands, configuration, limitations, and changing information stay in
+  searchable Markdown.
+- Text-bearing visuals are localized per README language.
+- Static SVG is the deterministic fallback for every visual route.
+- Evaluation success never grants remote-write authority.
+- An exact approval envelope, current base SHA, and fresh remote preflight are
+  required before any publish connector action can become eligible.
 
 ## Verify locally
-
-Audit any generated README:
-
-```bash
-python3 skill/scripts/audit_readme.py /path/to/project/README.md
-```
-
-Validate dataset, scripts, and both language variants:
 
 ```bash
 python3 skill/scripts/readme_pipeline.py validate-dataset \
   --manifest dataset/retrieval/manifest.json
-python3 -m py_compile skill/scripts/*.py scripts/*.py
 python3 skill/scripts/audit_readme.py README.md
 python3 skill/scripts/audit_readme.py README_zh.md
 python3 -m unittest discover -s tests -v
+npm pack --dry-run
 ```
 
-`audit_readme.py` uses Python standard library only. Motion rendering additionally
-needs Pillow, `ffmpeg`, and either `rsvg-convert` or macOS `sips`.
-
-## Safety boundaries
-
-- Repository evidence controls claims and sections.
-- Commands and changing facts remain copyable Markdown.
-- Static SVG is default for deterministic visuals; GIF is opt-in.
-- Glyphic is optional, external, exact-version locked, and never needed for the default path.
-- Generated assets use target repository's `assets/readme/` convention.
-- Localized READMEs use locale-matched text-bearing SVGs; explicitly neutral visuals may opt out with `data-readme-language="neutral"`.
-- Evaluation Pass authorizes only a local PR bundle.
-- Commits, pushes, publishing, and remote changes need explicit approval.
-
-## License
-
-Project distributed under [GNU General Public License v3.0](LICENSE).
-
-Bundled rendering and audit scripts include work adapted from
-[`oil-oil/beautify-github-readme`](https://github.com/oil-oil/beautify-github-readme).
-Upstream MIT attribution and license text remain in
-[`skill/references/motion-production.md`](skill/references/motion-production.md#upstream-license).
-
-Optional Glyphic is not distributed with this repository. A user-supplied
-verified `@glyphicjs/core@1.3.1` installation remains under
-`FSL-1.1-ALv2`; see
+Motion generation additionally needs Pillow, `ffmpeg`, and either
+`rsvg-convert` or macOS `sips`. Verified Glyphic rendering requires Node 22 and
+the exact external engine lock documented in
 [`skill/references/glyphic-structure.md`](skill/references/glyphic-structure.md).
+
+## Repository map
+
+```text
+skill/
+├── SKILL.md                 # one-Agent workflow and scope gates
+├── agents/openai.yaml       # Codex discovery metadata
+├── references/              # narrative, visual, motion, and Glyphic rules
+└── scripts/                 # scan, retrieval, evaluation, audit, renderers
+dataset/retrieval/manifest.json
+scripts/install_skill.py     # atomic installer and upgrade rollback
+package.json                 # npx package entrypoint
+tests/                       # deterministic contracts and failure cases
+```
+
+## License and source boundaries
+
+This project is distributed under the
+[GNU General Public License v3.0](LICENSE).
+
+The visual and motion workflow adapts MIT-licensed guidance from
+[`oil-oil/beautify-github-readme`](https://github.com/oil-oil/beautify-github-readme);
+the retained notice lives in
+[`skill/references/motion-production.md`](skill/references/motion-production.md#upstream-license).
+Optional Glyphic remains external under `FSL-1.1-ALv2` and is not distributed
+with this repository.

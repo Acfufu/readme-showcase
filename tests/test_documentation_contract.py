@@ -8,30 +8,28 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class DocumentationContractTests(unittest.TestCase):
-    def test_bilingual_readmes_publish_three_owned_workflows_and_counts(self) -> None:
+    def test_bilingual_readmes_publish_evidence_first_homepage(self) -> None:
         english = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         chinese = (REPO_ROOT / "README_zh.md").read_text(encoding="utf-8")
         for text in (english, chinese):
-            self.assertEqual(text.count("```mermaid"), 3)
-            self.assertIn("19/19", text)
-            self.assertIn("7/8", text)
-            self.assertIn("7/19", text)
-            self.assertIn("1/19", text)
-            self.assertIn("0/29", text)
-            self.assertIn("649/692", text)
+            self.assertEqual(text.count("```mermaid"), 0)
+            self.assertIn("12", text)
+            self.assertIn("10", text)
+            self.assertIn("npx --yes github:Acfufu/readme-showcase", text)
+            self.assertIn('"status":"installed"', text)
+            self.assertIn('"status":"current"', text)
             self.assertIn("@glyphicjs/core@1.3.1", text)
-            self.assertIn("schema 1.1.1", text)
-            self.assertIn("showcase-contribution", text)
-        self.assertIn("ORIGINAL README SHOWCASE", english)
-        self.assertIn("BEAUTIFY-GITHUB-README", english)
-        self.assertIn("GLYPHIC USED ONLY HERE", english)
-        self.assertIn("Fingerprint PR bundle", english)
-        self.assertIn("原始 README SHOWCASE", chinese)
-        self.assertIn("仅此处使用 GLYPHIC", chinese)
-        self.assertIn("带指纹 PR bundle", chinese)
+            self.assertIn("build-pr-bundle", text)
+            self.assertNotIn("19/19", text)
+            self.assertNotIn("649/692", text)
+        self.assertIn("assets/readme/hero.gif", english)
+        self.assertIn("assets/readme/workflow.svg", english)
+        self.assertIn("one README Agent", english)
+        self.assertIn("assets/readme/hero-zh.gif", chinese)
+        self.assertIn("assets/readme/workflow-zh.svg", chinese)
+        self.assertIn("单一 README Agent", chinese)
         for text in (english, chinese):
-            self.assertIn("python3 scripts/install_skill.py", text)
-            self.assertIn("readme-showcase.backup.<UTC>.<hash>", text)
+            self.assertIn("npx --yes github:Acfufu/readme-showcase", text)
             self.assertNotIn("cp -R skill", text)
 
     def test_dataset_ledger_names_all_pinned_sources_and_split_boundary(self) -> None:

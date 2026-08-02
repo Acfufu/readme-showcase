@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "diagram_type": "flowchart",
+  "accessibility_title": "Evidence-bound README workflow",
+  "accessibility_claim_id": "claim-title",
+  "direction": "LR",
+  "palette": {
+    "background": "#F4F0E7",
+    "node_background": "#FBF8F1",
+    "node_border": "#1D1B17",
+    "node_text": "#1D1B17",
+    "edge_color": "#6B675F",
+    "edge_label_color": "#C84B3C"
+  },
+  "groups": [],
+  "nodes": [
+    {"id": "facts", "label": "Repository facts", "group_id": null, "kind": "component", "claim_id": "claim-facts"},
+    {"id": "patterns", "label": "Editorial patterns", "group_id": null, "kind": "component", "claim_id": "claim-patterns"},
+    {"id": "agent", "label": "One README Agent", "group_id": null, "kind": "service", "claim_id": "claim-agent"},
+    {"id": "local", "label": "Verified local bundle", "group_id": null, "kind": "component", "claim_id": "claim-local"},
+    {"id": "remote", "label": "Remote publish", "group_id": null, "kind": "external", "claim_id": "claim-remote"}
+  ],
+  "edges": [
+    {"source": "facts", "target": "agent", "label": "Truth", "claim_id": "claim-edge-facts"},
+    {"source": "patterns", "target": "agent", "label": "Structure", "claim_id": "claim-edge-patterns"},
+    {"source": "agent", "target": "local", "label": "Evaluate", "claim_id": "claim-edge-evaluate"},
+    {"source": "local", "target": "remote", "label": "Approval", "claim_id": "claim-edge-approval"}
+  ],
+  "claim_ids": [
+    "claim-agent",
+    "claim-edge-approval",
+    "claim-edge-evaluate",
+    "claim-edge-facts",
+    "claim-edge-patterns",
+    "claim-facts",
+    "claim-local",
+    "claim-patterns",
+    "claim-remote",
+    "claim-title"
+  ]
+}

@@ -1,7 +1,8 @@
 {
+  "schema_version": 1,
   "width": 1200,
   "fps": 30,
-  "duration": 6.0,
+  "duration": 5.2,
   "colors": 192,
   "dither": "none",
   "clip_to_base_alpha": true,
@@ -11,39 +12,27 @@
       "id": "title-highlight",
       "axis": "x",
       "start": 0.2,
-      "end": 0.95,
-      "exit": {
-        "start": 5.05,
-        "end": 5.96
-      }
+      "end": 0.9,
+      "exit": {"start": 4.45, "end": 5.16}
+    },
+    {
+      "id": "verification-stamp",
+      "axis": "x",
+      "start": 1.15,
+      "end": 1.75,
+      "exit": {"start": 4.45, "end": 5.16}
     }
   ],
   "layers": [
     {
-      "id": "evidence-card",
-      "enter": {
-        "start": 0.45,
-        "end": 1.25,
-        "from": [58, -12]
-      },
-      "exit": {
-        "start": 5.05,
-        "end": 5.96,
-        "to": [24, -8]
-      }
+      "id": "evidence-docket",
+      "enter": {"start": 0.35, "end": 1.2, "from": [58, -10]},
+      "exit": {"start": 4.45, "end": 5.16, "to": [24, -6]}
     },
     {
       "id": "command-prompt",
-      "enter": {
-        "start": 0.85,
-        "end": 1.45,
-        "from": [0, 22]
-      },
-      "exit": {
-        "start": 5.05,
-        "end": 5.96,
-        "to": [0, 10]
-      }
+      "enter": {"start": 0.75, "end": 1.45, "from": [0, 20]},
+      "exit": {"start": 4.45, "end": 5.16, "to": [0, 10]}
     }
   ]
 }
