@@ -36,18 +36,19 @@ class ArchitectureBaselineTests(unittest.TestCase):
             for action in parser._actions
             if isinstance(action, argparse._SubParsersAction)
         )
+        legacy_commands = {
+            "build-pr-bundle",
+            "check-publish-gate",
+            "evaluate",
+            "import-benchmark",
+            "retrieve",
+            "scan",
+            "validate-bundle",
+            "validate-dataset",
+        }
         self.assertEqual(
             set(subcommands.choices),
-            {
-                "build-pr-bundle",
-                "check-publish-gate",
-                "evaluate",
-                "import-benchmark",
-                "retrieve",
-                "scan",
-                "validate-bundle",
-                "validate-dataset",
-            },
+            legacy_commands | {"run", "resume", "status", "explain"},
         )
         self.assertEqual(
             {name for name in PUBLIC_SYMBOLS if callable(getattr(pipeline_core, name, None))},

@@ -8,10 +8,17 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 _PREFIX = "" if __package__ in (None, "") else "skill.scripts."
+_RUN_PREFIX = "scripts." if __package__ in (None, "") else "skill.scripts."
 _CONTRACTS = importlib.import_module(f"{_PREFIX}pipeline_contracts")
 _CORE = importlib.import_module(f"{_PREFIX}pipeline_core")
 _BENCHMARK = importlib.import_module(f"{_PREFIX}benchmark_adapter")
+_RUNNER = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.orchestration.runner")
+_RUN_LOGGING = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.orchestration.logging")
+_RUN_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.run")
 ContractError = _CONTRACTS.ContractError
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
 canonical_sha256 = _CONTRACTS.canonical_sha256
@@ -27,6 +34,9 @@ build_pr_bundle = _CORE.build_pr_bundle
 check_publish_gate = _CORE.check_publish_gate
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
 import_benchmark = _BENCHMARK.import_benchmark
+StageLogger = _RUN_LOGGING.StageLogger
+STAGE_NAMES = _RUN_CONTRACT.STAGE_NAMES
+RunContractError = _RUNNER.ContractError
 
 
 Handler = Callable[[argparse.Namespace], dict[str, object]]
@@ -161,6 +171,41 @@ def _check_publish_gate(arguments: argparse.Namespace) -> dict[str, object]:
     return result
 
 
+def _stage_logger(arguments: argparse.Namespace) -> object:
+    return StageLogger(format=arguments.log_format, verbosity=arguments.verbosity)
+
+
+def _run(arguments: argparse.Namespace) -> dict[str, object]:
+    return _RUNNER.start_run(
+        root=arguments.root,
+        workspace_path=arguments.workspace,
+        mode=arguments.mode,
+        project_type=arguments.project_type,
+        locales=arguments.locale,
+        scanner_profile=arguments.scanner_profile,
+        plan=arguments.plan,
+        stop_after=arguments.stop_after,
+        logger=_stage_logger(arguments),
+    )
+
+
+def _resume(arguments: argparse.Namespace) -> dict[str, object]:
+    return _RUNNER.resume_run(
+        workspace_path=arguments.workspace,
+        plan=arguments.plan,
+        stop_after=arguments.stop_after,
+        logger=_stage_logger(arguments),
+    )
+
+
+def _status(arguments: argparse.Namespace) -> dict[str, object]:
+    return _RUNNER.run_status(arguments.workspace)
+
+
+def _explain(arguments: argparse.Namespace) -> dict[str, object]:
+    return _RUNNER.explain_run(arguments.workspace)
+
+
 def _path_argument(
     parser: argparse.ArgumentParser,
     flag: str,
@@ -168,6 +213,11 @@ def _path_argument(
     required: bool = True,
 ) -> None:
     parser.add_argument(flag, type=Path, required=required)
+
+
+def _run_observability(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--log-format", choices=("text", "json"), default="text")
+    parser.add_argument("--verbosity", choices=("quiet", "normal", "debug"), default="normal")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -231,6 +281,40 @@ def build_parser() -> argparse.ArgumentParser:
     _path_argument(publish_gate, "--output")
     publish_gate.set_defaults(handler=_check_publish_gate)
 
+    run = subcommands.add_parser("run")
+    _path_argument(run, "--root")
+    _path_argument(run, "--workspace")
+    run.add_argument("--mode", choices=("readme", "asset-only", "audit-only"), required=True)
+    run.add_argument(
+        "--project-type",
+        choices=("developer-tool", "library", "runtime-toolchain", "web-framework"),
+        required=True,
+    )
+    run.add_argument("--locale", action="append", required=True)
+    run.add_argument("--scanner-profile", default="balanced")
+    _path_argument(run, "--plan", required=False)
+    run.add_argument("--stop-after", choices=STAGE_NAMES)
+    _run_observability(run)
+    run.set_defaults(handler=_run)
+
+    resume = subcommands.add_parser("resume")
+    _path_argument(resume, "--workspace")
+    _path_argument(resume, "--plan", required=False)
+    resume.add_argument("--stop-after", choices=STAGE_NAMES)
+    _run_observability(resume)
+    resume.set_defaults(handler=_resume)
+
+    status = subcommands.add_parser("status")
+    _path_argument(status, "--workspace")
+    _run_observability(status)
+    status.set_defaults(handler=_status)
+
+    explain = subcommands.add_parser("explain")
+    _path_argument(explain, "--workspace")
+    explain.add_argument("--format", choices=("text", "json"), default="text")
+    _run_observability(explain)
+    explain.set_defaults(handler=_explain)
+
     return parser
 
 
@@ -239,7 +323,7 @@ def main(arguments: list[str] | None = None) -> int:
     parsed = parser.parse_args(arguments)
     try:
         result = parsed.handler(parsed)
-    except ContractError as exc:
+    except (ContractError, RunContractError) as exc:
         print(f"{exc.code}: {exc}", file=sys.stderr)
         return 2
     except OSError as exc:
@@ -247,7 +331,7 @@ def main(arguments: list[str] | None = None) -> int:
         return 2
 
     _ = sys.stdout.buffer.write(canonical_json_bytes(result))
-    return 1 if result.get("status") in {"fail", "incomplete"} else 0
+    return 1 if result.get("status") in {"fail", "failed", "incomplete", "manual-review-required"} else 0
 
 
 if __name__ == "__main__":
