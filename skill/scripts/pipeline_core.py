@@ -23,6 +23,11 @@ _AUDIT = importlib.import_module(
     if __package__ in (None, "")
     else "skill.scripts.audit_readme"
 )
+_SCANNER_SERVICE = importlib.import_module(
+    "readme_showcase.scanner.service"
+    if __package__ in (None, "")
+    else "skill.scripts.readme_showcase.scanner.service"
+)
 ContractError = _CONTRACTS.ContractError
 canonical_sha256 = _CONTRACTS.canonical_sha256
 read_regular_bytes = _CONTRACTS.read_regular_bytes
@@ -65,61 +70,28 @@ _COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SPDX = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]{0,63}\Z")
 _EMBEDDED_MARKERS = ("\n", "\r", "```", "<img", "<svg", "![")
-MAX_FILES = 2000
-MAX_DIRECTORIES = 500
-MAX_FILE_BYTES = 512 * 1024
-MAX_TOTAL_BYTES = 4 * 1024 * 1024
+MAX_FILES = _SCANNER_SERVICE.MAX_FILES
+MAX_DIRECTORIES = _SCANNER_SERVICE.MAX_DIRECTORIES
+MAX_FILE_BYTES = _SCANNER_SERVICE.MAX_FILE_BYTES
+MAX_TOTAL_BYTES = _SCANNER_SERVICE.MAX_TOTAL_BYTES
 MAX_ARTIFACT_BYTES = 16 * 1024 * 1024
 MAX_GIT_OUTPUT_BYTES = 1024 * 1024
-MAX_DEPTH = 12
-MAX_SECONDS = 5
-_EXCLUDED_DIRECTORIES = {
-    ".agents",
-    ".claude",
-    ".codex",
-    ".cursor",
-    ".git",
-    ".hg",
-    ".omo",
-    ".svn",
-    ".trellis",
-    ".venv",
-    "__pycache__",
-    "build",
-    "dist",
-    "evaluation-only",
-    "node_modules",
-    "vendor",
-    "venv",
-}
-_SECRET_NAMES = {
-    ".env",
-    ".env.local",
-    "credentials",
-    "credentials.json",
-    "id_dsa",
-    "id_ed25519",
-    "id_rsa",
-}
-_SECRET_SUFFIXES = {".key", ".p12", ".pem"}
-_BINARY_SUFFIXES = {
-    ".avi",
-    ".gif",
-    ".gz",
-    ".ico",
-    ".jpeg",
-    ".jpg",
-    ".mov",
-    ".mp4",
-    ".pdf",
-    ".png",
-    ".tar",
-    ".webm",
-    ".webp",
-    ".woff",
-    ".woff2",
-    ".zip",
-}
+MAX_DEPTH = _SCANNER_SERVICE.MAX_DEPTH
+MAX_SECONDS = _SCANNER_SERVICE.MAX_SECONDS
+# Compatibility inventory: error-code consumers still inspect this public module.
+_SCANNER_ERROR_CODES = frozenset(
+    {
+        "E_SCAN_DEPTH",
+        "E_SCAN_DIRECTORY_COUNT",
+        "E_SCAN_FILE_COUNT",
+        "E_SCAN_FILE_SIZE",
+        "E_SCAN_IO",
+        "E_SCAN_RACE",
+        "E_SCAN_ROOT",
+        "E_SCAN_TIME",
+        "E_SCAN_TOTAL_SIZE",
+    }
+)
 _REF_FIELDS = {"path", "sha256"}
 _BUNDLE_FIELDS = {"schema_version", "mode", "target", "candidate", "artifacts"}
 _TARGET_FIELDS = {"repository", "base_sha"}
@@ -603,228 +575,18 @@ def retrieve_patterns(
     }
 
 
-def _scan_limits() -> dict[str, int]:
-    return {
-        "max_depth": MAX_DEPTH,
-        "max_directories": MAX_DIRECTORIES,
-        "max_file_bytes": MAX_FILE_BYTES,
-        "max_files": MAX_FILES,
-        "max_seconds": MAX_SECONDS,
-        "max_total_bytes": MAX_TOTAL_BYTES,
-    }
-
-
-def _git_base_sha(root: Path) -> str | None:
-    git = root / ".git"
-    try:
-        git_stat = git.lstat()
-    except FileNotFoundError:
-        return None
-    if not stat.S_ISDIR(git_stat.st_mode):
-        return None
-    head = git / "HEAD"
-    try:
-        if not stat.S_ISREG(head.lstat().st_mode):
-            return None
-        value = head.read_text(encoding="ascii").strip()
-    except (FileNotFoundError, UnicodeDecodeError, OSError):
-        return None
-    if _COMMIT.fullmatch(value):
-        return value
-    if not value.startswith("ref: "):
-        return None
-    reference = value[5:]
-    if reference.startswith("/") or ".." in reference.split("/"):
-        return None
-    ref_path = git.joinpath(*reference.split("/"))
-    try:
-        if not stat.S_ISREG(ref_path.lstat().st_mode):
-            return None
-        resolved = ref_path.read_text(encoding="ascii").strip()
-    except (FileNotFoundError, UnicodeDecodeError, OSError):
-        return None
-    return resolved if _COMMIT.fullmatch(resolved) else None
-
-
-def _incomplete_scan(root: Path, code: str, path: str) -> dict[str, object]:
-    return {
-        "schema_version": 1,
-        "status": "incomplete",
-        "target": {"name": root.name, "base_sha": _git_base_sha(root)},
-        "scan_limits": _scan_limits(),
-        "files": [],
-        "facts": [],
-        "warnings": [{"code": code, "path": path}],
-    }
-
-
-def _read_scanned_file(
-    entry: Path,
-    expected: os.stat_result,
-    relative: str,
-    maximum: int,
-) -> bytes:
-    flags = (
-        os.O_RDONLY
-        | getattr(os, "O_NOFOLLOW", 0)
-        | getattr(os, "O_NONBLOCK", 0)
-    )
-    try:
-        descriptor = os.open(entry, flags)
-    except OSError as exc:
-        raise ContractError("E_SCAN_IO", f"cannot open {relative}: {exc}") from exc
-    try:
-        actual = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(actual.st_mode)
-            or actual.st_dev != expected.st_dev
-            or actual.st_ino != expected.st_ino
-            or actual.st_size != expected.st_size
-            or actual.st_mtime_ns != expected.st_mtime_ns
-        ):
-            raise ContractError("E_SCAN_RACE", f"file changed during scan: {relative}")
-        chunks: list[bytes] = []
-        remaining = maximum + 1
-        while remaining:
-            chunk = os.read(descriptor, min(64 * 1024, remaining))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        raw = b"".join(chunks)
-        after = os.fstat(descriptor)
-        if (
-            len(raw) > maximum
-            or len(raw) != actual.st_size
-            or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
-            != (actual.st_dev, actual.st_ino, actual.st_size, actual.st_mtime_ns)
-        ):
-            raise ContractError("E_SCAN_RACE", f"file changed during scan: {relative}")
-        return raw
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-
-
 def scan_repository(root: Path) -> dict[str, object]:
-    try:
-        initial = root.lstat()
-    except FileNotFoundError as exc:
-        raise ContractError("E_SCAN_ROOT", f"scan root not found: {root}") from exc
-    if stat.S_ISLNK(initial.st_mode) or not stat.S_ISDIR(initial.st_mode):
-        raise ContractError("E_SCAN_ROOT", "scan root must be a real directory")
-    canonical_root = root.resolve(strict=True)
-    started = time.monotonic()
-    files: list[dict[str, object]] = []
-    warnings: list[dict[str, str]] = []
-    seen_files = 0
-    seen_directories = 0
-    total_bytes = 0
-    pending = [canonical_root]
-
-    while pending:
-        directory = pending.pop()
-        try:
-            entries = sorted(directory.iterdir(), key=lambda item: item.name)
-        except OSError as exc:
-            relative = directory.relative_to(canonical_root).as_posix() or "."
-            raise ContractError("E_SCAN_IO", f"cannot list {relative}: {exc}") from exc
-        children: list[Path] = []
-        for entry in entries:
-            relative = entry.relative_to(canonical_root).as_posix()
-            if time.monotonic() - started > MAX_SECONDS:
-                return _incomplete_scan(canonical_root, "E_SCAN_TIME", relative)
-            if len(entry.relative_to(canonical_root).parts) - 1 > MAX_DEPTH:
-                return _incomplete_scan(canonical_root, "E_SCAN_DEPTH", relative)
-            try:
-                entry_stat = entry.lstat()
-            except OSError as exc:
-                raise ContractError("E_SCAN_IO", f"cannot inspect {relative}: {exc}") from exc
-            if stat.S_ISLNK(entry_stat.st_mode):
-                warnings.append({"code": "W_SCAN_SYMLINK", "path": relative})
-                continue
-            if stat.S_ISDIR(entry_stat.st_mode):
-                if entry.name in _EXCLUDED_DIRECTORIES:
-                    continue
-                marker = entry / ".git"
-                try:
-                    marker.lstat()
-                except FileNotFoundError:
-                    pass
-                except OSError as exc:
-                    raise ContractError("E_SCAN_IO", f"cannot inspect {relative}/.git: {exc}") from exc
-                else:
-                    warnings.append({"code": "W_SCAN_SUBMODULE", "path": relative})
-                    continue
-                seen_directories += 1
-                if seen_directories > MAX_DIRECTORIES:
-                    return _incomplete_scan(canonical_root, "E_SCAN_DIRECTORY_COUNT", relative)
-                children.append(entry)
-                continue
-            if not stat.S_ISREG(entry_stat.st_mode):
-                warnings.append({"code": "W_SCAN_SPECIAL", "path": relative})
-                continue
-
-            seen_files += 1
-            if seen_files > MAX_FILES:
-                return _incomplete_scan(canonical_root, "E_SCAN_FILE_COUNT", relative)
-            lower_name = entry.name.lower()
-            if lower_name in _SECRET_NAMES or entry.suffix.lower() in _SECRET_SUFFIXES:
-                warnings.append({"code": "W_SCAN_SECRET", "path": relative})
-                continue
-            if entry.suffix.lower() in _BINARY_SUFFIXES:
-                warnings.append({"code": "W_SCAN_BINARY", "path": relative})
-                continue
-            if entry_stat.st_size > MAX_FILE_BYTES:
-                return _incomplete_scan(canonical_root, "E_SCAN_FILE_SIZE", relative)
-            total_bytes += entry_stat.st_size
-            if total_bytes > MAX_TOTAL_BYTES:
-                return _incomplete_scan(canonical_root, "E_SCAN_TOTAL_SIZE", relative)
-            raw = _read_scanned_file(
-                entry,
-                entry_stat,
-                relative,
-                MAX_FILE_BYTES,
-            )
-            if b"\0" in raw:
-                warnings.append({"code": "W_SCAN_BINARY", "path": relative})
-                continue
-            try:
-                content = raw.decode("utf-8")
-            except UnicodeDecodeError:
-                warnings.append({"code": "W_SCAN_INVALID_UTF8", "path": relative})
-                continue
-            files.append(
-                {
-                    "path": relative,
-                    "bytes": len(raw),
-                    "lines": len(content.splitlines()),
-                    "sha256": hashlib.sha256(raw).hexdigest(),
-                    "content": content,
-                }
-            )
-        pending.extend(reversed(children))
-
-    files.sort(key=lambda item: str(item["path"]))
-    warnings.sort(key=lambda item: (item["path"], item["code"]))
-    facts = [
-        {
-            "fact_id": f"file:{item['path']}",
-            "kind": "repository-file",
-            "path": item["path"],
-            "evidence_sha256": item["sha256"],
-        }
-        for item in files
-    ]
-    return {
-        "schema_version": 1,
-        "status": "complete",
-        "target": {"name": canonical_root.name, "base_sha": _git_base_sha(canonical_root)},
-        "scan_limits": _scan_limits(),
-        "files": files,
-        "facts": facts,
-        "warnings": warnings,
-    }
+    return _SCANNER_SERVICE.scan_repository_v1(
+        root,
+        _SCANNER_SERVICE.ScanLimits(
+            files=MAX_FILES,
+            directories=MAX_DIRECTORIES,
+            file_bytes=MAX_FILE_BYTES,
+            total_bytes=MAX_TOTAL_BYTES,
+            depth=MAX_DEPTH,
+            seconds=MAX_SECONDS,
+        ),
+    )
 
 
 def _relative_path(value: Any, context: str) -> PurePosixPath:
