@@ -23,6 +23,7 @@ from skill.scripts.readme_showcase.contracts.plan import validate_readme_plan
 from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
 from skill.scripts.readme_showcase.generation.assembler import (
     assemble_generated_bundle,
+    canonical_markdown_blocks,
     validate_generated_bundle_v2,
     write_generated_bundle_atomic,
 )
@@ -62,7 +63,7 @@ class BundleV2ContractTests(unittest.TestCase):
             "markdown_blocks": [
                 {
                     "claim_id": "markdown:en:overview",
-                    "content_sha256": hashlib.sha256(b"Overview").hexdigest(),
+                    "content_sha256": "0" * 64,
                     "claim_kind": "factual",
                     "evidence_ids": [fact_id],
                     "language_pair_id": None,
@@ -152,6 +153,8 @@ class BundleV2ContractTests(unittest.TestCase):
         (root / "assets" / "hero.png").write_bytes(asset_raw)
         readme_raw = b"# Overview\n"
         (root / "README.generated.md").write_bytes(readme_raw)
+        if bilingual:
+            (root / "README_zh.generated.md").write_bytes("# 概览\n".encode())
         plan = {
             "schema_version": 2, "mode": "readme", "languages": ["en", "zh"] if bilingual else ["en"],
             "sections": ["overview"], "visual_intent": "hero", "diagram_route": "static",
@@ -163,7 +166,7 @@ class BundleV2ContractTests(unittest.TestCase):
             english["language_pair_id"] = "overview"
             chinese = copy.deepcopy(english)
             chinese["claim_id"] = "markdown:zh:overview"
-            chinese["content_sha256"] = hashlib.sha256("概览".encode()).hexdigest()
+            chinese["content_sha256"] = hashlib.sha256("# 概览".encode()).hexdigest()
             claims["markdown_blocks"].append(chinese)
         assets = {
             "schema_version": 2,
@@ -217,6 +220,139 @@ class BundleV2ContractTests(unittest.TestCase):
             for thread in threads: thread.start()
             for thread in threads: thread.join()
             self.assertEqual(len(set(outputs)), 1)
+
+    def test_readme_claim_content_binding_rejects_self_consistent_rewrite(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self.make_bundle(root)
+            replacement = b"# Unrelated\n"
+            (root / "README.generated.md").write_bytes(replacement)
+            bundle["candidate"]["readme"]["sha256"] = hashlib.sha256(replacement).hexdigest()
+            candidate = {
+                "readme": bundle["candidate"]["readme"],
+                "assets": bundle["candidate"]["assets"],
+            }
+            bundle["candidate"]["candidate_sha256"] = canonical_sha256(candidate)
+            evaluation = {
+                "schema_version": 2,
+                "status": "pass",
+                "candidate_sha256": bundle["candidate"]["candidate_sha256"],
+            }
+            write_canonical_json_atomic(root / "evaluation.json", evaluation)
+            bundle["artifacts"]["evaluation"]["sha256"] = canonical_sha256(evaluation)
+            self.assert_code("E_BUNDLE_HASH", validate_generated_bundle_v2, bundle, root)
+
+    def test_readme_claim_content_binding_is_canonical_bilingual_and_deterministic(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            first = self.make_bundle(root, bilingual=True)
+            emitted = json.loads((root / "claim-map.json").read_text(encoding="utf-8"))
+            self.assertNotEqual(emitted["markdown_blocks"][0]["content_sha256"], "0" * 64)
+            second = assemble_generated_bundle(
+                root,
+                mode=first["mode"],
+                target=first["target"],
+                candidate={key: first["candidate"][key] for key in ("readme", "assets")},
+                artifacts=first["artifacts"],
+            )
+            self.assertEqual(canonical_json_bytes(first), canonical_json_bytes(second))
+            claims = json.loads((root / "claim-map.json").read_text(encoding="utf-8"))["markdown_blocks"]
+            expected = []
+            for path in (root / "README.generated.md", root / "README_zh.generated.md"):
+                expected.extend(hashlib.sha256(block).hexdigest() for block in canonical_markdown_blocks(path.read_bytes()))
+            self.assertEqual([claim["content_sha256"] for claim in claims], expected)
+            self.assertEqual(validate_generated_bundle_v2(first, root)["status"], "pass")
+
+    def test_readme_claim_derivation_preserves_diagram_label_hashes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self.make_bundle(root)
+            claims = json.loads((root / "claim-map.json").read_text(encoding="utf-8"))
+            diagram_hash = "f" * 64
+            claims["diagram_labels"].append({
+                **copy.deepcopy(claims["markdown_blocks"][0]),
+                "claim_id": "diagram:en:hero",
+                "content_sha256": diagram_hash,
+            })
+            write_canonical_json_atomic(root / "claim-map.json", claims)
+            bundle["artifacts"]["claim_map"]["sha256"] = canonical_sha256(claims)
+            assembled = assemble_generated_bundle(
+                root,
+                mode=bundle["mode"],
+                target=bundle["target"],
+                candidate={key: bundle["candidate"][key] for key in ("readme", "assets")},
+                artifacts=bundle["artifacts"],
+            )
+            emitted = json.loads((root / "claim-map.json").read_text(encoding="utf-8"))
+            self.assertEqual(emitted["diagram_labels"][0]["content_sha256"], diagram_hash)
+            self.assertEqual(validate_generated_bundle_v2(assembled, root)["status"], "pass")
+
+    def test_readme_claim_content_binding_rejects_orphan_duplicate_missing_and_reordered(self) -> None:
+        def rewrite_json(root: Path, bundle: dict[str, Any], name: str, value: dict[str, Any]) -> None:
+            write_canonical_json_atomic(root / bundle["artifacts"][name]["path"], value)
+            bundle["artifacts"][name]["sha256"] = canonical_sha256(value)
+
+        with self.subTest(case="orphan claim"):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                bundle = self.make_bundle(root)
+                claims = json.loads((root / "claim-map.json").read_text(encoding="utf-8"))
+                claims["markdown_blocks"] = []
+                rewrite_json(root, bundle, "claim_map", claims)
+                self.assert_code("E_CLAIM_COVERAGE", validate_generated_bundle_v2, bundle, root)
+        with self.subTest(case="ambiguous duplicate blocks"):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                bundle = self.make_bundle(root)
+                replacement = b"# Overview\n\n# Overview\n"
+                (root / "README.generated.md").write_bytes(replacement)
+                bundle["candidate"]["readme"]["sha256"] = hashlib.sha256(replacement).hexdigest()
+                candidate = {key: bundle["candidate"][key] for key in ("readme", "assets")}
+                bundle["candidate"]["candidate_sha256"] = canonical_sha256(candidate)
+                evaluation = {"schema_version": 2, "status": "pass", "candidate_sha256": bundle["candidate"]["candidate_sha256"]}
+                rewrite_json(root, bundle, "evaluation", evaluation)
+                self.assert_code("E_BUNDLE_CLAIM", validate_generated_bundle_v2, bundle, root)
+        with self.subTest(case="missing locale companion"):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                bundle = self.make_bundle(root, bilingual=True)
+                (root / "README_zh.generated.md").unlink()
+                self.assert_code("E_CLAIM_COVERAGE", validate_generated_bundle_v2, bundle, root)
+        with self.subTest(case="reordered blocks"):
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                bundle = self.make_bundle(root)
+                original = b"# Overview\n\nDetails\n"
+                (root / "README.generated.md").write_bytes(original)
+                bundle["candidate"]["readme"]["sha256"] = hashlib.sha256(original).hexdigest()
+                candidate = {key: bundle["candidate"][key] for key in ("readme", "assets")}
+                bundle["candidate"]["candidate_sha256"] = canonical_sha256(candidate)
+                evaluation = {"schema_version": 2, "status": "pass", "candidate_sha256": bundle["candidate"]["candidate_sha256"]}
+                rewrite_json(root, bundle, "evaluation", evaluation)
+                claims = json.loads((root / "claim-map.json").read_text(encoding="utf-8"))
+                claims["markdown_blocks"].append({
+                    **copy.deepcopy(claims["markdown_blocks"][0]),
+                    "claim_id": "markdown:en:details",
+                    "content_sha256": hashlib.sha256(b"Details").hexdigest(),
+                })
+                claims["markdown_blocks"].sort(key=lambda claim: claim["claim_id"])
+                rewrite_json(root, bundle, "claim_map", claims)
+                bundle = assemble_generated_bundle(
+                    root,
+                    mode=bundle["mode"],
+                    target=bundle["target"],
+                    candidate=candidate,
+                    artifacts=bundle["artifacts"],
+                )
+                self.assertEqual(validate_generated_bundle_v2(bundle, root)["status"], "pass")
+                replacement = b"Details\n\n# Overview\n"
+                (root / "README.generated.md").write_bytes(replacement)
+                bundle["candidate"]["readme"]["sha256"] = hashlib.sha256(replacement).hexdigest()
+                candidate = {key: bundle["candidate"][key] for key in ("readme", "assets")}
+                bundle["candidate"]["candidate_sha256"] = canonical_sha256(candidate)
+                evaluation = {"schema_version": 2, "status": "pass", "candidate_sha256": bundle["candidate"]["candidate_sha256"]}
+                rewrite_json(root, bundle, "evaluation", evaluation)
+                self.assert_code("E_BUNDLE_HASH", validate_generated_bundle_v2, bundle, root)
 
     def test_symlink_and_special_asset_fail_before_success(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
