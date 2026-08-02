@@ -15,9 +15,14 @@ from ...pipeline_contracts import (
     canonical_sha256,
     read_json_object_bytes,
     read_regular_bytes,
-    validate_contract,
 )
 from ..contracts.run import STAGE_NAMES
+from ..contracts.plan import validate_readme_plan
+from ..generation.request import (
+    MAX_GENERATION_REQUEST_BYTES,
+    build_generation_request,
+    canonical_generation_request,
+)
 from .workspace import RunWorkspace
 
 _CORE = importlib.import_module(
@@ -83,31 +88,6 @@ def _upstream(context: RunContext, index: int) -> str | None:
     return context.manifest["stages"][index]["output_sha256"]
 
 
-def _validate_plan(plan: Any, mode: str) -> dict[str, Any]:
-    value = validate_contract(
-        plan,
-        required={
-            "schema_version", "mode", "languages", "sections", "visual_intent",
-            "diagram_route", "commands", "evidence_ids",
-        },
-        optional=set(),
-        context="README plan",
-    )
-    if value["mode"] != mode or value["diagram_route"] not in {"none", "static", "elk"}:
-        raise ContractError("E_BUNDLE_PLAN", "README plan mode or diagram route is unsupported")
-    for name in ("languages", "sections", "commands", "evidence_ids"):
-        items = value[name]
-        if not isinstance(items, list) or any(not isinstance(item, str) or not item for item in items):
-            raise ContractError("E_SCHEMA_TYPE", f"README plan.{name} must be a string list")
-        if items != sorted(set(items)):
-            raise ContractError("E_SCHEMA_TYPE", f"README plan.{name} must be sorted and unique")
-    if not value["languages"] or not set(value["languages"]).issubset({"en", "zh"}):
-        raise ContractError("E_README_LANGUAGE", "README plan.languages must contain en and/or zh")
-    if not isinstance(value["visual_intent"], str) or not value["visual_intent"]:
-        raise ContractError("E_SCHEMA_TYPE", "README plan.visual_intent must be text")
-    return value
-
-
 class ScanStage:
     name = "scan"
 
@@ -153,10 +133,12 @@ class PlanImportStage:
 
     def fingerprint(self, context: RunContext) -> str:
         try:
-            raw = read_regular_bytes(self._path(context), maximum=MAX_CANDIDATE_BYTES)
+            raw = read_regular_bytes(self._path(context), maximum=MAX_GENERATION_REQUEST_BYTES)
         except ContractError as exc:
             if exc.code == "E_INPUT_NOT_FOUND":
                 return canonical_sha256({"plan": None})
+            if exc.code == "E_INPUT_SIZE":
+                raise ContractError("E_GENERATION_REQUEST_SIZE", f"README plan exceeds {MAX_GENERATION_REQUEST_BYTES} bytes") from exc
             raise
         return hashlib.sha256(raw).hexdigest()
 
@@ -167,7 +149,7 @@ class PlanImportStage:
             if exc.code == "E_INPUT_NOT_FOUND":
                 return StageResult("waiting-for-plan")
             raise
-        _validate_plan(plan, context.manifest["configuration"]["mode"])
+        validate_readme_plan(plan, mode=context.manifest["configuration"]["mode"])
         return StageResult("pass", {"readme-plan.json": raw})
 
 
@@ -178,21 +160,21 @@ class GenerationRequestStage:
         return canonical_sha256({"plan": _upstream(context, 2), "retrieval": _upstream(context, 1), "scan": _upstream(context, 0)})
 
     def execute(self, context: RunContext) -> StageResult:
-        request = {
-            "schema_version": 1,
-            "run_id": context.manifest["run_id"],
-            "mode": context.manifest["configuration"]["mode"],
-            "locales": context.manifest["configuration"]["locales"],
-            "inputs": {
-                "repository_evidence_sha256": _upstream(context, 0),
-                "retrieval_sha256": _upstream(context, 1),
-                "plan_sha256": _upstream(context, 2),
+        _, evidence = _canonical_object(context.attempt_file(0, "repository-evidence.json"))
+        _, retrieval = _canonical_object(context.attempt_file(1, "retrieval-packet.json"))
+        _, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
+        request = build_generation_request(
+            target={
+                "repository": context.manifest["target"]["repository"],
+                "base_sha": context.manifest["target"]["base_sha"],
             },
-            "candidate_paths": [
-                "README.md", "README_zh.md", "claim-map.json", "asset-manifest.json", "assets/**",
-            ],
-        }
-        return StageResult("pass", {"generation-request.json": canonical_json_bytes(request)})
+            locales=["zh-Hans" if locale == "zh" else locale for locale in context.manifest["configuration"]["locales"]],
+            project_classification=context.manifest["configuration"]["project_type"],
+            plan=plan,
+            retrieval_packet=retrieval,
+            evidence_packet=evidence,
+        )
+        return StageResult("pass", {"generation-request.json": canonical_generation_request(request)})
 
 
 def candidate_files(context: RunContext) -> list[tuple[str, bytes]] | None:

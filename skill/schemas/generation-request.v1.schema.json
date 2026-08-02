@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/generation-request.v1.schema.json",
+  "title": "Generation Request v1",
+  "$comment": "Python semantic validation additionally enforces exact byte cap, Python float rejection, canonical priority order, evidence bindings, and normalized values.",
+  "x-python-semantic-validation": {
+    "codes": ["E_SCHEMA_FLOAT", "E_GENERATION_REQUEST_SIZE", "E_GENERATION_EVIDENCE_DANGLING"],
+    "validator": "skill.scripts.readme_showcase.generation.request.validate_generation_request"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode", "target", "locales", "project_classification", "plan", "retrieval_records", "evidence_index", "output_contract", "revision_context"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "mode": {"enum": ["readme", "asset-only", "audit-only"]},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "base_sha"],
+      "properties": {
+        "repository": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,99}/[a-z0-9][a-z0-9_.-]{0,99}$"},
+        "base_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "locales": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {"enum": ["en", "zh-Hans"]}
+    },
+    "project_classification": {
+      "type": ["string", "null"],
+      "enum": ["developer-tool", "library", "runtime-toolchain", "web-framework", null]
+    },
+    "plan": {"$ref": "#/$defs/plan"},
+    "retrieval_records": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {"$ref": "#/$defs/retrievalRecord"}
+    },
+    "evidence_index": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {"$ref": "#/$defs/evidenceReference"}
+    },
+    "output_contract": {"$ref": "#/$defs/outputContract"},
+    "revision_context": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["original_request_sha256", "attempt"],
+          "properties": {
+            "original_request_sha256": {"$ref": "#/$defs/sha256"},
+            "attempt": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!.*(?:^|\\s)(?:/|~/))(?!.*(?i:api[_-]?key|api[_-]?token|access[_-]?token|auth[_-]?token|password|private[_-]?key|secret)\\s*[:=])[^\\u0000]+$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!/|~/)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\\\u0000]+$"},
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "mode", "languages", "sections", "visual_intent", "diagram_route", "commands", "evidence_ids"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "mode": {"enum": ["readme", "asset-only", "audit-only"]},
+        "languages": {"type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true, "items": {"enum": ["en", "zh"]}},
+        "sections": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "visual_intent": {"$ref": "#/$defs/text"},
+        "diagram_route": {"enum": ["none", "static", "elk"]},
+        "commands": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "evidence_ids": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}}
+      }
+    },
+    "retrievalRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "score", "pattern"],
+      "properties": {
+        "record_id": {"$ref": "#/$defs/text"},
+        "score": {"type": "integer", "minimum": 0},
+        "pattern": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["summary", "structure", "proof"],
+          "properties": {
+            "summary": {"$ref": "#/$defs/text"},
+            "structure": {"$ref": "#/$defs/text"},
+            "proof": {"$ref": "#/$defs/text"}
+          }
+        }
+      }
+    },
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "evidence_sha256", "packet_sha256"],
+      "properties": {
+        "fact_id": {"$ref": "#/$defs/text"},
+        "evidence_sha256": {"$ref": "#/$defs/sha256"},
+        "packet_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "outputContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_files", "schemas", "forbidden_paths"],
+      "properties": {
+        "required_files": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},
+        "schemas": {"type": "object", "propertyNames": {"$ref": "#/$defs/path"}, "additionalProperties": {"$ref": "#/$defs/path"}},
+        "forbidden_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/path"}}
+      }
+    }
+  }
+}

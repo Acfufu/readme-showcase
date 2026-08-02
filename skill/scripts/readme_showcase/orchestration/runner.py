@@ -20,6 +20,7 @@ from ...pipeline_contracts import (
     write_canonical_json_atomic,
 )
 from ..contracts.run import STAGE_NAMES, canonical_repository
+from ..generation.request import MAX_GENERATION_REQUEST_BYTES
 from .logging import StageLogger
 from .stages import STAGES, CandidateImportStage, RunContext
 from .workspace import RunWorkspace
@@ -101,7 +102,12 @@ def _runner_lock(workspace: RunWorkspace) -> Iterator[None]:
 def _copy_plan(workspace: RunWorkspace, plan: Path | None) -> None:
     if plan is None:
         return
-    raw, value = read_json_object_bytes(plan)
+    try:
+        raw, value = read_json_object_bytes(plan, maximum=MAX_GENERATION_REQUEST_BYTES)
+    except ContractError as exc:
+        if exc.code == "E_INPUT_SIZE":
+            raise ContractError("E_GENERATION_REQUEST_SIZE", f"README plan exceeds {MAX_GENERATION_REQUEST_BYTES} bytes") from exc
+        raise
     if raw != canonical_json_bytes(value):
         raise ContractError("E_RUN_INPUT", "README plan must use canonical JSON bytes")
     write_canonical_json_atomic(workspace.root / "inputs/readme-plan.json", value)
