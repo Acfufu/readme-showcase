@@ -38,6 +38,16 @@ _EVALUATION = importlib.import_module(
     if __package__ in (None, "")
     else "skill.scripts.readme_showcase.evaluation"
 )
+_BEHAVIOR = importlib.import_module(
+    "scripts.readme_showcase.evaluation.behavior"
+    if __package__ in (None, "")
+    else "skill.scripts.readme_showcase.evaluation.behavior"
+)
+_EVALUATION_REPORT = importlib.import_module(
+    "scripts.readme_showcase.evaluation.report"
+    if __package__ in (None, "")
+    else "skill.scripts.readme_showcase.evaluation.report"
+)
 ContractError = _CONTRACTS.ContractError
 canonical_sha256 = _CONTRACTS.canonical_sha256
 read_regular_bytes = _CONTRACTS.read_regular_bytes
@@ -1648,7 +1658,36 @@ def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, ob
     )
 
 
-def evaluate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, object]:
+def evaluate_generated_bundle(
+    payload: Any,
+    artifact_root: Path,
+    *,
+    observation: dict[str, object] | None = None,
+    trusted_observation_sha256s: frozenset[str] = frozenset(),
+) -> dict[str, object]:
+    if observation is not None:
+        if not isinstance(payload, dict) or payload.get("schema_version") != 2:
+            raise ContractError("E_OBSERVATION_BINDING", "command observations require a v2 bundle")
+        validate_generated_bundle(payload, artifact_root)
+        artifacts = cast(dict[str, Any], payload["artifacts"])
+        plan, _ = _artifact_json(artifact_root, artifacts["plan"], "bundle artifacts.plan")
+        target = cast(dict[str, Any], payload["target"])
+        input_hashes = {
+            name: _reference(reference, f"bundle artifacts.{name}")["sha256"]
+            for name, reference in sorted(artifacts.items())
+        }
+        behavior = _BEHAVIOR.evaluate_behavior(
+            cast(list[str], plan["commands"]), [observation],
+            base_sha=cast(str, target["base_sha"]), input_hashes=input_hashes,
+            trusted_observation_sha256s=trusted_observation_sha256s,
+        )
+        return cast(dict[str, object], _EVALUATION_REPORT.build_evaluation_report_v2(
+            bundle_sha256=canonical_sha256(payload),
+            hard_gate={"status": "pass", "findings": []},
+            advisory=_EVALUATION.evaluate_v2_advisory(payload, artifact_root),
+            behavior=behavior,
+            behavior_required=True,
+        ))
     if not isinstance(payload, dict) or payload.get("schema_version") != 2:
         return cast(dict[str, object], _EVALUATION.evaluate_v1_legacy(payload, artifact_root))
     bundle_sha256 = canonical_sha256(payload)

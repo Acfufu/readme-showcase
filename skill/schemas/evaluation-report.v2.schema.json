@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://readme-showcase.local/schemas/evaluation-report.v2.schema.json",
   "title": "Evaluation report v2",
+  "$comment": "Structural contract only. Python validation supplements metric equations, canonical ordering, gate/status consistency, and trusted observation binding.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "status", "decision_basis", "bundle_sha256", "hard_gate", "advisory", "behavior", "behavior_required"],

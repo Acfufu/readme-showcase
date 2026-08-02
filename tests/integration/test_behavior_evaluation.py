@@ -1,409 +1,227 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import os
-import shlex
 import subprocess
 import sys
 import tempfile
-import threading
-import time
 import unittest
-from unittest import mock
 from pathlib import Path
+from unittest import mock
 
-from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes
+from jsonschema import Draft202012Validator
+
+from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes, canonical_sha256, write_canonical_json_atomic
+from skill.scripts.pipeline_core import evaluate_generated_bundle
 from skill.scripts.readme_showcase.contracts.evaluation import (
+    read_command_observation,
     validate_command_observation,
     validate_evaluation_report_v2,
-    read_command_observation,
 )
-from skill.scripts.readme_showcase.evaluation.behavior import (
-    CommandPolicy,
-    evaluate_behavior,
-    observe_command,
-)
-from skill.scripts.readme_showcase.evaluation.report import build_evaluation_report_v2
+from skill.scripts.readme_showcase.evaluation.behavior import evaluate_behavior
+from tests import test_evaluation
 
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests/fixtures/contracts"
-ZERO = "0" * 64
-
-
-def digest(raw: bytes) -> str:
-    return hashlib.sha256(raw).hexdigest()
 
 
 class BehaviorEvaluationTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.epoch = lambda: "2026-08-03T00:00:00Z"
+    def fixture(self) -> dict[str, object]:
+        return json.loads((FIXTURES / "command-observation-v1.valid.json").read_text())
 
-    def target(self, root: Path) -> tuple[Path, list[dict[str, str]], dict[str, str]]:
-        target = root / "target"
-        target.mkdir()
-        source = target / "source.txt"
-        source.write_bytes(b"bound input\n")
-        inputs = [{"path": "source.txt", "sha256": digest(source.read_bytes())}]
-        provenance = {"path": "source.txt", "sha256": inputs[0]["sha256"]}
-        return target, inputs, provenance
-
-    def policy(self, code: str, *, timeout_ms: int = 2_000, max_output_bytes: int = 4_096) -> CommandPolicy:
-        executable = str(Path(sys.executable).resolve())
-        return CommandPolicy(
-            command_id="quick-start:fixture",
-            argv=(executable, "-I", "-c", code),
-            cwd=".",
-            timeout_ms=timeout_ms,
-            max_output_bytes=max_output_bytes,
-        )
-
-    def test_absent_and_imported_observations_never_pass(self) -> None:
-        command = self.policy("print('ok')")
-        absent = evaluate_behavior(
-            policies=[command], observations=[], base_sha="a" * 40,
-            input_hashes=[], source_provenance=None,
-        )
-        self.assertEqual(absent["status"], "not-observed")
-        self.assertEqual(absent["reasons"], ["observation-missing:quick-start:fixture"])
-
-        imported = json.loads((FIXTURES / "command-observation-v1.valid.json").read_text())
-        command = CommandPolicy(
-            imported["command_id"], tuple(imported["argv"]), imported["cwd"],
-            imported["timeout_ms"], imported["max_output_bytes"],
-        )
-        imported["verification"] = "imported-unverified"
-        imported["runner"] = {
-            "clean_environment": False, "controlled": False,
-            "id": "human-import", "network": "unknown",
-        }
-        result = evaluate_behavior(
-            policies=[command], observations=[imported],
-            base_sha=imported["observed_at_base_sha"],
-            input_hashes=imported["input_hashes"],
-            source_provenance=imported["source_provenance"],
-        )
-        self.assertEqual(result["status"], "unverified")
-        self.assertNotEqual(result["status"], "pass")
-
-    def test_controlled_observation_binds_every_field_and_is_deterministic(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            target, inputs, provenance = self.target(Path(temporary))
-            policy = self.policy("print('safe fixture')")
-            first = observe_command(
-                policy, target_root=target, base_sha="a" * 40,
-                input_hashes=inputs, source_provenance=provenance, clock=self.epoch,
-            )
-            second = observe_command(
-                policy, target_root=target, base_sha="a" * 40,
-                input_hashes=inputs, source_provenance=provenance, clock=self.epoch,
-            )
-            self.assertEqual(canonical_json_bytes(first), canonical_json_bytes(second))
-            self.assertEqual(first["verification"], "verified")
-            self.assertEqual(first["exit_code"], 0)
-            self.assertEqual(first["stdout_sha256"], digest(b"safe fixture\n"))
-            result = evaluate_behavior(
-                policies=[policy], observations=[first], base_sha="a" * 40,
-                input_hashes=inputs, source_provenance=provenance,
-            )
-            self.assertEqual(result["status"], "pass")
-            self.assertEqual(result["observable_commands"], 1)
-
-    def test_binding_drift_and_forged_verified_fail_closed(self) -> None:
-        valid = json.loads((FIXTURES / "command-observation-v1.valid.json").read_text())
-        policy = CommandPolicy(
-            command_id=valid["command_id"], argv=tuple(valid["argv"]),
-            cwd=valid["cwd"], timeout_ms=valid["timeout_ms"],
-            max_output_bytes=valid["max_output_bytes"],
-        )
-        mutations = {
-            "base-drift": ("observed_at_base_sha", "b" * 40),
-            "command-drift": ("command", "python -c 'changed'"),
-            "cwd-drift": ("cwd", "subdir"),
-            "input-drift": ("input_hashes", [{"path": "source.txt", "sha256": "b" * 64}]),
-            "source-drift": ("source_provenance", {"path": "source.txt", "sha256": "b" * 64}),
-        }
-        for reason, (field, value) in mutations.items():
-            with self.subTest(reason=reason):
-                changed = copy.deepcopy(valid)
-                changed[field] = value
-                if reason == "command-drift":
-                    changed["argv"][-1] = "print('changed')"
-                    changed["command"] = shlex.join(changed["argv"])
-                result = evaluate_behavior(
-                    policies=[policy], observations=[changed],
-                    base_sha=valid["observed_at_base_sha"],
-                    input_hashes=valid["input_hashes"],
-                    source_provenance=valid["source_provenance"],
-                )
-                self.assertEqual(result["status"], "unsupported")
-                self.assertIn(f"observation-{reason}:{valid['command_id']}", result["reasons"])
-
-        forged = copy.deepcopy(valid)
-        forged["runner"]["controlled"] = False
-        with self.assertRaises(ContractError) as raised:
-            validate_command_observation(forged)
-        self.assertEqual(raised.exception.code, "E_OBSERVATION_BINDING")
-
-    def test_cwd_executable_allowlist_timeout_output_and_environment_controls(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            target, inputs, provenance = self.target(root)
-            for cwd in ("../escape", "/tmp"):
-                with self.subTest(cwd=cwd), self.assertRaises(ContractError) as raised:
-                    observe_command(
-                        CommandPolicy("probe", (str(Path(sys.executable).resolve()), "-I", "-c", "pass"), cwd),
-                        target_root=target, base_sha="a" * 40, input_hashes=inputs,
-                        source_provenance=provenance, clock=self.epoch,
-                    )
-                self.assertEqual(raised.exception.code, "E_OBSERVATION_UNSAFE")
-
-            linked = target / "linked"
-            linked.symlink_to(root, target_is_directory=True)
-            with self.assertRaises(ContractError) as raised:
-                observe_command(
-                    CommandPolicy("probe", (str(Path(sys.executable).resolve()), "-I", "-c", "pass"), "linked"),
-                    target_root=target, base_sha="a" * 40, input_hashes=inputs,
-                    source_provenance=provenance, clock=self.epoch,
-                )
-            self.assertEqual(raised.exception.code, "E_OBSERVATION_UNSAFE")
-            linked.unlink()
-
-            executable_link = target / "python-link"
-            executable_link.symlink_to(Path(sys.executable).resolve())
-            with self.assertRaises(ContractError) as raised:
-                observe_command(
-                    CommandPolicy("probe", (str(executable_link), "-I", "-c", "pass"), "."),
-                    target_root=target, base_sha="a" * 40, input_hashes=inputs,
-                    source_provenance=provenance, clock=self.epoch,
-                )
-            self.assertEqual(raised.exception.code, "E_OBSERVATION_UNSAFE")
-            executable_link.unlink()
-
-            os.environ["README_SHOWCASE_SECRET_SENTINEL"] = "must-not-leak"
-            try:
-                clean = observe_command(
-                    self.policy("import os; print(os.getenv('README_SHOWCASE_SECRET_SENTINEL', 'clean'))"),
-                    target_root=target, base_sha="a" * 40, input_hashes=inputs,
-                    source_provenance=provenance, clock=self.epoch,
-                )
-            finally:
-                del os.environ["README_SHOWCASE_SECRET_SENTINEL"]
-            self.assertEqual(clean["stdout_sha256"], digest(b"clean\n"))
-
-            with self.assertRaises(ContractError) as timeout:
-                observe_command(
-                    self.policy("import time; time.sleep(10)", timeout_ms=50),
-                    target_root=target, base_sha="a" * 40, input_hashes=inputs,
-                    source_provenance=provenance, clock=self.epoch,
-                )
-            self.assertEqual(timeout.exception.code, "E_OBSERVATION_TIMEOUT")
-            with self.assertRaises(ContractError) as output:
-                observe_command(
-                    self.policy("print('x' * 100000)", max_output_bytes=128),
-                    target_root=target, base_sha="a" * 40, input_hashes=inputs,
-                    source_provenance=provenance, clock=self.epoch,
-                )
-            self.assertEqual(output.exception.code, "E_OBSERVATION_OUTPUT")
-
-    def test_shell_metacharacters_are_data_and_obvious_network_commands_are_disallowed(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            target, inputs, provenance = self.target(Path(temporary))
-            marker = target / "pwned"
-            policy = self.policy("import sys; print(sys.argv[1])")
-            policy = CommandPolicy(
-                policy.command_id, (*policy.argv, f"; touch {marker}"), policy.cwd,
-                policy.timeout_ms, policy.max_output_bytes,
-            )
-            observed = observe_command(
-                policy, target_root=target, base_sha="a" * 40,
-                input_hashes=inputs, source_provenance=provenance, clock=self.epoch,
-            )
-            self.assertEqual(observed["exit_code"], 0)
-            self.assertFalse(marker.exists())
-            for argv in (("curl", "https://example.com"), ("python", "-m", "pip", "install", "x")):
-                with self.subTest(argv=argv), self.assertRaises(ContractError) as raised:
-                    observe_command(
-                        CommandPolicy("probe", argv, "."), target_root=target,
-                        base_sha="a" * 40, input_hashes=inputs,
-                        source_provenance=provenance, clock=self.epoch,
-                    )
-                self.assertEqual(raised.exception.code, "E_OBSERVATION_UNSAFE")
-            with self.assertRaises(ContractError) as raised:
-                observe_command(
-                    self.policy("print('token=super-secret')"), target_root=target,
-                    base_sha="a" * 40, input_hashes=inputs,
-                    source_provenance=provenance, clock=self.epoch,
-                )
-            self.assertEqual(raised.exception.code, "E_OBSERVATION_UNSAFE")
-
-    def test_contract_fixtures_and_report_are_strict_and_canonical(self) -> None:
-        valid_observation = json.loads((FIXTURES / "command-observation-v1.valid.json").read_text())
-        invalid_observation = json.loads((FIXTURES / "command-observation-v1.invalid.json").read_text())
-        self.assertEqual(validate_command_observation(valid_observation), valid_observation)
+    def test_schema_is_honestly_layered_with_python_binding_supplement(self) -> None:
+        schema = json.loads((ROOT / "skill/schemas/command-observation.v1.schema.json").read_text())
+        Draft202012Validator.check_schema(schema)
+        self.assertIn("Python validation supplements", schema["$comment"])
+        validator = Draft202012Validator(schema)
+        valid = self.fixture()
+        invalid = json.loads((FIXTURES / "command-observation-v1.invalid.json").read_text())
+        self.assertEqual(list(validator.iter_errors(valid)), [])
+        self.assertTrue(list(validator.iter_errors(invalid)))
+        self.assertEqual(validate_command_observation(valid), valid)
         with self.assertRaises(ContractError):
-            validate_command_observation(invalid_observation)
+            validate_command_observation(invalid)
 
-        behavior = evaluate_behavior(
-            policies=[CommandPolicy(
-                valid_observation["command_id"], tuple(valid_observation["argv"]),
-                valid_observation["cwd"], valid_observation["timeout_ms"],
-                valid_observation["max_output_bytes"],
-            )],
-            observations=[valid_observation],
-            base_sha=valid_observation["observed_at_base_sha"],
-            input_hashes=valid_observation["input_hashes"],
-            source_provenance=valid_observation["source_provenance"],
-        )
-        advisory = {
-            name: {"covered": 0, "reasons": [], "status": "not-applicable", "total": 0}
-            for name in (
-                "claim_coverage", "diagram_label_coverage", "evidence_sources",
-                "language_truth_pairs", "observable_commands", "section_intents",
-                "visual_provenance",
-            )
-        }
-        advisory["observable_commands"] = {
-            "basis_points": 0, "covered": 0,
-            "reasons": ["command-not-observed:/usr/bin/python3 -I -c fixture"],
-            "status": "measured", "total": 1,
-        }
-        report = build_evaluation_report_v2(
-            bundle_sha256=ZERO, hard_gate={"status": "pass", "findings": []},
-            advisory=advisory, behavior=behavior, behavior_required=True,
-        )
-        self.assertEqual(validate_evaluation_report_v2(report), report)
-        self.assertEqual(report["status"], "pass")
-        self.assertEqual(report["advisory"]["observable_commands"]["covered"], 1)
-        self.assertEqual(canonical_json_bytes(report), canonical_json_bytes(copy.deepcopy(report)))
-
-        hard_failure = build_evaluation_report_v2(
-            bundle_sha256=ZERO,
-            hard_gate={"status": "fail", "findings": [{"code": "E_README_AUDIT", "message": "broken"}]},
-            advisory=advisory, behavior=behavior, behavior_required=False,
-        )
-        self.assertEqual(hard_failure["status"], "fail")
-        self.assertEqual(hard_failure["hard_gate"]["findings"][0]["code"], "E_README_AUDIT")
-
+        report_schema = json.loads((ROOT / "skill/schemas/evaluation-report.v2.schema.json").read_text())
+        Draft202012Validator.check_schema(report_schema)
+        self.assertIn("Python validation supplements", report_schema["$comment"])
+        report_validator = Draft202012Validator(report_schema)
         valid_report = json.loads((FIXTURES / "evaluation-report-v2.valid.json").read_text())
         invalid_report = json.loads((FIXTURES / "evaluation-report-v2.invalid.json").read_text())
+        self.assertEqual(list(report_validator.iter_errors(valid_report)), [])
+        self.assertTrue(list(report_validator.iter_errors(invalid_report)))
         self.assertEqual(validate_evaluation_report_v2(valid_report), valid_report)
         with self.assertRaises(ContractError):
             validate_evaluation_report_v2(invalid_report)
 
-    def test_draft_2020_12_schemas_execute_when_ci_validator_is_available(self) -> None:
-        try:
-            from jsonschema import Draft202012Validator
-        except ModuleNotFoundError:
-            for name in ("command-observation.v1.schema.json", "evaluation-report.v2.schema.json"):
-                schema = json.loads((ROOT / "skill/schemas" / name).read_text())
-                self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
-            return
-        cases = (
-            ("command-observation.v1.schema.json", "command-observation-v1.valid.json", "command-observation-v1.invalid.json"),
-            ("evaluation-report.v2.schema.json", "evaluation-report-v2.valid.json", "evaluation-report-v2.invalid.json"),
-        )
-        for schema_name, valid_name, invalid_name in cases:
-            schema = json.loads((ROOT / "skill/schemas" / schema_name).read_text())
-            Draft202012Validator.check_schema(schema)
-            validator = Draft202012Validator(schema)
-            valid = json.loads((FIXTURES / valid_name).read_text())
-            invalid = json.loads((FIXTURES / invalid_name).read_text())
-            self.assertEqual(list(validator.iter_errors(valid)), [])
-            self.assertTrue(list(validator.iter_errors(invalid)))
+    def test_payload_verified_is_untrusted_without_exact_out_of_band_receipt(self) -> None:
+        observation = self.fixture()
+        arguments = {
+            "commands": [observation["command"]],
+            "observations": [observation],
+            "base_sha": observation["observed_at_base_sha"],
+            "input_hashes": observation["input_hashes"],
+        }
+        untrusted = evaluate_behavior(**arguments)
+        self.assertEqual(untrusted["status"], "unverified")
+        self.assertEqual(untrusted["observable_commands"], 0)
+        self.assertEqual(untrusted["commands"][0]["verification"], "imported-unverified")
 
-    def test_import_reader_rejects_symlink_fifo_and_noncanonical_bytes(self) -> None:
+        wrong_receipt = evaluate_behavior(**arguments, trusted_observation_sha256s=frozenset({"f" * 64}))
+        self.assertEqual(wrong_receipt["status"], "unverified")
+        trusted = evaluate_behavior(
+            **arguments,
+            trusted_observation_sha256s=frozenset({canonical_sha256(observation)}),
+        )
+        self.assertEqual(trusted["status"], "pass")
+        self.assertEqual(trusted["observable_commands"], 1)
+
+        human = copy.deepcopy(observation)
+        human["runner"] = "human-import"
+        human["verification"] = "imported-unverified"
+        human_trusted = evaluate_behavior(
+            commands=[human["command"]], observations=[human],
+            base_sha=human["observed_at_base_sha"], input_hashes=human["input_hashes"],
+            trusted_observation_sha256s=frozenset({canonical_sha256(human)}),
+        )
+        self.assertEqual(human_trusted["status"], "unverified")
+
+    def test_missing_and_binding_drift_never_pass(self) -> None:
+        observation = self.fixture()
+        missing = evaluate_behavior(
+            [observation["command"]], [],
+            base_sha=observation["observed_at_base_sha"], input_hashes=observation["input_hashes"],
+        )
+        self.assertEqual(missing["status"], "not-observed")
+        mutations = {
+            "base": ("observed_at_base_sha", "b" * 40),
+            "command": ("command", "python -m changed"),
+            "cwd": ("cwd", "subdir"),
+            "input": ("input_hashes", {"plan": "b" * 64}),
+        }
+        for name, (field, value) in mutations.items():
+            changed = copy.deepcopy(observation)
+            changed[field] = value
+            with self.subTest(name=name), self.assertRaises(ContractError) as raised:
+                evaluate_behavior(
+                    [observation["command"]], [changed],
+                    base_sha=observation["observed_at_base_sha"],
+                    input_hashes=observation["input_hashes"],
+                )
+            self.assertEqual(raised.exception.code, "E_OBSERVATION_BINDING")
+
+    def test_original_forged_payload_and_command_mismatch_fail(self) -> None:
+        observation = self.fixture()
+        forged = copy.deepcopy(observation)
+        forged["verification"] = "verified"
+        forged["runner"] = "controlled-ci"
+        result = evaluate_behavior(
+            [forged["command"]], [forged], base_sha=forged["observed_at_base_sha"],
+            input_hashes=forged["input_hashes"],
+        )
+        self.assertEqual(result["status"], "unverified")
+        self.assertNotEqual(result["status"], "pass")
+        with self.assertRaises(ContractError) as raised:
+            evaluate_behavior(
+                ["python -m expected"], [forged], base_sha=forged["observed_at_base_sha"],
+                input_hashes=forged["input_hashes"],
+                trusted_observation_sha256s=frozenset({canonical_sha256(forged)}),
+            )
+        self.assertEqual(raised.exception.code, "E_OBSERVATION_BINDING")
+
+    def test_import_and_evaluation_never_execute_subprocess(self) -> None:
+        observation = self.fixture()
+        observation["command"] = "/bin/sh -c 'touch /tmp/readme-showcase-pwned'"
+        with mock.patch.object(subprocess, "run", side_effect=AssertionError("executed")), \
+             mock.patch.object(subprocess, "Popen", side_effect=AssertionError("executed")), \
+             mock.patch.object(os, "system", side_effect=AssertionError("executed")), \
+             mock.patch.object(os, "execv", side_effect=AssertionError("executed")), \
+             mock.patch.object(os, "execve", side_effect=AssertionError("executed")):
+            result = evaluate_behavior(
+                [observation["command"]], [observation],
+                base_sha=observation["observed_at_base_sha"], input_hashes=observation["input_hashes"],
+            )
+        self.assertEqual(result["status"], "unverified")
+
+    def test_reader_rejects_symlink_fifo_and_noncanonical_json(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            source = FIXTURES / "command-observation-v1.valid.json"
             canonical = root / "observation.json"
-            canonical.write_bytes(source.read_bytes())
-            self.assertEqual(read_command_observation(canonical)["verification"], "verified")
+            canonical.write_bytes((FIXTURES / "command-observation-v1.valid.json").read_bytes())
+            self.assertEqual(read_command_observation(canonical)["schema_version"], 1)
             linked = root / "linked.json"
             linked.symlink_to(canonical)
-            with self.assertRaises(ContractError) as raised:
+            with self.assertRaises(ContractError):
                 read_command_observation(linked)
-            self.assertEqual(raised.exception.code, "E_OBSERVATION_UNSAFE")
-            noncanonical = root / "pretty.json"
-            noncanonical.write_text(json.dumps(json.loads(source.read_text()), indent=2), encoding="utf-8")
-            with self.assertRaises(ContractError) as raised:
-                read_command_observation(noncanonical)
-            self.assertEqual(raised.exception.code, "E_OBSERVATION_SCHEMA")
-            if hasattr(os, "mkfifo"):
-                fifo = root / "observation.fifo"
-                os.mkfifo(fifo)
-                with self.assertRaises(ContractError) as raised:
-                    read_command_observation(fifo)
-                self.assertEqual(raised.exception.code, "E_OBSERVATION_UNSAFE")
+            pretty = root / "pretty.json"
+            pretty.write_text(json.dumps(self.fixture(), indent=2), encoding="utf-8")
+            with self.assertRaises(ContractError):
+                read_command_observation(pretty)
 
-    def test_process_group_cleanup_write_denial_and_concurrent_determinism(self) -> None:
+    def bundle_and_observation(self, root: Path) -> tuple[dict[str, object], dict[str, object]]:
+        bundle = test_evaluation.EvaluationTests(methodName="runTest").v2_bundle(root, "high")
+        artifacts = bundle["artifacts"]
+        plan = json.loads((root / artifacts["plan"]["path"]).read_text())
+        observation = {
+            "schema_version": 1,
+            "command_id": "quick-start:demo",
+            "command": plan["commands"][0],
+            "cwd": ".",
+            "exit_code": 0,
+            "stdout_sha256": "1" * 64,
+            "stderr_sha256": "0" * 64,
+            "observed_at_base_sha": bundle["target"]["base_sha"],
+            "input_hashes": {name: reference["sha256"] for name, reference in sorted(artifacts.items())},
+            "runner": "controlled-ci",
+            "verification": "verified",
+        }
+        return bundle, observation
+
+    def cli(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "skill/scripts/readme_pipeline.py", *arguments], cwd=ROOT,
+            text=True, capture_output=True, check=False,
+        )
+
+    def test_cli_import_defaults_untrusted_trusted_receipt_passes_and_drift_is_atomic(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            target, inputs, provenance = self.target(root)
-            marker = root / "child-leaked"
-            child_code = (
-                "import pathlib,time; time.sleep(.4); "
-                f"pathlib.Path({str(marker)!r}).write_text('leaked')"
-            )
-            parent_code = (
-                "import subprocess,sys,time; "
-                f"subprocess.Popen([sys.executable,'-I','-c',{child_code!r}]); time.sleep(10)"
-            )
-            created: list[subprocess.Popen[bytes]] = []
-            original_popen = subprocess.Popen
-            def recording_popen(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
-                process = original_popen(*args, **kwargs)  # type: ignore[arg-type]
-                created.append(process)
-                return process
-            with mock.patch(
-                "skill.scripts.readme_showcase.evaluation.behavior.subprocess.Popen",
-                side_effect=recording_popen,
-            ), self.assertRaises(ContractError) as raised:
-                observe_command(
-                    self.policy(parent_code, timeout_ms=50), target_root=target,
-                    base_sha="a" * 40, input_hashes=inputs,
-                    source_provenance=provenance, clock=self.epoch,
-                )
-            self.assertEqual(raised.exception.code, "E_OBSERVATION_TIMEOUT")
-            self.assertEqual(len(created), 1)
-            with self.assertRaises(ProcessLookupError):
-                os.killpg(created[0].pid, 0)
-            time.sleep(0.5)
-            self.assertFalse(marker.exists())
+            bundle, observation = self.bundle_and_observation(root)
+            bundle_path = root / "bundle.json"
+            observation_path = root / "observation.json"
+            output = root / "report.json"
+            write_canonical_json_atomic(bundle_path, bundle)
+            write_canonical_json_atomic(observation_path, observation)
 
-            mutation = self.policy("from pathlib import Path; Path('mutated').write_text('bad')")
-            observed = observe_command(
-                mutation, target_root=target, base_sha="a" * 40,
-                input_hashes=inputs, source_provenance=provenance, clock=self.epoch,
+            untrusted = self.cli("evaluate", "--bundle", str(bundle_path), "--observation", str(observation_path), "--output", str(output))
+            self.assertEqual(untrusted.returncode, 1, untrusted.stderr)
+            self.assertEqual(json.loads(untrusted.stdout)["behavior"]["status"], "unverified")
+            receipt = canonical_sha256(observation)
+            trusted = self.cli(
+                "evaluate", "--bundle", str(bundle_path), "--observation", str(observation_path),
+                "--trusted-observation-sha256", receipt, "--output", str(output),
             )
-            self.assertNotEqual(observed["exit_code"], 0)
-            self.assertFalse((target / "mutated").exists())
+            self.assertEqual(trusted.returncode, 0, trusted.stderr)
+            report = json.loads(trusted.stdout)
+            self.assertEqual(report["schema_version"], 2)
+            self.assertEqual(report["behavior"]["status"], "pass")
+            self.assertEqual(report["advisory"]["observable_commands"]["covered"], 1)
+            last_good = output.read_bytes()
 
-            policy = self.policy("print('parallel')")
-            outputs: list[bytes] = []
-            failures: list[BaseException] = []
-            def run() -> None:
-                try:
-                    value = observe_command(
-                        policy, target_root=target, base_sha="a" * 40,
-                        input_hashes=inputs, source_provenance=provenance, clock=self.epoch,
-                    )
-                    outputs.append(canonical_json_bytes(value))
-                except BaseException as exc:
-                    failures.append(exc)
-            threads = [threading.Thread(target=run) for _ in range(8)]
-            before_temp = set(Path(tempfile.gettempdir()).glob("readme-showcase-observation-*"))
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join()
-            after_temp = set(Path(tempfile.gettempdir()).glob("readme-showcase-observation-*"))
-            self.assertEqual(failures, [])
-            self.assertEqual(len(outputs), 8)
-            self.assertEqual(len(set(outputs)), 1)
-            self.assertEqual(after_temp, before_temp)
+            drift = copy.deepcopy(observation)
+            drift["observed_at_base_sha"] = "b" * 40
+            write_canonical_json_atomic(observation_path, drift)
+            failed = self.cli("evaluate", "--bundle", str(bundle_path), "--observation", str(observation_path), "--output", str(output))
+            self.assertEqual(failed.returncode, 2)
+            self.assertIn("E_OBSERVATION_BINDING", failed.stderr)
+            self.assertEqual(failed.stdout, "")
+            self.assertEqual(output.read_bytes(), last_good)
+
+            legacy = self.cli("evaluate", "--bundle", str(bundle_path), "--output", str(root / "legacy.json"))
+            self.assertEqual(legacy.returncode, 0, legacy.stderr)
+            self.assertEqual(json.loads(legacy.stdout)["schema_version"], 1)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ _RUNNER = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.orchestration.r
 _RUN_LOGGING = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.orchestration.logging")
 _RUN_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.run")
 _SCANNER = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.scanner.service")
+_EVALUATION_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.evaluation")
 ContractError = _CONTRACTS.ContractError
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
 canonical_sha256 = _CONTRACTS.canonical_sha256
@@ -111,9 +112,24 @@ def _import_benchmark(arguments: argparse.Namespace) -> dict[str, object]:
 
 
 def _evaluate(arguments: argparse.Namespace) -> dict[str, object]:
+    observation = None
+    trusted: frozenset[str] = frozenset()
+    if arguments.observation is not None:
+        observation = _EVALUATION_CONTRACT.read_command_observation(arguments.observation)
+        if arguments.trusted_observation_sha256 is not None:
+            if len(arguments.trusted_observation_sha256) != 64 or any(
+                character not in "0123456789abcdef"
+                for character in arguments.trusted_observation_sha256
+            ):
+                raise ContractError("E_OBSERVATION_BINDING", "trusted observation receipt must be lowercase SHA-256")
+            trusted = frozenset({arguments.trusted_observation_sha256})
+    elif arguments.trusted_observation_sha256 is not None:
+        raise ContractError("E_OBSERVATION_BINDING", "trusted observation receipt requires --observation")
     report = evaluate_generated_bundle(
         read_json_object(arguments.bundle),
         arguments.bundle.parent.resolve(),
+        observation=observation,
+        trusted_observation_sha256s=trusted,
     )
     write_canonical_json_atomic(arguments.output, report)
     return report
@@ -268,6 +284,8 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate = subcommands.add_parser("evaluate")
     _path_argument(evaluate, "--bundle")
     _path_argument(evaluate, "--output")
+    _path_argument(evaluate, "--observation", required=False)
+    evaluate.add_argument("--trusted-observation-sha256")
     evaluate.set_defaults(handler=_evaluate)
 
     import_benchmark = subcommands.add_parser("import-benchmark")
