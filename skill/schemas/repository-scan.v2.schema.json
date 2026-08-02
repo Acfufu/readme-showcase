@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/repository-scan.v2.schema.json",
+  "title": "README Showcase Repository Scan v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "target", "scan_limits", "project_type", "coverage", "files", "facts", "skipped", "warnings", "policy"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "status": {"enum": ["complete", "partial", "incomplete"]},
+    "target": {"$ref": "#/$defs/target"},
+    "scan_limits": {"$ref": "#/$defs/scanLimits"},
+    "project_type": {"enum": ["cli", "library", "app", "extension", "service", "unknown"]},
+    "coverage": {"$ref": "#/$defs/coverage"},
+    "files": {"type": "array", "items": {"$ref": "#/$defs/file"}},
+    "facts": {"type": "array", "items": {"$ref": "#/$defs/fact"}},
+    "skipped": {"type": "array", "items": {"$ref": "#/$defs/skip"}},
+    "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
+    "policy": {"$ref": "#/$defs/policy"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "complete"}}},
+      "then": {
+        "properties": {
+          "skipped": {"maxItems": 0},
+          "policy": {
+            "properties": {
+              "publish_eligible": {"const": true},
+              "missing_evidence": {"maxItems": 0},
+              "allowed_consumers": {"contains": {"const": "publish"}}
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "policy": {
+            "properties": {
+              "publish_eligible": {"const": false},
+              "allowed_consumers": {"not": {"contains": {"const": "publish"}}}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "x-python-semantic-validation": {
+    "validator": "skill.scripts.readme_showcase.contracts.scan.validate_repository_scan_v2",
+    "rules": [
+      "selected_files == content_files + skipped_files",
+      "skipped_files == len(skipped)",
+      "content_bytes == sum(files[*].bytes)",
+      "file and skip paths are disjoint, unique, and ordered",
+      "minimum evidence and status match project_type"
+    ]
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*\\\\)[^\\u0000]+$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "base_sha"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "base_sha": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "scanLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_depth", "max_directories", "max_file_bytes", "max_files", "max_seconds", "max_total_bytes"],
+      "properties": {
+        "max_depth": {"type": "integer", "minimum": 1},
+        "max_directories": {"type": "integer", "minimum": 1},
+        "max_file_bytes": {"type": "integer", "minimum": 1},
+        "max_files": {"type": "integer", "minimum": 1},
+        "max_seconds": {"type": "integer", "minimum": 1},
+        "max_total_bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tracked_files", "indexed_files", "selected_files", "content_files", "skipped_files", "content_bytes"],
+      "properties": {
+        "tracked_files": {"type": "integer", "minimum": 0},
+        "indexed_files": {"type": "integer", "minimum": 0},
+        "selected_files": {"type": "integer", "minimum": 0},
+        "content_files": {"type": "integer", "minimum": 0},
+        "skipped_files": {"type": "integer", "minimum": 0},
+        "content_bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "lines", "sha256", "content"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "lines": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "content": {"type": "string"}
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "kind", "path", "evidence_sha256"],
+      "properties": {
+        "fact_id": {"type": "string", "minLength": 6},
+        "kind": {"const": "repository-file"},
+        "path": {"$ref": "#/$defs/path"},
+        "evidence_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "skip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "reason", "required_for_generation"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "reason": {
+          "enum": ["binary", "file-count-limit", "file-size-limit", "invalid-utf8", "race", "required-evidence-missing", "secret", "special-file", "submodule", "symlink", "time-limit", "total-size-limit"]
+        },
+        "required_for_generation": {"type": "boolean"}
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "path"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "path": {"$ref": "#/$defs/path"}
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_evidence", "satisfied_evidence", "missing_evidence", "allowed_consumers", "publish_eligible"],
+      "properties": {
+        "required_evidence": {"$ref": "#/$defs/stringSet"},
+        "satisfied_evidence": {"$ref": "#/$defs/stringSet"},
+        "missing_evidence": {"$ref": "#/$defs/stringSet"},
+        "allowed_consumers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["audit", "readme", "publish"]}
+        },
+        "publish_eligible": {"type": "boolean"}
+      }
+    },
+    "stringSet": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

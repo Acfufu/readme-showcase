@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"name": "cli-complete", "project_type": "cli", "paths": ["bin/demo", "package.json", "tests/test_demo.py"], "status": "complete", "missing_evidence": []},
+    {"name": "cli-missing-manifest", "project_type": "cli", "paths": ["bin/demo", "tests/test_demo.py"], "status": "incomplete", "missing_evidence": ["manifest"]},
+    {"name": "library-complete", "project_type": "library", "paths": ["setup.py", "tests/test_demo.py"], "status": "complete", "missing_evidence": []},
+    {"name": "library-missing-usage", "project_type": "library", "paths": ["setup.py"], "status": "incomplete", "missing_evidence": ["usage-or-test"]},
+    {"name": "app-complete", "project_type": "app", "paths": ["manifest.json", "src/main.js"], "status": "complete", "missing_evidence": []},
+    {"name": "app-missing-entrypoint", "project_type": "app", "paths": ["manifest.json"], "status": "incomplete", "missing_evidence": ["entrypoint", "install-artifact-or-runtime-entry"]},
+    {"name": "extension-complete", "project_type": "extension", "paths": ["manifest.json", "src/main.js"], "status": "complete", "missing_evidence": []},
+    {"name": "extension-missing-manifest", "project_type": "extension", "paths": ["src/main.js"], "status": "incomplete", "missing_evidence": ["manifest"]},
+    {"name": "service-complete", "project_type": "service", "paths": ["Dockerfile", "package.json", "src/main.py"], "status": "complete", "missing_evidence": []},
+    {"name": "service-missing-deploy", "project_type": "service", "paths": ["package.json", "src/main.py"], "status": "incomplete", "missing_evidence": ["deploy-or-health"]},
+    {"name": "unknown-complete", "project_type": "unknown", "paths": ["README.md", "package.json"], "status": "complete", "missing_evidence": []},
+    {"name": "unknown-missing-readme", "project_type": "unknown", "paths": ["package.json"], "status": "incomplete", "missing_evidence": ["readme"]}
+  ]
+}
