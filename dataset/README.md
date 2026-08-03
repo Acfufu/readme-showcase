@@ -15,6 +15,15 @@ records reserved for evaluation. Pattern text is newly authored for this
 dataset. Source README text, code, badges, logos, assets, animation, and
 benchmark answers are not stored.
 
+`retrieval/candidates.json` is a separate pending-curation ledger. Its 12
+records contain provenance and structured metadata only. Every candidate is
+`unverified`, has a null approval receipt, and remains outside this production
+manifest until an external human receipt passes the candidate contract. Eight
+approvals would satisfy manifest-level 20-record/five-per-type counts, but the
+strict train-only target requires 10 approvals; the review packet therefore
+recommends an exact 10-candidate subset. Pending entries never alter the M6-T3
+benchmark baseline or its train/test boundary.
+
 ## Source ledger
 
 | Record | Pinned repository | Commit | License | Split |

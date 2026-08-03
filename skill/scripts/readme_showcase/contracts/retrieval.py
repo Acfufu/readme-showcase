@@ -1,4 +1,5 @@
-"""Strict retrieval-packet v2 contract and v1 read adapter."""
+"""Strict retrieval packet and candidate-ledger contracts."""
+# noqa: SIZE_OK - one contract boundary; task ownership forbids a cross-file split.
 
 from __future__ import annotations
 
@@ -6,16 +7,27 @@ import copy
 import importlib
 import re
 import unicodedata
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 _contracts = importlib.import_module(
-    "skill.scripts.pipeline_contracts" if __package__.startswith("skill.") else "pipeline_contracts"
+    "skill.scripts.pipeline_contracts"
+    if (__package__ or "").startswith("skill.")
+    else "pipeline_contracts"
 )
 ContractError = _contracts.ContractError
+canonical_json_bytes = _contracts.canonical_json_bytes
+canonical_sha256 = _contracts.canonical_sha256
+read_json_object_bytes = _contracts.read_json_object_bytes
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 _SLUG = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\Z")
+_SPDX = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]{0,63}\Z")
+_REPOSITORY = re.compile(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
+_REVIEW_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
+_PROJECT_TYPES = {"developer-tool", "library", "runtime-toolchain", "web-framework"}
 _PACKET_FIELDS = {"schema_version", "status", "mode", "query", "dataset", "records", "reason"}
 _QUERY_FIELDS = {"project_type", "sections", "tags", "manifest_features", "evidence_sha256"}
 _DATASET_FIELDS = {"dataset_id", "dataset_revision", "manifest_sha256"}
@@ -33,6 +45,24 @@ _SOURCE_FIELDS = {
     "repository_url", "commit", "material_sha256", "license_spdx", "license_evidence_spdx",
     "license_evidence_url", "license_evidence_sha256", "human_reviewed",
 }
+_LEDGER_FIELDS = {"schema_version", "dataset_id", "source_manifest_sha256", "candidates"}
+_CANDIDATE_FIELDS = {
+    "record_id", "repository_url", "commit", "material", "license", "source_identity",
+    "intended_split", "project_type", "section_intents", "tags", "metadata",
+    "review_status", "approval_receipt",
+}
+_MATERIAL_FIELDS = {"path", "sha256", "url"}
+_LICENSE_FIELDS = {"path", "spdx", "evidence_url", "sha256"}
+_IDENTITY_FIELDS = {"repository_url", "commit", "material_sha256", "license_sha256"}
+_METADATA_FIELDS = {
+    "project_size", "user_role", "install_method", "has_ui", "multi_package",
+    "primary_readme_goal",
+}
+_RECEIPT_FIELDS = {
+    "candidate_id", "reviewer_identity", "reviewer_kind", "reviewed_at", "decision",
+    "source_commit", "review_packet_sha256", "material_sha256", "license_sha256",
+    "receipt_sha256",
+}
 
 
 def _reject_floats(value: Any, path: str = "$") -> None:
@@ -41,7 +71,8 @@ def _reject_floats(value: Any, path: str = "$") -> None:
     if isinstance(value, list):
         for index, child in enumerate(value):
             _reject_floats(child, f"{path}[{index}]")
-    elif isinstance(value, dict):
+        return
+    if isinstance(value, dict):
         for key, child in value.items():
             if not isinstance(key, str):
                 raise ContractError("E_SCHEMA_KEY_TYPE", f"{path} contains a non-string key")
@@ -74,6 +105,169 @@ def _text_list(value: Any, context: str) -> list[str]:
     if value != sorted(set(normalized)):
         raise ContractError("E_RETRIEVAL_PACKET", f"{context} must be normalized, sorted, and unique")
     return value
+
+
+def _candidate_path(value: Any, context: str) -> str:
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise ContractError("E_DATASET_PROVENANCE", f"{context} must be a relative POSIX path")
+    path = PurePosixPath(value)
+    if path.is_absolute() or path.as_posix() != value or any(part in {"", ".", ".."} for part in path.parts):
+        raise ContractError("E_DATASET_PROVENANCE", f"{context} must be a normalized relative path")
+    return value
+
+
+def _bounded_text(value: Any, context: str, maximum: int = 240) -> str:
+    if not isinstance(value, str) or not value or len(value) > maximum:
+        raise ContractError("E_DATASET_PROVENANCE", f"{context} must be bounded text")
+    return value
+
+
+def _validate_candidate_receipt(value: Any, candidate: dict[str, Any], context: str) -> None:
+    receipt = _object(value, _RECEIPT_FIELDS, context)
+    reviewer = receipt["reviewer_identity"]
+    if (
+        receipt["reviewer_kind"] != "external-human"
+        or not isinstance(reviewer, str)
+        or not reviewer.startswith("human:")
+        or any(marker in reviewer.casefold() for marker in ("agent", "generated", "self"))
+    ):
+        raise ContractError("E_DATASET_REVIEW", f"{context} requires an external human reviewer")
+    if not isinstance(receipt["reviewed_at"], str) or not _REVIEW_TIME.fullmatch(receipt["reviewed_at"]):
+        raise ContractError("E_DATASET_REVIEW", f"{context}.reviewed_at must be UTC RFC 3339 seconds")
+    expected = {
+        "candidate_id": candidate["record_id"],
+        "source_commit": candidate["commit"],
+        "material_sha256": candidate["material"]["sha256"],
+        "license_sha256": candidate["license"]["sha256"],
+    }
+    if any(receipt[field] != expected_value for field, expected_value in expected.items()):
+        raise ContractError("E_DATASET_REVIEW", f"{context} does not bind candidate provenance")
+    if receipt["decision"] not in {"approved", "rejected"}:
+        raise ContractError("E_DATASET_REVIEW", f"{context}.decision is invalid")
+    if not isinstance(receipt["review_packet_sha256"], str) or not _SHA256.fullmatch(receipt["review_packet_sha256"]):
+        raise ContractError("E_DATASET_REVIEW", f"{context}.review_packet_sha256 is invalid")
+    supplied_hash = receipt["receipt_sha256"]
+    if not isinstance(supplied_hash, str) or supplied_hash != canonical_sha256({
+        field: field_value for field, field_value in receipt.items() if field != "receipt_sha256"
+    }):
+        raise ContractError("E_DATASET_REVIEW", f"{context}.receipt_sha256 does not match canonical receipt bytes")
+
+
+def _validate_candidate(value: Any, context: str) -> dict[str, Any]:
+    candidate = _object(value, _CANDIDATE_FIELDS, context)
+    if not isinstance(candidate["record_id"], str) or not _SLUG.fullmatch(candidate["record_id"]):
+        raise ContractError("E_DATASET_PROVENANCE", f"{context}.record_id must be a slug")
+    repository = candidate["repository_url"]
+    commit = candidate["commit"]
+    if not isinstance(repository, str) or not _REPOSITORY.fullmatch(repository):
+        raise ContractError("E_DATASET_PROVENANCE", f"{context}.repository_url must be canonical GitHub HTTPS")
+    if not isinstance(commit, str) or not _COMMIT.fullmatch(commit):
+        raise ContractError("E_DATASET_PROVENANCE", f"{context}.commit must be a full pinned commit")
+    material = _object(candidate["material"], _MATERIAL_FIELDS, f"{context}.material")
+    license_value = _object(candidate["license"], _LICENSE_FIELDS, f"{context}.license")
+    material_path = _candidate_path(material["path"], f"{context}.material.path")
+    license_path = _candidate_path(license_value["path"], f"{context}.license.path")
+    for field, source in (("material.sha256", material), ("license.sha256", license_value)):
+        if not isinstance(source["sha256"], str) or not _SHA256.fullmatch(source["sha256"]):
+            raise ContractError("E_DATASET_PROVENANCE", f"{context}.{field} is invalid")
+    expected_material_url = f"{repository}/blob/{commit}/{material_path}"
+    expected_license_url = f"{repository}/blob/{commit}/{license_path}"
+    if material["url"] != expected_material_url or license_value["evidence_url"] != expected_license_url:
+        raise ContractError("E_DATASET_PROVENANCE", f"{context} uses mutable or mismatched evidence URLs")
+    if not isinstance(license_value["spdx"], str) or not _SPDX.fullmatch(license_value["spdx"]):
+        raise ContractError("E_DATASET_PROVENANCE", f"{context}.license.spdx is invalid")
+    identity = _object(candidate["source_identity"], _IDENTITY_FIELDS, f"{context}.source_identity")
+    expected_identity = {
+        "repository_url": repository, "commit": commit,
+        "material_sha256": material["sha256"], "license_sha256": license_value["sha256"],
+    }
+    if identity != expected_identity:
+        raise ContractError("E_DATASET_PROVENANCE", f"{context}.source_identity has hash or source drift")
+    if candidate["intended_split"] != "train":
+        raise ContractError("E_DATASET_SPLIT_LEAK", f"{context}.intended_split must be train")
+    if candidate["project_type"] not in _PROJECT_TYPES:
+        raise ContractError("E_DATASET_PROVENANCE", f"{context}.project_type is invalid")
+    _slugs(candidate["section_intents"], f"{context}.section_intents")
+    _slugs(candidate["tags"], f"{context}.tags")
+    metadata = _object(candidate["metadata"], _METADATA_FIELDS, f"{context}.metadata")
+    if metadata["project_size"] not in {"small", "medium", "large"}:
+        raise ContractError("E_DATASET_PROVENANCE", f"{context}.metadata.project_size is invalid")
+    for field in ("user_role", "install_method", "primary_readme_goal"):
+        _bounded_text(metadata[field], f"{context}.metadata.{field}")
+    if type(metadata["has_ui"]) is not bool or type(metadata["multi_package"]) is not bool:
+        raise ContractError("E_DATASET_PROVENANCE", f"{context}.metadata boolean fields are invalid")
+    status, receipt = candidate["review_status"], candidate["approval_receipt"]
+    if status == "unverified":
+        if receipt is not None:
+            raise ContractError("E_DATASET_REVIEW", f"{context} unverified candidate must not carry a receipt")
+    elif status in {"approved", "rejected"}:
+        if receipt is None:
+            raise ContractError("E_DATASET_REVIEW", f"{context} reviewed candidate requires a receipt")
+        _validate_candidate_receipt(receipt, candidate, f"{context}.approval_receipt")
+        if receipt["decision"] != status:
+            raise ContractError("E_DATASET_REVIEW", f"{context} review status and receipt disagree")
+    else:
+        raise ContractError("E_DATASET_REVIEW", f"{context}.review_status is invalid")
+    return candidate
+
+
+def validate_retrieval_candidate_ledger_v1(
+    payload: Any,
+    *,
+    production_manifest: Any | None = None,
+    production_manifest_sha256: str | None = None,
+) -> dict[str, Any]:
+    _reject_floats(payload)
+    ledger = _object(payload, _LEDGER_FIELDS, "retrieval candidate ledger v1")
+    if type(ledger["schema_version"]) is not int or ledger["schema_version"] != 1:
+        raise ContractError("E_SCHEMA_VERSION", "retrieval candidate ledger requires schema_version 1")
+    if ledger["dataset_id"] != "readme-showcase-retrieval-candidates":
+        raise ContractError("E_DATASET_PROVENANCE", "candidate ledger dataset_id is invalid")
+    manifest_hash = ledger["source_manifest_sha256"]
+    if not isinstance(manifest_hash, str) or not _SHA256.fullmatch(manifest_hash):
+        raise ContractError("E_DATASET_PROVENANCE", "source_manifest_sha256 is invalid")
+    if production_manifest_sha256 is not None and manifest_hash != production_manifest_sha256:
+        raise ContractError("E_DATASET_PROVENANCE", "source manifest bytes have drifted")
+    candidates = ledger["candidates"]
+    if not isinstance(candidates, list) or len(candidates) != 12:
+        raise ContractError("E_DATASET_COVERAGE", "candidate ledger must contain exactly 12 candidates")
+    validated = [_validate_candidate(raw, f"candidate[{index}]") for index, raw in enumerate(candidates)]
+    record_ids = [candidate["record_id"] for candidate in validated]
+    if record_ids != sorted(set(record_ids)):
+        raise ContractError("E_DATASET_DUPLICATE_ID", "candidate record IDs must be sorted and unique")
+    identities = [(candidate["repository_url"], candidate["commit"]) for candidate in validated]
+    if len(identities) != len(set(identities)):
+        raise ContractError("E_DATASET_SOURCE_DUPLICATE", "candidate source identities must be unique")
+    if production_manifest is not None:
+        manifest = _object(
+            production_manifest,
+            {"schema_version", "dataset_id", "dataset_revision", "purpose", "records"},
+            "production manifest",
+        )
+        production_identities = {
+            (record["source"]["repository_url"], record["source"]["commit"])
+            for record in manifest["records"]
+        }
+        if production_identities & set(identities):
+            raise ContractError("E_DATASET_SOURCE_DUPLICATE", "candidate identity overlaps production manifest")
+    return copy.deepcopy(ledger)
+
+
+def load_retrieval_candidate_ledger_v1(
+    path: Path,
+    *,
+    production_manifest: Any | None = None,
+    production_manifest_sha256: str | None = None,
+) -> dict[str, Any]:
+    raw, payload = read_json_object_bytes(path)
+    ledger = validate_retrieval_candidate_ledger_v1(
+        payload,
+        production_manifest=production_manifest,
+        production_manifest_sha256=production_manifest_sha256,
+    )
+    if raw != canonical_json_bytes(ledger):
+        raise ContractError("E_DATASET_PROVENANCE", "candidate ledger file must use canonical JSON bytes")
+    return ledger
 
 
 def validate_retrieval_query(value: Any) -> dict[str, Any]:
@@ -169,7 +363,7 @@ def validate_retrieval_packet_v2(payload: Any) -> dict[str, Any]:
     return copy.deepcopy(packet)
 
 
-def adapt_v2_to_v1(payload: Any) -> dict[str, object]:
+def adapt_v2_to_v1(payload: Any) -> dict[str, Any]:
     packet = validate_retrieval_packet_v2(payload)
     query = packet["query"]
     records = []
@@ -194,4 +388,10 @@ def adapt_v2_to_v1(payload: Any) -> dict[str, object]:
     }
 
 
-__all__ = ["adapt_v2_to_v1", "validate_retrieval_packet_v2", "validate_retrieval_query"]
+__all__ = [
+    "adapt_v2_to_v1",
+    "load_retrieval_candidate_ledger_v1",
+    "validate_retrieval_candidate_ledger_v1",
+    "validate_retrieval_packet_v2",
+    "validate_retrieval_query",
+]
