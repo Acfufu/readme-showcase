@@ -27,7 +27,7 @@ MANIFEST = ROOT / "dataset/retrieval/manifest.json"
 QUERIES = ROOT / "dataset/retrieval/queries.json"
 BASELINE = ROOT / "tests/fixtures/retrieval/benchmark-baseline.json"
 APPROVAL_ARTIFACT_SHA256 = "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b"
-APPROVAL_RECEIPT_SHA256 = "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd"
+APPROVAL_RECEIPT_SHA256 = "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7"
 REVIEW_PACKET_SHA256 = "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310"
 SOURCE_COMMIT = "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
 
@@ -293,7 +293,7 @@ class RetrievalBenchmarkTests(unittest.TestCase):
 
         self.assertEqual(canonical_json_bytes(first), canonical_json_bytes(second))
         self.assertEqual(first["metrics"], baseline["metrics"])
-        self.assertEqual(first["ranking_sha256"], "654c2b81d8b01bf99e1bcd7dab46064a96eae5670f9de6fe120bf292cb9f1ecf")
+        self.assertEqual(first["ranking_sha256"], "80bc96da3fba8b258f24f8cc6689740e36d04201caf508dc70c167180b1905b3")
         self.assertEqual(first["review_receipt_sha256"], APPROVAL_RECEIPT_SHA256)
 
     def test_real_relevant_rank_regression_fails_named_mrr_threshold(self) -> None:

@@ -1,9 +1,9 @@
 {
   "dataset": {
     "dataset_id": "readme-showcase-retrieval",
-    "dataset_revision": 2,
-    "manifest_canonical_sha256": "45aa6396def1954f52b8d12c96627039664fac39ab5ec24ac2858c6dbdde7486",
-    "manifest_file_sha256": "96726edefe61d23ebb37ecc1212ab6ff722cc39fc3b70254cbf89825a074375f"
+    "dataset_revision": 3,
+    "manifest_canonical_sha256": "eb01d97e93c448ce893095bb7b2389db63bc449aab803e2c5f7c92f319be7c73",
+    "manifest_file_sha256": "07db475c0f56022a1e6b49f7546dc6c865d8e090c38b23e980572f3cdcb50da0"
   },
   "gold_set_sha256": "cca3d831f5100b8469b5a235e1efb2cee0aebfeaa53bc4c6d046ed3ad5eb7aee",
   "metrics": {
@@ -44,7 +44,7 @@
       "value_basis_points": 10000
     }
   },
-  "review_receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+  "review_receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
   "schema_version": 1,
   "status": "verified"
 }

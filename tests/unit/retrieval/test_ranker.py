@@ -55,7 +55,7 @@ class HybridRankerTests(unittest.TestCase):
         second = rank_records(list(reversed(records)), query())
         self.assertEqual(canonical_json_bytes(first), canonical_json_bytes(second))
         self.assertEqual([item["record_id"] for item in first[:2]], [
-            "fastapi-proof-first-overview", "flask-progressive-entry",
+            "fastapi-proof-first-overview", "gin-json-api-first-run",
         ])
         self.assertEqual(set(first[0]["signals"]), {
             "project_type_basis_points", "section_overlap_basis_points", "tag_overlap_basis_points",
@@ -95,7 +95,10 @@ class HybridRankerTests(unittest.TestCase):
             retrieve_patterns_v2(manifest, query(), mode="benchmark")
         self.assertEqual(raised.exception.code, "E_RETRIEVAL_BENCHMARK")
         benchmark = retrieve_patterns_v2(manifest, query(), mode="benchmark", benchmark=True)
-        self.assertIn("nextjs-route-map", {record["record_id"] for record in benchmark["records"]})
+        self.assertEqual([record["record_id"] for record in benchmark["records"]], [
+            "fastapi-proof-first-overview", "gin-json-api-first-run", "flask-progressive-entry",
+            "django-docs-learning-route", "rails-mvc-first-run",
+        ])
 
     def test_contract_fixture_parity_float_unknown_split_leak_and_v1_adapter(self) -> None:
         valid = json.loads((FIXTURES / "retrieval-packet-v2.valid.json").read_text())

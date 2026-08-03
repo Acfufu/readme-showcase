@@ -7,6 +7,8 @@ import json
 import os
 import tempfile
 import unittest
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +40,12 @@ INVALID_FIXTURE = (
     REPO_ROOT
     / "tests/fixtures/contracts/retrieval-candidate-ledger-v1.invalid.json"
 )
-MANIFEST_FILE_SHA256 = "96726edefe61d23ebb37ecc1212ab6ff722cc39fc3b70254cbf89825a074375f"
+MANIFEST_FILE_SHA256 = "07db475c0f56022a1e6b49f7546dc6c865d8e090c38b23e980572f3cdcb50da0"
+REVIEW_CLOCK = datetime(2026, 8, 3, 10, 4, 0, tzinfo=timezone.utc)
+APPROVED_IDS = {
+    "attrs-class-protocols", "bun-all-in-one-runtime", "click-cli-composable", "django-docs-learning-route", "gin-json-api-first-run",
+    "node-release-toolchain", "nushell-structured-shell", "pre-commit-hook-framework", "rails-mvc-first-run", "starship-shell-prompt-onboarding",
+}
 
 
 class DatasetPopulationTests(unittest.TestCase):
@@ -58,6 +65,7 @@ class DatasetPopulationTests(unittest.TestCase):
                 payload,
                 production_manifest=self.manifest(),
                 production_manifest_sha256=MANIFEST_FILE_SHA256,
+                review_time_not_after=REVIEW_CLOCK,
             )
         self.assertEqual(raised.exception.code, code)
 
@@ -70,7 +78,7 @@ class DatasetPopulationTests(unittest.TestCase):
         self.assertTrue(CANDIDATE_SCHEMA.is_file())
         self.assertTrue(hasattr(_RETRIEVAL_CONTRACT, required_validator))
 
-    def test_pending_ledger_is_canonical_unverified_and_outside_production(self) -> None:
+    def test_candidate_ledger_is_canonical_with_exact_authorized_subset(self) -> None:
         # given
         manifest = self.manifest()
         payload = self.ledger()
@@ -80,6 +88,7 @@ class DatasetPopulationTests(unittest.TestCase):
             CANDIDATES,
             production_manifest=manifest,
             production_manifest_sha256=MANIFEST_FILE_SHA256,
+            review_time_not_after=REVIEW_CLOCK,
         )
 
         # then
@@ -90,14 +99,15 @@ class DatasetPopulationTests(unittest.TestCase):
             [candidate["record_id"] for candidate in candidates],
             sorted(candidate["record_id"] for candidate in candidates),
         )
-        self.assertTrue(
-            all(
-                candidate["review_status"] == "unverified"
-                and candidate["approval_receipt"] is None
-                and candidate["intended_split"] == "train"
-                for candidate in candidates
-            )
+        self.assertEqual(
+            {candidate["record_id"] for candidate in candidates if candidate["review_status"] == "approved"},
+            APPROVED_IDS,
         )
+        self.assertEqual(
+            {candidate["record_id"] for candidate in candidates if candidate["review_status"] == "unverified"},
+            {"cpython-build-runtime", "marshmallow-schema-serialization"},
+        )
+        self.assertTrue(all(candidate["intended_split"] == "train" for candidate in candidates))
         self.assertEqual(
             {candidate["project_type"] for candidate in candidates},
             {"developer-tool", "library", "runtime-toolchain", "web-framework"},
@@ -113,7 +123,7 @@ class DatasetPopulationTests(unittest.TestCase):
                 "multi_package", "primary_readme_goal",
             },
         )
-        self.assertEqual(len(manifest["records"]), 12)
+        self.assertEqual(len(manifest["records"]), 22)
 
     def test_candidate_fixture_conclusions_match_python_contract(self) -> None:
         # given
@@ -122,14 +132,12 @@ class DatasetPopulationTests(unittest.TestCase):
 
         # when / then
         self.assertEqual(
-            validate_retrieval_candidate_ledger_v1(
-                valid,
-                production_manifest=self.manifest(),
-                production_manifest_sha256=MANIFEST_FILE_SHA256,
-            ),
+            validate_retrieval_candidate_ledger_v1(valid),
             valid,
         )
-        self.assert_candidate_error("E_SCHEMA_UNKNOWN_FIELD", invalid)
+        with self.assertRaises(ContractError) as raised:
+            validate_retrieval_candidate_ledger_v1(invalid)
+        self.assertEqual(raised.exception.code, "E_SCHEMA_UNKNOWN_FIELD")
 
     def test_candidate_contract_rejects_provenance_review_and_type_drift(self) -> None:
         # given
@@ -170,8 +178,10 @@ class DatasetPopulationTests(unittest.TestCase):
             "reviewer_kind": "generated-agent",
             "reviewed_at": "2026-08-03T08:00:00Z",
             "decision": "approved",
-            "source_commit": generated_candidate["commit"],
+            "source_commit": "e6e0a38e6ca8d0ce2996544c427312533561d5c2",
+            "candidate_commit": generated_candidate["commit"],
             "review_packet_sha256": "1" * 64,
+            "approval_artifact_sha256": "f" * 64,
             "material_sha256": generated_candidate["material"]["sha256"],
             "license_sha256": generated_candidate["license"]["sha256"],
             "receipt_sha256": "2" * 64,
@@ -186,31 +196,18 @@ class DatasetPopulationTests(unittest.TestCase):
     def test_candidate_contract_rejects_duplicate_and_production_identities(self) -> None:
         # given
         duplicate = self.ledger()
-        duplicate_candidate = copy.deepcopy(duplicate["candidates"][0])
+        duplicate_candidate = copy.deepcopy(duplicate["candidates"][3])
         duplicate_candidate["record_id"] = "duplicate-source-identity"
         duplicate["candidates"][-1] = duplicate_candidate
         duplicate["candidates"].sort(key=lambda candidate: candidate["record_id"])
         overlap = self.ledger()
-        manifest_source = self.manifest()["records"][0]["source"]
         overlap_candidate = overlap["candidates"][0]
-        overlap_candidate["repository_url"] = manifest_source["repository_url"]
-        overlap_candidate["commit"] = manifest_source["commit"]
-        overlap_candidate["material"]["url"] = (
-            f"{manifest_source['repository_url']}/blob/{manifest_source['commit']}/"
-            f"{overlap_candidate['material']['path']}"
-        )
-        overlap_candidate["license"]["evidence_url"] = (
-            f"{manifest_source['repository_url']}/blob/{manifest_source['commit']}/"
-            f"{overlap_candidate['license']['path']}"
-        )
-        overlap_candidate["source_identity"].update({
-            "repository_url": manifest_source["repository_url"],
-            "commit": manifest_source["commit"],
-        })
+        overlap_candidate["review_status"] = "unverified"
+        overlap_candidate["approval_receipt"] = None
 
         # when / then
         self.assert_candidate_error("E_DATASET_SOURCE_DUPLICATE", duplicate)
-        self.assert_candidate_error("E_DATASET_SOURCE_DUPLICATE", overlap)
+        self.assert_candidate_error("E_DATASET_REVIEW", overlap)
 
     def test_candidate_file_loader_rejects_noncanonical_symlink_and_fifo(self) -> None:
         # given
@@ -232,6 +229,7 @@ class DatasetPopulationTests(unittest.TestCase):
                     canonical,
                     production_manifest=self.manifest(),
                     production_manifest_sha256=MANIFEST_FILE_SHA256,
+                    review_time_not_after=REVIEW_CLOCK,
                 ),
                 payload,
             )
@@ -241,7 +239,10 @@ class DatasetPopulationTests(unittest.TestCase):
                 (fifo, "E_INPUT_PATH"),
             ):
                 with self.subTest(path=path.name), self.assertRaises(ContractError) as raised:
-                    load_retrieval_candidate_ledger_v1(path)
+                    load_retrieval_candidate_ledger_v1(
+                        path,
+                        review_time_not_after=REVIEW_CLOCK,
+                    )
                 self.assertEqual(raised.exception.code, code)
 
     def test_manifest_has_reviewed_variety_without_copied_payloads(self) -> None:
@@ -251,10 +252,19 @@ class DatasetPopulationTests(unittest.TestCase):
 
         self.assertEqual(
             result["manifest_sha256"],
-            "45aa6396def1954f52b8d12c96627039664fac39ab5ec24ac2858c6dbdde7486",
+            "eb01d97e93c448ce893095bb7b2389db63bc449aab803e2c5f7c92f319be7c73",
         )
-        self.assertEqual(result["record_count"], 12)
-        self.assertEqual(result["split_counts"], {"test": 2, "train": 10})
+        self.assertEqual(result["record_count"], 22)
+        self.assertEqual(result["split_counts"], {"test": 2, "train": 20})
+        self.assertEqual(
+            Counter(record["project_types"][0] for record in records if record["split"] == "train"),
+            {"developer-tool": 5, "library": 5, "runtime-toolchain": 5, "web-framework": 5},
+        )
+        self.assertEqual(
+            {record["record_id"] for record in records if record["split"] == "test"},
+            {"nextjs-route-map", "pytest-outcome-first"},
+        )
+        self.assertTrue(APPROVED_IDS <= {record["record_id"] for record in records})
         self.assertEqual(
             {project_type for record in records for project_type in record["project_types"]},
             {"developer-tool", "library", "runtime-toolchain", "web-framework"},

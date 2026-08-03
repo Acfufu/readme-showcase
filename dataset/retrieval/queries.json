@@ -1,9 +1,9 @@
 {
   "dataset": {
     "dataset_id": "readme-showcase-retrieval",
-    "dataset_revision": 2,
-    "manifest_canonical_sha256": "45aa6396def1954f52b8d12c96627039664fac39ab5ec24ac2858c6dbdde7486",
-    "manifest_file_sha256": "96726edefe61d23ebb37ecc1212ab6ff722cc39fc3b70254cbf89825a074375f"
+    "dataset_revision": 3,
+    "manifest_canonical_sha256": "eb01d97e93c448ce893095bb7b2389db63bc449aab803e2c5f7c92f319be7c73",
+    "manifest_file_sha256": "07db475c0f56022a1e6b49f7546dc6c865d8e090c38b23e980572f3cdcb50da0"
   },
   "gold_set_sha256": "cca3d831f5100b8469b5a235e1efb2cee0aebfeaa53bc4c6d046ed3ad5eb7aee",
   "proposal_origin": "human-reviewed",
@@ -43,7 +43,7 @@
       "review": {
         "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
         "human_reviewed": true,
-        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
         "review_method": "independent-human",
         "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
         "reviewed_at": "2026-08-03T07:20:56Z",
@@ -97,7 +97,7 @@
       "review": {
         "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
         "human_reviewed": true,
-        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
         "review_method": "independent-human",
         "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
         "reviewed_at": "2026-08-03T07:20:56Z",
@@ -151,7 +151,7 @@
       "review": {
         "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
         "human_reviewed": true,
-        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
         "review_method": "independent-human",
         "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
         "reviewed_at": "2026-08-03T07:20:56Z",
@@ -205,7 +205,7 @@
       "review": {
         "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
         "human_reviewed": true,
-        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
         "review_method": "independent-human",
         "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
         "reviewed_at": "2026-08-03T07:20:56Z",
@@ -259,7 +259,7 @@
       "review": {
         "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
         "human_reviewed": true,
-        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
         "review_method": "independent-human",
         "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
         "reviewed_at": "2026-08-03T07:20:56Z",
@@ -313,7 +313,7 @@
       "review": {
         "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
         "human_reviewed": true,
-        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
         "review_method": "independent-human",
         "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
         "reviewed_at": "2026-08-03T07:20:56Z",
@@ -367,7 +367,7 @@
       "review": {
         "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
         "human_reviewed": true,
-        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
         "review_method": "independent-human",
         "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
         "reviewed_at": "2026-08-03T07:20:56Z",
@@ -422,7 +422,7 @@
       "review": {
         "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
         "human_reviewed": true,
-        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
         "review_method": "independent-human",
         "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
         "reviewed_at": "2026-08-03T07:20:56Z",
@@ -478,7 +478,7 @@
       "review": {
         "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
         "human_reviewed": true,
-        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
         "review_method": "independent-human",
         "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
         "reviewed_at": "2026-08-03T07:20:56Z",
@@ -534,7 +534,7 @@
       "review": {
         "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
         "human_reviewed": true,
-        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "receipt_sha256": "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
         "review_method": "independent-human",
         "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
         "reviewed_at": "2026-08-03T07:20:56Z",

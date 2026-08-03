@@ -50,7 +50,7 @@ class DocumentationContractTests(unittest.TestCase):
             "pytest-dev/pytest",
         ):
             self.assertIn(repository, text)
-        self.assertIn("Ten records are production-retrieval", text)
+        self.assertIn("Twenty records are production-retrieval", text)
         self.assertIn("two are isolated `test`", text)
         self.assertIn("never production retrieval", text)
         self.assertEqual(text.count("```mermaid"), 1)

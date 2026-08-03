@@ -87,15 +87,17 @@
     "approval_receipt": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["candidate_id", "reviewer_identity", "reviewer_kind", "reviewed_at", "decision", "source_commit", "review_packet_sha256", "material_sha256", "license_sha256", "receipt_sha256"],
+      "required": ["candidate_id", "reviewer_identity", "reviewer_kind", "reviewed_at", "decision", "source_commit", "candidate_commit", "review_packet_sha256", "approval_artifact_sha256", "material_sha256", "license_sha256", "receipt_sha256"],
       "properties": {
         "candidate_id": {"$ref": "#/$defs/slug"},
-        "reviewer_identity": {"type": "string", "pattern": "^human:.+$", "maxLength": 240},
+        "reviewer_identity": {"const": "human:acfufu"},
         "reviewer_kind": {"const": "external-human"},
         "reviewed_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"},
         "decision": {"enum": ["approved", "rejected"]},
-        "source_commit": {"$ref": "#/$defs/commit"},
+        "source_commit": {"const": "e6e0a38e6ca8d0ce2996544c427312533561d5c2"},
+        "candidate_commit": {"$ref": "#/$defs/commit"},
         "review_packet_sha256": {"const": "35272b8cdcfb4e01fdc155158594c7d1a13bceabd8afa6b12f16b2040844fc4a"},
+        "approval_artifact_sha256": {"const": "feef0396226cc3bd6a816ead3a253fb2ed14b043c856279cde96f9933d2d38da"},
         "material_sha256": {"$ref": "#/$defs/sha256"},
         "license_sha256": {"$ref": "#/$defs/sha256"},
         "receipt_sha256": {"$ref": "#/$defs/sha256"}

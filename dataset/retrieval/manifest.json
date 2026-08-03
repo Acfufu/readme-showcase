@@ -1,8 +1,73 @@
 {
   "dataset_id": "readme-showcase-retrieval",
-  "dataset_revision": 2,
+  "dataset_revision": 3,
   "purpose": "retrieval-only",
   "records": [
+    {
+      "record_id": "attrs-class-protocols",
+      "project_types": [
+        "library"
+      ],
+      "section_intents": [
+        "overview",
+        "quick-start",
+        "verification"
+      ],
+      "tags": [
+        "data-model",
+        "python",
+        "validation"
+      ],
+      "pattern": {
+        "summary": "Introduce concise class declarations, then connect generated protocols to visible object behavior.",
+        "structure": "State the data-model purpose, install with pip, show one compact declaration, then demonstrate construction, comparison, and validation.",
+        "proof": "Use deterministic object representations and protocol results as local evidence; keep integration claims linked to separate documentation."
+      },
+      "source": {
+        "repository_url": "https://github.com/python-attrs/attrs",
+        "commit": "f53fc5440d7f86aac4328aec7a563eb48634177f",
+        "material_sha256": "2401f104fa8e3b9c055a92cb48dd9ac1fc0f9d2f7ae237f9272e5338f808246d",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/python-attrs/attrs/blob/f53fc5440d7f86aac4328aec7a563eb48634177f/LICENSE",
+        "license_evidence_sha256": "882115c95dfc2af1eeb6714f8ec6d5cbcabf667caff8729f42420da63f714e9f",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "bun-all-in-one-runtime",
+      "project_types": [
+        "runtime-toolchain"
+      ],
+      "section_intents": [
+        "installation",
+        "overview",
+        "quick-start",
+        "verification"
+      ],
+      "tags": [
+        "all-in-one",
+        "cross-platform",
+        "runtime"
+      ],
+      "pattern": {
+        "summary": "Present one toolkit identity before separating runtime, package, test, and build entry points.",
+        "structure": "State the unified scope, list supported installation routes, run one first command, then map the adjacent tools without mixing their outputs.",
+        "proof": "Use local version and first-run results for the chosen path; treat cross-platform breadth as an explicit compatibility matrix."
+      },
+      "source": {
+        "repository_url": "https://github.com/oven-sh/bun",
+        "commit": "6ec38a7b1f100fd8a85fbf7eb245383f9d4b2c33",
+        "material_sha256": "139c0f0e6aa80f92f62eca7d168ea2e692c3bc6e61d46e24d467b85019e45845",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/oven-sh/bun/blob/6ec38a7b1f100fd8a85fbf7eb245383f9d4b2c33/LICENSE.md",
+        "license_evidence_sha256": "cea411f4d219a2963550908cfb46678a9da1d1c3b7531b7d591fa81695e4437e",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
     {
       "record_id": "cli-installation-matrix",
       "project_types": [
@@ -35,6 +100,37 @@
       "split": "train"
     },
     {
+      "record_id": "click-cli-composable",
+      "project_types": [
+        "library"
+      ],
+      "section_intents": [
+        "overview",
+        "quick-start"
+      ],
+      "tags": [
+        "cli",
+        "minimal-example",
+        "python"
+      ],
+      "pattern": {
+        "summary": "Move from a small command declaration to composed options and the terminal result a reader can reproduce.",
+        "structure": "State the CLI purpose, install with pip, define one command, execute it, then introduce composition and reusable parameter patterns.",
+        "proof": "Pair each command example with its exit behavior and output shape instead of relying on unsupported usability claims."
+      },
+      "source": {
+        "repository_url": "https://github.com/pallets/click",
+        "commit": "00e592cea702e0b2caa0dee42489fdb1c22cd845",
+        "material_sha256": "4c3de4aa0918deac2f712facacd1dc30a8cc4627d0118dd290292ab0af65ca0b",
+        "license_spdx": "BSD-3-Clause",
+        "license_evidence_spdx": "BSD-3-Clause",
+        "license_evidence_url": "https://github.com/pallets/click/blob/00e592cea702e0b2caa0dee42489fdb1c22cd845/LICENSE.txt",
+        "license_evidence_sha256": "9a8ad106a394e853bfe21f42f4e72d592819a22805d991b5f3275029292b658d",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
       "record_id": "deno-runtime-first-run",
       "project_types": [
         "runtime-toolchain"
@@ -61,6 +157,37 @@
         "license_evidence_spdx": "MIT",
         "license_evidence_url": "https://github.com/denoland/deno/blob/39f402ebd5e4f86c1e579597c4fce4a91665e7db/LICENSE.md",
         "license_evidence_sha256": "f62497fffecc0852960c8d3e6934b9db86d16396e9b604072e923892cae3a588",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "django-docs-learning-route",
+      "project_types": [
+        "web-framework"
+      ],
+      "section_intents": [
+        "installation",
+        "overview"
+      ],
+      "tags": [
+        "deployment",
+        "documentation",
+        "learning-route"
+      ],
+      "pattern": {
+        "summary": "Guide framework newcomers from installation into tutorials, deployment preparation, and reference material.",
+        "structure": "Open with framework scope, provide the supported install path, route first-time users to a tutorial, then separate deployment and reference links.",
+        "proof": "Keep first success tied to a local tutorial result and label deployment guidance as a later operational stage."
+      },
+      "source": {
+        "repository_url": "https://github.com/django/django",
+        "commit": "60121939f6b225c7a719dd561e372e1d8e5e2c4a",
+        "material_sha256": "34c0989b01e1cb8ee592522872fdc28d13cb711e60bae0b792cc907538e6da55",
+        "license_spdx": "BSD-3-Clause",
+        "license_evidence_spdx": "BSD-3-Clause",
+        "license_evidence_url": "https://github.com/django/django/blob/60121939f6b225c7a719dd561e372e1d8e5e2c4a/LICENSE",
+        "license_evidence_sha256": "b846415d1b514e9c1dff14a22deb906d794bc546ca6129f950a18cd091e2a669",
         "human_reviewed": true
       },
       "split": "train"
@@ -123,6 +250,40 @@
         "license_evidence_spdx": "BSD-3-Clause",
         "license_evidence_url": "https://github.com/pallets/flask/blob/36e4a824f340fdee7ed50937ba8e7f6bc7d17f81/LICENSE.txt",
         "license_evidence_sha256": "489a8e1108509ed98a37bb983e11e0f7e1d31f0bd8f99a79c8448e7ff37d07ea",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "gin-json-api-first-run",
+      "project_types": [
+        "web-framework"
+      ],
+      "section_intents": [
+        "installation",
+        "overview",
+        "quick-start",
+        "verification"
+      ],
+      "tags": [
+        "api",
+        "go",
+        "json",
+        "web"
+      ],
+      "pattern": {
+        "summary": "Lead with a minimal JSON endpoint and the module commands needed to run and inspect it locally.",
+        "structure": "State the API scope, initialize dependencies, define one route, start the server, inspect the response, then link middleware and deployment topics.",
+        "proof": "Use the local status and JSON body as observable proof while keeping performance and ecosystem claims evidence-bound."
+      },
+      "source": {
+        "repository_url": "https://github.com/gin-gonic/gin",
+        "commit": "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd",
+        "material_sha256": "0c71595f35bbc7a303d2fb793b0e4639e1f3c3d1eff6a1771b705354f4e8359b",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/gin-gonic/gin/blob/34dac209ffb6ef85cc78c5d217bbb7ad001d68fd/LICENSE",
+        "license_evidence_sha256": "b104efb2c7700691650f27034e8541c5ae0ed9af54d884287f19a7467ca2fe7f",
         "human_reviewed": true
       },
       "split": "train"
@@ -191,6 +352,102 @@
       "split": "test"
     },
     {
+      "record_id": "node-release-toolchain",
+      "project_types": [
+        "runtime-toolchain"
+      ],
+      "section_intents": [
+        "compatibility",
+        "installation",
+        "overview",
+        "verification"
+      ],
+      "tags": [
+        "build",
+        "releases",
+        "runtime"
+      ],
+      "pattern": {
+        "summary": "Separate runtime release selection and downloads from source builds and contributor workflows.",
+        "structure": "Explain supported release channels, choose a verified binary path, confirm the version, then route builders to prerequisites and source instructions.",
+        "proof": "Bind installation to checksum or version output and keep source-build success tied to its own deterministic verification step."
+      },
+      "source": {
+        "repository_url": "https://github.com/nodejs/node",
+        "commit": "93b1088401399ac4c975ccc93944674b388ba80d",
+        "material_sha256": "e0feabe136086b41c031ec82058c71ef8905bd8ceef687fda720b59eb736bc82",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/nodejs/node/blob/93b1088401399ac4c975ccc93944674b388ba80d/LICENSE",
+        "license_evidence_sha256": "5888dbb9a1d2b18f2c3e6c5f6af1b39de658372b402a0577b002777f14c62ace",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "nushell-structured-shell",
+      "project_types": [
+        "developer-tool"
+      ],
+      "section_intents": [
+        "installation",
+        "overview",
+        "quick-start"
+      ],
+      "tags": [
+        "configuration",
+        "cross-platform",
+        "shell"
+      ],
+      "pattern": {
+        "summary": "Introduce structured shell values before installation and a first pipeline that exposes their shape.",
+        "structure": "State the shell model, choose a platform install route, run a small structured pipeline, then point to configuration and migration guidance.",
+        "proof": "Use locally rendered table or record output to demonstrate structure; avoid treating screenshots or popularity as execution evidence."
+      },
+      "source": {
+        "repository_url": "https://github.com/nushell/nushell",
+        "commit": "e08c27a42405c05de629ac50077ce7f759d82a64",
+        "material_sha256": "7651df72cfc62fce321f90df5813a1c697d1bc6687696d7ea476c943fe40cf78",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/nushell/nushell/blob/e08c27a42405c05de629ac50077ce7f759d82a64/LICENSE",
+        "license_evidence_sha256": "ff5dcaaba6140ec57cafdd4f707cd0d329e727477cf7d5b9ba7a244ec2678b79",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "pre-commit-hook-framework",
+      "project_types": [
+        "developer-tool"
+      ],
+      "section_intents": [
+        "compatibility",
+        "installation"
+      ],
+      "tags": [
+        "hooks",
+        "multi-language",
+        "workflow"
+      ],
+      "pattern": {
+        "summary": "Explain the repository-hook workflow and direct readers to compatible installation and configuration paths.",
+        "structure": "State when hooks run, install the framework, add one configuration, execute it across files, then link language-specific hook guidance.",
+        "proof": "Use hook exit status and changed-file findings as observable checks while keeping language compatibility explicitly scoped."
+      },
+      "source": {
+        "repository_url": "https://github.com/pre-commit/pre-commit",
+        "commit": "242ce8a25657be59f2770b50de41fe0fd508820d",
+        "material_sha256": "e247ace0ab84c08b12ebee0c304e2e9c66af77f6f43c685ac102d51a02c72cb6",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/pre-commit/pre-commit/blob/242ce8a25657be59f2770b50de41fe0fd508820d/LICENSE",
+        "license_evidence_sha256": "ea2ca27cba7cc35822d95a46d59bcd3cc88e196592e6390d1949a359ffc990e8",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
       "record_id": "pydantic-capability-to-proof",
       "project_types": [
         "library"
@@ -253,6 +510,38 @@
       "split": "test"
     },
     {
+      "record_id": "rails-mvc-first-run",
+      "project_types": [
+        "web-framework"
+      ],
+      "section_intents": [
+        "architecture",
+        "quick-start",
+        "verification"
+      ],
+      "tags": [
+        "mvc",
+        "routing",
+        "web"
+      ],
+      "pattern": {
+        "summary": "Orient readers around MVC responsibilities before creating and verifying a first local application.",
+        "structure": "Map model, view, controller, and routing roles, scaffold the application, start it locally, then follow one request through those layers.",
+        "proof": "Use the local route response and framework logs as proof that the first application and request path are working."
+      },
+      "source": {
+        "repository_url": "https://github.com/rails/rails",
+        "commit": "355903611c7d9d5ac6ca7047ab45794b8d5f6ebe",
+        "material_sha256": "49381409f34ee342af506ef1bec6364ec69fb139f932484d19ead0a0d05ed7e4",
+        "license_spdx": "MIT",
+        "license_evidence_spdx": "MIT",
+        "license_evidence_url": "https://github.com/rails/rails/blob/355903611c7d9d5ac6ca7047ab45794b8d5f6ebe/MIT-LICENSE",
+        "license_evidence_sha256": "717ba1949502290f8e47688ae2e323acd06c8ca47aec9f7596b15f678c1af4a2",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
       "record_id": "requests-minimal-session",
       "project_types": [
         "library"
@@ -311,6 +600,37 @@
         "license_evidence_spdx": "MIT",
         "license_evidence_url": "https://github.com/astral-sh/ruff/blob/7da4b8b8d78fd6df2b3e06d8466d9cd49822900d/LICENSE",
         "license_evidence_sha256": "2597d854122b77ddc71971564ca2350a37608575ce324adc5650a2b2051c8f18",
+        "human_reviewed": true
+      },
+      "split": "train"
+    },
+    {
+      "record_id": "starship-shell-prompt-onboarding",
+      "project_types": [
+        "developer-tool"
+      ],
+      "section_intents": [
+        "installation",
+        "overview"
+      ],
+      "tags": [
+        "configuration",
+        "cross-shell",
+        "navigation"
+      ],
+      "pattern": {
+        "summary": "Guide cross-shell prompt installation into one bounded configuration and a visible local result.",
+        "structure": "State shell coverage, choose a platform install route, initialize the active shell, apply one configuration change, then link module reference material.",
+        "proof": "Use the next local prompt render and configuration diagnostics as proof; separate font and terminal prerequisites from core installation."
+      },
+      "source": {
+        "repository_url": "https://github.com/starship/starship",
+        "commit": "7946f2d9fbb02a5be76856ed27ddb85da10af3da",
+        "material_sha256": "5e37ac89b9ac6c8c9ca1979e626e55e8c4781c9322dfd1e9ea8fe75c7b2a82fa",
+        "license_spdx": "ISC",
+        "license_evidence_spdx": "ISC",
+        "license_evidence_url": "https://github.com/starship/starship/blob/7946f2d9fbb02a5be76856ed27ddb85da10af3da/LICENSE",
+        "license_evidence_sha256": "2587580d0ec4ddc43d1534745a19ffeec0b63186497c2ed4bc36832da91b13e2",
         "human_reviewed": true
       },
       "split": "train"

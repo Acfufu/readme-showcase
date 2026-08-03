@@ -31,6 +31,10 @@ _REVIEW_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
 TRUSTED_REVIEW_PACKET_SHA256: Final = (
     "35272b8cdcfb4e01fdc155158594c7d1a13bceabd8afa6b12f16b2040844fc4a"
 )
+TRUSTED_APPROVAL_ARTIFACT_SHA256: Final = (
+    "feef0396226cc3bd6a816ead3a253fb2ed14b043c856279cde96f9933d2d38da"
+)
+TRUSTED_SOURCE_COMMIT: Final = "e6e0a38e6ca8d0ce2996544c427312533561d5c2"
 _TRUSTED_REVIEW_PACKET_CREATED_AT = datetime(
     2026, 8, 3, 8, 31, 48, tzinfo=timezone.utc
 )
@@ -67,8 +71,8 @@ _METADATA_FIELDS = {
 }
 _RECEIPT_FIELDS = {
     "candidate_id", "reviewer_identity", "reviewer_kind", "reviewed_at", "decision",
-    "source_commit", "review_packet_sha256", "material_sha256", "license_sha256",
-    "receipt_sha256",
+    "source_commit", "candidate_commit", "review_packet_sha256",
+    "approval_artifact_sha256", "material_sha256", "license_sha256", "receipt_sha256",
 }
 
 
@@ -165,15 +169,13 @@ def _validate_candidate_receipt(
     reviewer = receipt["reviewer_identity"]
     if (
         receipt["reviewer_kind"] != "external-human"
-        or not isinstance(reviewer, str)
-        or not reviewer.startswith("human:")
-        or any(marker in reviewer.casefold() for marker in ("agent", "generated", "self"))
+        or reviewer != "human:acfufu"
     ):
         raise ContractError("E_DATASET_REVIEW", f"{context} requires an external human reviewer")
     reviewed_at = _parse_review_time(receipt["reviewed_at"], f"{context}.reviewed_at")
     expected = {
         "candidate_id": candidate["record_id"],
-        "source_commit": candidate["commit"],
+        "candidate_commit": candidate["commit"],
         "material_sha256": candidate["material"]["sha256"],
         "license_sha256": candidate["license"]["sha256"],
     }
@@ -183,6 +185,11 @@ def _validate_candidate_receipt(
         raise ContractError("E_DATASET_REVIEW", f"{context}.decision is invalid")
     if receipt["review_packet_sha256"] != TRUSTED_REVIEW_PACKET_SHA256:
         raise ContractError("E_DATASET_REVIEW", f"{context}.review_packet_sha256 is not trusted")
+    if (
+        receipt["approval_artifact_sha256"] != TRUSTED_APPROVAL_ARTIFACT_SHA256
+        or receipt["source_commit"] != TRUSTED_SOURCE_COMMIT
+    ):
+        raise ContractError("E_DATASET_REVIEW", f"{context} is not bound to the authorized source")
     clock = _validate_review_clock(review_time_not_after, context)
     if reviewed_at < _TRUSTED_REVIEW_PACKET_CREATED_AT or reviewed_at > clock:
         raise ContractError(
@@ -305,12 +312,34 @@ def validate_retrieval_candidate_ledger_v1(
             {"schema_version", "dataset_id", "dataset_revision", "purpose", "records"},
             "production manifest",
         )
-        production_identities = {
-            (record["source"]["repository_url"], record["source"]["commit"])
-            for record in manifest["records"]
+        candidates_by_identity = {
+            (candidate["repository_url"], candidate["commit"]): candidate
+            for candidate in validated
         }
-        if production_identities & set(identities):
-            raise ContractError("E_DATASET_SOURCE_DUPLICATE", "candidate identity overlaps production manifest")
+        for record in manifest["records"]:
+            identity = (record["source"]["repository_url"], record["source"]["commit"])
+            candidate = candidates_by_identity.get(identity)
+            if candidate is None:
+                continue
+            source = record["source"]
+            if (
+                candidate["review_status"] != "approved"
+                or record["record_id"] != candidate["record_id"]
+                or record["split"] != "train"
+                or record["project_types"] != [candidate["project_type"]]
+                or record["section_intents"] != candidate["section_intents"]
+                or record["tags"] != candidate["tags"]
+                or source["material_sha256"] != candidate["material"]["sha256"]
+                or source["license_spdx"] != candidate["license"]["spdx"]
+                or source["license_evidence_spdx"] != candidate["license"]["spdx"]
+                or source["license_evidence_url"] != candidate["license"]["evidence_url"]
+                or source["license_evidence_sha256"] != candidate["license"]["sha256"]
+                or source["human_reviewed"] is not True
+            ):
+                raise ContractError(
+                    "E_DATASET_REVIEW",
+                    "production candidate is not fully bound to an approved receipt",
+                )
     return copy.deepcopy(ledger)
 
 

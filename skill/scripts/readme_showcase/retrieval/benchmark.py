@@ -46,12 +46,12 @@ _BASELINE_METRIC_FIELDS = _METRIC_FIELDS | {"threshold_basis_points"}
 _BASELINE_FIELDS = {"schema_version", "status", "dataset", "gold_set_sha256", "review_receipt_sha256", "metrics"}
 # Exact user-approved receipt and artifact bindings; callers cannot extend trust.
 _REVIEW_RECEIPT_ALLOWLIST: Final[frozenset[str]] = frozenset({
-    "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+    "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
 })
 _APPROVED_REVIEW_BINDING: Final[tuple[str, str, str, str, str, str]] = (
     "acfufu",
     "2026-08-03T07:20:56Z",
-    "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+    "b9a89e065c9736424b71cdea6f37c2c3816b84ad05050a7c665da90358bf3ee7",
     "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
     "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
     "8b1fbe257e25ceafd6541b8f23341fbbe6253180",
