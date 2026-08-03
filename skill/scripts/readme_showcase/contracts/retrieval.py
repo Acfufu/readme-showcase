@@ -7,8 +7,9 @@ import copy
 import importlib
 import re
 import unicodedata
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Final
 
 _contracts = importlib.import_module(
     "skill.scripts.pipeline_contracts"
@@ -27,6 +28,12 @@ _SLUG = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\Z")
 _SPDX = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]{0,63}\Z")
 _REPOSITORY = re.compile(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 _REVIEW_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
+TRUSTED_REVIEW_PACKET_SHA256: Final = (
+    "35272b8cdcfb4e01fdc155158594c7d1a13bceabd8afa6b12f16b2040844fc4a"
+)
+_TRUSTED_REVIEW_PACKET_CREATED_AT = datetime(
+    2026, 8, 3, 8, 31, 48, tzinfo=timezone.utc
+)
 _PROJECT_TYPES = {"developer-tool", "library", "runtime-toolchain", "web-framework"}
 _PACKET_FIELDS = {"schema_version", "status", "mode", "query", "dataset", "records", "reason"}
 _QUERY_FIELDS = {"project_type", "sections", "tags", "manifest_features", "evidence_sha256"}
@@ -122,7 +129,38 @@ def _bounded_text(value: Any, context: str, maximum: int = 240) -> str:
     return value
 
 
-def _validate_candidate_receipt(value: Any, candidate: dict[str, Any], context: str) -> None:
+def _parse_review_time(value: Any, context: str) -> datetime:
+    if not isinstance(value, str) or not _REVIEW_TIME.fullmatch(value):
+        raise ContractError("E_DATASET_REVIEW", f"{context} must be UTC RFC 3339 seconds")
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError as error:
+        raise ContractError(
+            "E_DATASET_REVIEW", f"{context} must be a real UTC calendar timestamp"
+        ) from error
+
+
+def _validate_review_clock(value: datetime | None, context: str) -> datetime:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() != timedelta(0)
+    ):
+        raise ContractError(
+            "E_DATASET_REVIEW", f"{context} requires an explicit UTC review clock"
+        )
+    return value.astimezone(timezone.utc)
+
+
+def _validate_candidate_receipt(
+    value: Any,
+    candidate: dict[str, Any],
+    context: str,
+    *,
+    review_time_not_after: datetime | None,
+) -> None:
     receipt = _object(value, _RECEIPT_FIELDS, context)
     reviewer = receipt["reviewer_identity"]
     if (
@@ -132,8 +170,7 @@ def _validate_candidate_receipt(value: Any, candidate: dict[str, Any], context: 
         or any(marker in reviewer.casefold() for marker in ("agent", "generated", "self"))
     ):
         raise ContractError("E_DATASET_REVIEW", f"{context} requires an external human reviewer")
-    if not isinstance(receipt["reviewed_at"], str) or not _REVIEW_TIME.fullmatch(receipt["reviewed_at"]):
-        raise ContractError("E_DATASET_REVIEW", f"{context}.reviewed_at must be UTC RFC 3339 seconds")
+    reviewed_at = _parse_review_time(receipt["reviewed_at"], f"{context}.reviewed_at")
     expected = {
         "candidate_id": candidate["record_id"],
         "source_commit": candidate["commit"],
@@ -144,8 +181,14 @@ def _validate_candidate_receipt(value: Any, candidate: dict[str, Any], context: 
         raise ContractError("E_DATASET_REVIEW", f"{context} does not bind candidate provenance")
     if receipt["decision"] not in {"approved", "rejected"}:
         raise ContractError("E_DATASET_REVIEW", f"{context}.decision is invalid")
-    if not isinstance(receipt["review_packet_sha256"], str) or not _SHA256.fullmatch(receipt["review_packet_sha256"]):
-        raise ContractError("E_DATASET_REVIEW", f"{context}.review_packet_sha256 is invalid")
+    if receipt["review_packet_sha256"] != TRUSTED_REVIEW_PACKET_SHA256:
+        raise ContractError("E_DATASET_REVIEW", f"{context}.review_packet_sha256 is not trusted")
+    clock = _validate_review_clock(review_time_not_after, context)
+    if reviewed_at < _TRUSTED_REVIEW_PACKET_CREATED_AT or reviewed_at > clock:
+        raise ContractError(
+            "E_DATASET_REVIEW",
+            f"{context}.reviewed_at must follow the trusted packet and not be in the future",
+        )
     supplied_hash = receipt["receipt_sha256"]
     if not isinstance(supplied_hash, str) or supplied_hash != canonical_sha256({
         field: field_value for field, field_value in receipt.items() if field != "receipt_sha256"
@@ -153,7 +196,12 @@ def _validate_candidate_receipt(value: Any, candidate: dict[str, Any], context: 
         raise ContractError("E_DATASET_REVIEW", f"{context}.receipt_sha256 does not match canonical receipt bytes")
 
 
-def _validate_candidate(value: Any, context: str) -> dict[str, Any]:
+def _validate_candidate(
+    value: Any,
+    context: str,
+    *,
+    review_time_not_after: datetime | None,
+) -> dict[str, Any]:
     candidate = _object(value, _CANDIDATE_FIELDS, context)
     if not isinstance(candidate["record_id"], str) or not _SLUG.fullmatch(candidate["record_id"]):
         raise ContractError("E_DATASET_PROVENANCE", f"{context}.record_id must be a slug")
@@ -203,7 +251,12 @@ def _validate_candidate(value: Any, context: str) -> dict[str, Any]:
     elif status in {"approved", "rejected"}:
         if receipt is None:
             raise ContractError("E_DATASET_REVIEW", f"{context} reviewed candidate requires a receipt")
-        _validate_candidate_receipt(receipt, candidate, f"{context}.approval_receipt")
+        _validate_candidate_receipt(
+            receipt,
+            candidate,
+            f"{context}.approval_receipt",
+            review_time_not_after=review_time_not_after,
+        )
         if receipt["decision"] != status:
             raise ContractError("E_DATASET_REVIEW", f"{context} review status and receipt disagree")
     else:
@@ -216,6 +269,7 @@ def validate_retrieval_candidate_ledger_v1(
     *,
     production_manifest: Any | None = None,
     production_manifest_sha256: str | None = None,
+    review_time_not_after: datetime | None = None,
 ) -> dict[str, Any]:
     _reject_floats(payload)
     ledger = _object(payload, _LEDGER_FIELDS, "retrieval candidate ledger v1")
@@ -231,7 +285,14 @@ def validate_retrieval_candidate_ledger_v1(
     candidates = ledger["candidates"]
     if not isinstance(candidates, list) or len(candidates) != 12:
         raise ContractError("E_DATASET_COVERAGE", "candidate ledger must contain exactly 12 candidates")
-    validated = [_validate_candidate(raw, f"candidate[{index}]") for index, raw in enumerate(candidates)]
+    validated = [
+        _validate_candidate(
+            raw,
+            f"candidate[{index}]",
+            review_time_not_after=review_time_not_after,
+        )
+        for index, raw in enumerate(candidates)
+    ]
     record_ids = [candidate["record_id"] for candidate in validated]
     if record_ids != sorted(set(record_ids)):
         raise ContractError("E_DATASET_DUPLICATE_ID", "candidate record IDs must be sorted and unique")
@@ -258,12 +319,14 @@ def load_retrieval_candidate_ledger_v1(
     *,
     production_manifest: Any | None = None,
     production_manifest_sha256: str | None = None,
+    review_time_not_after: datetime | None = None,
 ) -> dict[str, Any]:
     raw, payload = read_json_object_bytes(path)
     ledger = validate_retrieval_candidate_ledger_v1(
         payload,
         production_manifest=production_manifest,
         production_manifest_sha256=production_manifest_sha256,
+        review_time_not_after=review_time_not_after,
     )
     if raw != canonical_json_bytes(ledger):
         raise ContractError("E_DATASET_PROVENANCE", "candidate ledger file must use canonical JSON bytes")
