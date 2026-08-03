@@ -192,6 +192,30 @@ e\u0301
                 self.assertEqual((headings[-1].text, headings[-1].line), ("Quick Start", quick_line))
                 self.assertEqual([heading.text for heading in headings], ["Demo", "Quick Start"])
 
+    def test_first_screen_action_links_are_normalized_and_bounded(self) -> None:
+        prefix = "# Demo\n\nProject definition is clear enough for readers.\n\n"
+        positives = ("Quick Start", "quick start", "QUICK START", "qUiCk sTaRt", "Get Started", "Install", "Usage", "快速开始", "开始使用", "安装", "使用")
+        negatives = (
+            "```markdown\n[Quick Start](#go)\n```",
+            "`[Quick Start](#go)`",
+            "<!-- [Quick Start](#go) -->",
+            "Quick Start is ordinary prose.",
+            "https://example.test/quick-start",
+        )
+        for label in positives:
+            with self.subTest(label=label):
+                codes = {item.code for item in evaluate_editorial({"README.md": prefix + f"[{label}](#go)\n"}).findings}
+                self.assertNotIn("W_EDITORIAL_FIRST_SCREEN", codes)
+        for text in negatives:
+            with self.subTest(negative=text):
+                codes = {item.code for item in evaluate_editorial({"README.md": prefix + text + "\n"}).findings}
+                self.assertIn("W_EDITORIAL_FIRST_SCREEN", codes)
+        for line, expected in ((20, False), (21, True)):
+            with self.subTest(action_line=line):
+                text = prefix + "\n".join("filler" for _ in range(line - 3)) + f"\n[Quick Start](#line-{line})\n"
+                codes = {item.code for item in evaluate_editorial({"README.md": text}).findings}
+                self.assertEqual("W_EDITORIAL_FIRST_SCREEN" in codes, expected)
+
     def test_paths_are_never_opened_and_fixtures_remain_immutable_under_concurrency(self) -> None:
         fixture_paths = sorted(FIXTURES.glob("*.md"))
         before = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in fixture_paths}

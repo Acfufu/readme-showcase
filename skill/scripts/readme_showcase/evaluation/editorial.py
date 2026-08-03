@@ -17,7 +17,7 @@ _IMAGE = re.compile(r"^\s*!\[([^]]*)\]\([^)]*\)\s*$")
 _BADGE = re.compile(r"(?:badge|badgen|shields\.io)", re.IGNORECASE)
 _LINK = re.compile(r"\[([^]]+)\]\([^)]*\)")
 _FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})(.*)$")
-_ACTION = re.compile(r"\b(quick\s*start|get\s*started|install|usage)\b|快速开始|开始使用|安装|使用")
+_ACTION_LABELS = frozenset({"quick start", "get started", "install", "usage", "快速开始", "开始使用", "安装", "使用"})
 _QUICK_START = re.compile(r"^quick\s*start$|^getting\s*started$|^快速开始$|^开始使用$", re.IGNORECASE)
 _SECTION_ALIASES = {"quick start": "quick-start", "getting started": "quick-start", "快速开始": "quick-start", "开始使用": "quick-start", "install": "install", "installation": "install", "安装": "install", "usage": "usage", "use": "usage", "使用": "usage", "用法": "usage", "plan": "plan", "roadmap": "plan", "计划": "plan", "路线图": "plan", "architecture": "architecture", "架构": "architecture"}
 
@@ -29,9 +29,7 @@ class EditorialDiagnostic(Diagnostic):
     heading: str | None = None
 
     def as_dict(self) -> dict[str, object]:
-        value = Diagnostic.as_dict(self)
-        value["heading"] = self.heading
-        return value
+        return {**Diagnostic.as_dict(self), "heading": self.heading}
 
     def sort_key(self) -> tuple[object, ...]:
         return (*Diagnostic.sort_key(self), self.heading or "")
@@ -71,12 +69,10 @@ class _Document:
     paragraphs: tuple[tuple[int, str, str | None], ...]
 
 
-def _normalized(value: str) -> str:
-    return " ".join(unicodedata.normalize("NFC", value).casefold().split())
+def _normalized(value: str) -> str: return " ".join(unicodedata.normalize("NFC", value).casefold().split())
 
 
-def _clean_text(value: str) -> str:
-    return _normalized(re.sub(r"[`*_>#]", "", _LINK.sub(r"\1", value)))
+def _clean_text(value: str) -> str: return _normalized(re.sub(r"[`*_>#]", "", _LINK.sub(r"\1", value)))
 
 
 def _mask_prose(line: str, comment: bool, inline: int | None) -> tuple[str, bool, int | None]:
@@ -95,7 +91,11 @@ def _mask_prose(line: str, comment: bool, inline: int | None) -> tuple[str, bool
                 stop += 1
             ticks = stop - index
             inline = ticks if inline is None else (None if inline == ticks else inline)
+            masked[index:stop] = " " * ticks
             index = stop
+        elif inline is not None:
+            masked[index] = " "
+            index += 1
         elif inline is None and line.startswith("<!--", index):
             comment = True
         else:
@@ -190,7 +190,7 @@ def _first_screen(document: _Document) -> list[EditorialDiagnostic]:
     definition = next((item for item in screen if len(_clean_text(item[1])) >= 20 and not _HEADING.match(item[1])), None)
     action = next((item for item in screen if (match := _HEADING.match(item[1])) is not None and _QUICK_START.match(_normalized(match.group(2)))), None)
     if action is None:
-        action = next((item for item in screen if any(_ACTION.search(label) for label in _LINK.findall(item[1]))), None)
+        action = next((item for item in screen if any(_normalized(label) in _ACTION_LABELS for label in _LINK.findall(item[1]))), None)
     if definition is not None and action is not None:
         return []
     anchor = definition or action or (screen[0] if screen else (1, ""))
