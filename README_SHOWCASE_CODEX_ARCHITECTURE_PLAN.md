@@ -4,7 +4,7 @@
 > 目标仓库：`Acfufu/readme-showcase`
 > 历史基线来源：M0 前仓库提交 `b38f780928a7982746965e5ec8673375609e5aa5`（仅作对照，已过时）
 > 适用执行者：Codex 及人工 Reviewer
-> 文档状态：M0–M9 实现已完成；功能实现基线提交为 `a7dc83ee553d870c4b479f59aebc6fff52550ebd`（tree `101c50502c9d1a5d64213dfc318c8cc416ff8ee9`）；F1–F4 全局验收的 live status 不在本实现基线文档中冻结，由 same-SHA Trellis/evidence final gates 记录
+> 文档状态：M0–M9 实现已完成；功能实现基线提交为 `ab0499c2f8166e5a63563a98d74f9399351bc256`（tree `814c4111a60871ca91654a75b8d56c2f2e74f8e8`）；F1–F4 全局验收的 live status 不在本实现基线文档中冻结，由 same-SHA Trellis/evidence final gates 记录
 > 范围声明：**明确排除供应链优化、依赖治理、渲染引擎插件化及 ELK 依赖锁升级。**
 
 ---
@@ -12,8 +12,8 @@
 ## 执行状态
 
 M0–M9 的实现任务与对应任务级 gate 已完成，功能实现基线提交为
-`a7dc83ee553d870c4b479f59aebc6fff52550ebd`（tree
-`101c50502c9d1a5d64213dfc318c8cc416ff8ee9`）。F1–F4 将对同一棵树执行最终全局验收；其 live status 不在本文冻结，由 same-SHA Trellis/evidence final gates 记录。
+`ab0499c2f8166e5a63563a98d74f9399351bc256`（tree
+`814c4111a60871ca91654a75b8d56c2f2e74f8e8`）。F1–F4 将对同一棵树执行最终全局验收；其 live status 不在本文冻结，由 same-SHA Trellis/evidence final gates 记录。
 
 | 里程碑 | 状态 | 代表性实现提交 / 结果 |
 |---|---|---|
@@ -30,7 +30,7 @@ M0–M9 的实现任务与对应任务级 gate 已完成，功能实现基线提
 
 验收结果：
 
-- M9-T2 在支持的 Python 3.11 + `jsonschema==4.26.0` 环境下复现完整测试 321/321，`npm test` 同样为 321/321；focused regression 为 32/32；
+- 当前功能实现基线在支持的 Python 3.11 + `jsonschema==4.26.0` 环境下复现完整测试 322/322，`npm test` 同样为 322/322；M9-T2 历史 receipt（`a7dc83e`）仍为 321/321，focused regression 保持 32/32；
 - 当前快照为 `pipeline_core.py` 238 行、`readme_pipeline.py` 485 行、17 个 Schema、22 条 Retrieval 记录（train/test=20/2）；
 - v1 CLI、公开 Python 导入、canonical JSON、安装边界及现有 fail-closed 安全行为保持不变；live GitHub 写入与 push 未执行；
 - F1–F4 的 live status 不在本文冻结；由 same-SHA Trellis/evidence final gates 记录，不得用任务级 green 替代其最终结论。
@@ -90,13 +90,13 @@ test(ci): isolate slow and integration suites
 
 以上数值是 M0 冻结时的历史快照，不代表当前实现。
 
-### 功能实现基线快照（提交 `a7dc83ee553d870c4b479f59aebc6fff52550ebd`；tree `101c50502c9d1a5d64213dfc318c8cc416ff8ee9`）
+### 功能实现基线快照（提交 `ab0499c2f8166e5a63563a98d74f9399351bc256`；tree `814c4111a60871ca91654a75b8d56c2f2e74f8e8`）
 
 | 项目 | 当前值 |
 |---|---:|
 | `skill/scripts/pipeline_core.py` | 238 行 |
 | `skill/scripts/readme_pipeline.py` | 485 行 |
-| 测试用例 | 321 个（支持环境；Python/npm 均通过） |
+| 测试用例 | 322 个（支持环境；Python/npm 均通过） |
 | Retrieval 数据记录 | 22 条 |
 | Retrieval 训练/测试划分 | 20 / 2 |
 | `skill/schemas/*.schema.json` | 17 个 |
@@ -2284,7 +2284,7 @@ M9-T2
 
 任何测试失败不得以“与本次无关”为理由跳过。必须定位、修复或在报告中提供可复现证据和明确阻断说明。
 
-## 22.1 Batch 2–6 已完成交付报告（功能实现基线提交 `a7dc83ee553d870c4b479f59aebc6fff52550ebd`；tree `101c50502c9d1a5d64213dfc318c8cc416ff8ee9`）
+## 22.1 Batch 2–6 已完成交付报告（功能实现基线提交 `ab0499c2f8166e5a63563a98d74f9399351bc256`；tree `814c4111a60871ca91654a75b8d56c2f2e74f8e8`）
 
 ### Implemented
 
@@ -2300,9 +2300,9 @@ M9-T2
 
 新增接口：`run/resume/status/explain/preview`、`create-approval-template`、`deliver`、`record-feedback`，以及 v2 artifact/schema 与可选 feedback ranking seam。
 
-修改文件 manifest（可复现；范围为 `f708e994..a7dc83ee`）：运行
-`git diff --name-only f708e994 a7dc83ee -- . ':(exclude).omo/**'`
-得到 200 个 non-`.omo` changed paths；其中 `skill/scripts/readme_showcase/**` 63 个、`tests/**` 109 个。主要分组为 `skill/scripts/readme_showcase/**`、`tests/**`、`skill/schemas/**`、`dataset/retrieval/**`、`.github/workflows/` 及 package/requirements/docs/fixtures。
+修改文件 manifest（可复现；范围为 `f708e994..ab0499c2f8166e5a63563a98d74f9399351bc256`）：运行
+`git diff --name-only f708e994 ab0499c2f8166e5a63563a98d74f9399351bc256 -- . ':(exclude).omo/**'`
+得到 201 个 non-`.omo` changed paths；其中本架构文档自身占 1 个，功能实现路径 200 个，`skill/scripts/readme_showcase/**` 63 个、`tests/**` 109 个。主要分组为 `skill/scripts/readme_showcase/**`、`tests/**`、`skill/schemas/**`、`dataset/retrieval/**`、`.github/workflows/` 及 package/requirements/docs/fixtures。
 
 ### Compatibility
 
@@ -2312,8 +2312,8 @@ M9-T2
 
 ### Tests
 
-- 支持的 Python 3.11 + `jsonschema==4.26.0`：`PYTHONDONTWRITEBYTECODE=1 uv run --python 3.11 --with jsonschema==4.26.0 python -m unittest discover -s tests -v` 为 321/321；同环境 `npm test` 为 321/321；M9-T2 focused 为 32/32。
-- 当前发布面复核：`pipeline_core.py` 238 行、`readme_pipeline.py` 485 行、17 schemas、22 records（20 train/2 test）；`npm pack` entryCount=112，离线安装/CLI 检查通过。最终支持 receipt：`.omo/evidence/M9-T2-final-gate-review.md`。
+- 当前功能实现基线的支持环境复核：`PYTHONDONTWRITEBYTECODE=1 uv run --python 3.11 --with jsonschema==4.26.0 python -m unittest discover -s tests -v` 为 322/322；同环境 `npm test` 为 322/322。M9-T2 历史 receipt（`a7dc83e`）仍记录 321/321，focused 为 32/32；F2 安全闭环未改写该 focused 结果。
+- 历史 M9-T2 发布面复核（基线 `a7dc83e`）：`pipeline_core.py` 238 行、`readme_pipeline.py` 485 行、17 schemas、22 records（20 train/2 test）；`npm pack` entryCount=112，离线安装/CLI 检查通过。receipt `.omo/evidence/M9-T2-final-gate-review.md` 仅绑定该历史树，不支持当前 `ab0499c`；F3 将为当前 `ab0499c` 产出独立的 package/install/CLI receipt。
 - 最慢测试：`unittest` 当前未记录逐用例 duration，不能诚实命名单项最慢测试；F3 将在冻结树补采样。
 - 残留进程：任务级/最终 M9 gate 清理检查为 0；F3 将再次全局复核。
 
@@ -2321,6 +2321,7 @@ M9-T2
 
 - 任务级 gate 保留并覆盖路径穿越、symlink/special file、secret/binary、hash/Git base/index、schema/diagnostic、split leakage、approval drift、并发锁及主工作区不变等 fail-closed 不变量。
 - GitHub delivery 仅做 mock execute 与 network-denied `gh --dry-run`；未执行 live branch/commit/push/PR 写入，未 push。
+- F2 安全闭环：`a8f346b` 使显式空 permissions 保持 deny-all；`ab0499c` 拒绝 tracked intermediate-parent symlink，且不读取 outside bytes。
 - 代表性新增测试：`tests/contract/test_approval_envelope.py`、`tests/contract/test_feedback_event.py`、`tests/e2e/test_delivery_dry_run.py`、`tests/integration/test_delivery_worktree.py`、`tests/test_schema_parity.py`、`tests/unit/delivery/test_github_adapter.py`、`tests/unit/test_feedback_metrics.py`。
 
 ### Known Limitations
