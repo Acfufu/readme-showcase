@@ -22,6 +22,8 @@ _RUN_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts
 _SCANNER = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.scanner.service")
 _EVALUATION_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.evaluation")
 _APPROVAL = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.delivery.approval")
+_FEEDBACK = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.delivery.feedback")
+_FEEDBACK_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.feedback")
 _GITHUB = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.delivery.github")
 _PUBLISHING = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.publishing")
 ContractError = _CONTRACTS.ContractError
@@ -239,6 +241,19 @@ def _deliver(arguments: argparse.Namespace) -> dict[str, object]:
     return _GITHUB.dry_run_result(plan)
 
 
+def _record_feedback(arguments: argparse.Namespace) -> dict[str, object]:
+    details = _read_canonical_input(arguments.details, _FEEDBACK_CONTRACT.DETAILS_CODE)
+    return _FEEDBACK.record_feedback(
+        workspace=arguments.workspace,
+        delivery_result_path=arguments.delivery_result,
+        run_id=arguments.run_id,
+        fingerprint=arguments.fingerprint,
+        event=arguments.event,
+        details=details,
+        recorded_at=arguments.recorded_at,
+    )
+
+
 def _stage_logger(arguments: argparse.Namespace) -> object:
     return StageLogger(format=arguments.log_format, verbosity=arguments.verbosity)
 
@@ -423,6 +438,22 @@ def _build_delivery_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_feedback_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="readme_pipeline.py record-feedback",
+        description="Append one bound event to the local feedback log.",
+    )
+    _path_argument(parser, "--workspace")
+    _path_argument(parser, "--delivery-result")
+    _path_argument(parser, "--details")
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--fingerprint", required=True)
+    parser.add_argument("--event", choices=_FEEDBACK_CONTRACT.EVENTS, required=True)
+    parser.add_argument("--recorded-at", required=True)
+    parser.set_defaults(handler=_record_feedback)
+    return parser
+
+
 def main(arguments: list[str] | None = None) -> int:
     raw_arguments = list(sys.argv[1:] if arguments is None else arguments)
     if raw_arguments[:1] == ["create-approval-template"]:
@@ -430,6 +461,9 @@ def main(arguments: list[str] | None = None) -> int:
         parsed = parser.parse_args(raw_arguments[1:])
     elif raw_arguments[:1] == ["deliver"]:
         parser = _build_delivery_parser()
+        parsed = parser.parse_args(raw_arguments[1:])
+    elif raw_arguments[:1] == ["record-feedback"]:
+        parser = _build_feedback_parser()
         parsed = parser.parse_args(raw_arguments[1:])
     else:
         parser = build_parser()

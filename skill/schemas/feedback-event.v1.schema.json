@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://readme-showcase.local/schemas/feedback-event.v1.schema.json",
+  "title": "Local feedback event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "run_id", "fingerprint", "event", "recorded_at", "details"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "event_id": {"$ref": "#/$defs/sha256"},
+    "run_id": {"$ref": "#/$defs/sha256"},
+    "fingerprint": {"$ref": "#/$defs/sha256"},
+    "event": {"enum": ["preview-approved", "preview-rejected", "pr-opened", "pr-closed", "pr-merged", "candidate-edited", "asset-rejected"]},
+    "recorded_at": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "details": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "pattern_ids": {"$ref": "#/$defs/ids"},
+        "section_ids": {"$ref": "#/$defs/ids"},
+        "asset_ids": {"$ref": "#/$defs/ids"},
+        "accepted_ids": {"$ref": "#/$defs/ids"},
+        "rejected_ids": {"$ref": "#/$defs/ids"},
+        "manual_edit_distance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["changed", "total"],
+          "properties": {
+            "changed": {"type": "integer", "minimum": 0, "maximum": 1000000000},
+            "total": {"type": "integer", "minimum": 0, "maximum": 1000000000}
+          }
+        },
+        "pr_number": {"type": "integer", "minimum": 1, "maximum": 1000000000},
+        "pr_outcome": {"enum": ["opened", "closed", "merged"]}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:/-]{0,127}$"},
+    "ids": {"type": "array", "maxItems": 1024, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}
+  },
+  "allOf": [
+    {"if": {"properties": {"event": {"const": "preview-approved"}}}, "then": {"properties": {"details": {"required": ["accepted_ids"]}}}},
+    {"if": {"properties": {"event": {"const": "preview-rejected"}}}, "then": {"properties": {"details": {"required": ["rejected_ids"]}}}},
+    {"if": {"properties": {"event": {"const": "candidate-edited"}}}, "then": {"properties": {"details": {"required": ["manual_edit_distance"]}}}},
+    {"if": {"properties": {"event": {"const": "asset-rejected"}}}, "then": {"properties": {"details": {"required": ["asset_ids", "rejected_ids"]}}}},
+    {"if": {"properties": {"event": {"const": "pr-opened"}}}, "then": {"properties": {"details": {"required": ["pr_number", "pr_outcome"], "properties": {"pr_outcome": {"const": "opened"}}}}}},
+    {"if": {"properties": {"event": {"const": "pr-closed"}}}, "then": {"properties": {"details": {"required": ["pr_number", "pr_outcome"], "properties": {"pr_outcome": {"const": "closed"}}}}}},
+    {"if": {"properties": {"event": {"const": "pr-merged"}}}, "then": {"properties": {"details": {"required": ["pr_number", "pr_outcome"], "properties": {"pr_outcome": {"const": "merged"}}}}}}
+  ],
+  "x-python-semantic-validation": {"codes": ["E_FEEDBACK_BINDING", "E_FEEDBACK_DETAILS", "E_FEEDBACK_EVENT", "E_FEEDBACK_ID", "E_FEEDBACK_PRIVACY", "E_FEEDBACK_TIME"]}
+}
