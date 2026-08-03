@@ -10,6 +10,7 @@ from pathlib import Path
 from skill.scripts.pipeline_contracts import canonical_json_bytes
 from skill.scripts.readme_showcase.evaluation.editorial import (
     EditorialDiagnostic,
+    _document,
     evaluate_editorial,
 )
 
@@ -176,6 +177,20 @@ e\u0301
                 not_applicable = {item.related_ids[0] for item in report.not_applicable}
                 self.assertEqual("quick-start-distance" not in not_applicable, quick_start_present)
                 self.assertNotIn("W_EDITORIAL_HEADING_HIERARCHY", {item.code for item in report.findings})
+
+    def test_fence_delimiter_length_and_closer_syntax(self) -> None:
+        prefix = "# Demo\n\nProject definition is clear enough for readers.\n\n[Quick Start](#quick-start)\n\n"
+        rows = (
+            ("four backticks reject three", "````md\n<!-- code\n```\n## decoy\n````\n\n## Quick Start\n", 13),
+            ("four tildes reject three", "~~~~md\n<!-- code\n~~~\n## decoy\n~~~~\n\n## Quick Start\n", 13),
+            ("longer closer works", "```md\n<!-- code\n````\n\n## Quick Start\n", 11),
+            ("trailing closer text stays code", "```md\n<!-- code\n```not-close\n## decoy\n```   \n\n## Quick Start\n", 13),
+        )
+        for name, fenced, quick_line in rows:
+            with self.subTest(name=name):
+                headings = _document("README.md", prefix + fenced).headings
+                self.assertEqual((headings[-1].text, headings[-1].line), ("Quick Start", quick_line))
+                self.assertEqual([heading.text for heading in headings], ["Demo", "Quick Start"])
 
     def test_paths_are_never_opened_and_fixtures_remain_immutable_under_concurrency(self) -> None:
         fixture_paths = sorted(FIXTURES.glob("*.md"))

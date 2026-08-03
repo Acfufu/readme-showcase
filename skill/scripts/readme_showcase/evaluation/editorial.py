@@ -16,7 +16,7 @@ _HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)\s*#*\s*$")
 _IMAGE = re.compile(r"^\s*!\[([^]]*)\]\([^)]*\)\s*$")
 _BADGE = re.compile(r"(?:badge|badgen|shields\.io)", re.IGNORECASE)
 _LINK = re.compile(r"\[([^]]+)\]\([^)]*\)")
-_FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
+_FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})(.*)$")
 _ACTION = re.compile(r"\b(quick\s*start|get\s*started|install|usage)\b|快速开始|开始使用|安装|使用")
 _QUICK_START = re.compile(r"^quick\s*start$|^getting\s*started$|^快速开始$|^开始使用$", re.IGNORECASE)
 _SECTION_ALIASES = {"quick start": "quick-start", "getting started": "quick-start", "快速开始": "quick-start", "开始使用": "quick-start", "install": "install", "installation": "install", "安装": "install", "usage": "usage", "use": "usage", "使用": "usage", "用法": "usage", "plan": "plan", "roadmap": "plan", "计划": "plan", "路线图": "plan", "architecture": "architecture", "架构": "architecture"}
@@ -103,16 +103,25 @@ def _mask_prose(line: str, comment: bool, inline: int | None) -> tuple[str, bool
     return "".join(masked), comment, inline
 
 
+def _fence(line: str, active: tuple[str, int] | None) -> tuple[tuple[str, int] | None, bool]:
+    match = _FENCE.match(line)
+    if match is None:
+        return active, False
+    run, trailing = match.groups()
+    if active is None:
+        return (run[0], len(run)), True
+    return (None, True) if run[0] == active[0] and len(run) >= active[1] and not trailing.strip() else (active, False)
+
+
 def _masked_lines(text: str) -> tuple[str, ...]:
     source = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     output: list[str] = []; comment = False
-    fence: str | None = None
+    fence: tuple[str, int] | None = None
     inline: int | None = None
     for line in source:
-        marker = _FENCE.match(line) if not comment else None
-        if marker:
-            character = marker.group(1)[0]
-            fence = character if fence is None else (None if fence == character else fence)
+        next_fence, fence_line = _fence(line, fence) if not comment else (fence, False)
+        if fence_line:
+            fence = next_fence
             output.append(line)
         elif fence is not None:
             output.append(line)
@@ -127,18 +136,11 @@ def _visible_lines(text: str) -> tuple[tuple[str, ...], tuple[tuple[int, str], .
     # Keep segmentation behavior as the common safety boundary; line metadata is added below.
     segment_markdown_blocks("\n".join(lines))
     visible: list[tuple[int, str]] = []
-    fence: str | None = None
+    fence: tuple[str, int] | None = None
     script = False
     for line_number, raw in enumerate(lines, 1):
-        marker = _FENCE.match(raw)
-        if marker:
-            marker_char = marker.group(1)[0]
-            if fence is None:
-                fence = marker_char
-            elif fence == marker_char:
-                fence = None
-            continue
-        if fence is not None:
+        fence, fence_line = _fence(raw, fence)
+        if fence_line or fence is not None:
             continue
         lowered = raw.casefold()
         if "<script" in lowered:
