@@ -3,6 +3,10 @@
   "$id": "https://github.com/Acfufu/readme-showcase/schemas/repository-evidence.v2.schema.json",
   "title": "Repository Evidence v2",
   "$comment": "Draft 2020-12 validates structural shape. Python semantic validation is additionally required for cross-field rules identified by x-python-semantic-validation annotations.",
+  "x-python-semantic-validation": {
+    "codes": ["E_EVIDENCE_HASH", "E_FACT_DUPLICATE"],
+    "validator": "skill.scripts.readme_showcase.contracts.evidence.validate_evidence_graph"
+  },
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "facts", "evidence_sha256"],

@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Acfufu/readme-showcase/schemas/readme-plan.v2.schema.json",
   "title": "README Plan v2",
+  "x-python-semantic-validation": {
+    "code": "E_SCHEMA_FLOAT",
+    "validator": "skill.scripts.readme_showcase.contracts.plan.validate_readme_plan"
+  },
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "mode", "languages", "sections", "visual_intent", "diagram_route", "commands", "evidence_ids"],
