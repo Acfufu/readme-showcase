@@ -1,0 +1,13 @@
+{
+  "dataset": {
+    "dataset_id": "readme-showcase-retrieval",
+    "dataset_revision": 2,
+    "manifest_canonical_sha256": "45aa6396def1954f52b8d12c96627039664fac39ab5ec24ac2858c6dbdde7486",
+    "manifest_file_sha256": "96726edefe61d23ebb37ecc1212ab6ff722cc39fc3b70254cbf89825a074375f"
+  },
+  "gold_set_sha256": "cca3d831f5100b8469b5a235e1efb2cee0aebfeaa53bc4c6d046ed3ad5eb7aee",
+  "metrics": null,
+  "review_receipt_sha256": null,
+  "schema_version": 1,
+  "status": "pending-human-review"
+}

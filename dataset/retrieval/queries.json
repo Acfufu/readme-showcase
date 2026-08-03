@@ -1,0 +1,530 @@
+{
+  "dataset": {
+    "dataset_id": "readme-showcase-retrieval",
+    "dataset_revision": 2,
+    "manifest_canonical_sha256": "45aa6396def1954f52b8d12c96627039664fac39ab5ec24ac2858c6dbdde7486",
+    "manifest_file_sha256": "96726edefe61d23ebb37ecc1212ab6ff722cc39fc3b70254cbf89825a074375f"
+  },
+  "gold_set_sha256": "cca3d831f5100b8469b5a235e1efb2cee0aebfeaa53bc4c6d046ed3ad5eb7aee",
+  "proposal_origin": "codex-unreviewed",
+  "queries": [
+    {
+      "expected_relevant_ids": [
+        "cli-installation-matrix"
+      ],
+      "expected_relevant_source_identities": [
+        {
+          "commit": "b1c84bb939db25cf38ec3fe277e08a060c255365",
+          "material_sha256": "20474882784215acbf79a66729083dad40173e7bfaa7939537bb48735f6bc335",
+          "record_id": "cli-installation-matrix",
+          "repository_url": "https://github.com/cli/cli",
+          "split": "train"
+        }
+      ],
+      "gold_sha256": "992f03169a3016fa82cd60a102cc2be96d0cd9f11addb148f69ea18c8cc92ec3",
+      "project_type": "developer-tool",
+      "query": {
+        "evidence_sha256": "20474882784215acbf79a66729083dad40173e7bfaa7939537bb48735f6bc335",
+        "manifest_features": [
+          "present supported installation routes by platform, then separate required authentication or environment setup."
+        ],
+        "project_type": "developer-tool",
+        "sections": [
+          "compatibility",
+          "installation"
+        ],
+        "tags": [
+          "platforms",
+          "prerequisites",
+          "release-artifacts"
+        ]
+      },
+      "query_id": "cli-installation-matrix",
+      "review": {
+        "human_reviewed": false,
+        "receipt_sha256": null,
+        "review_method": null,
+        "reviewed_at": null,
+        "reviewer_id": null
+      },
+      "section_intents": [
+        "compatibility",
+        "installation"
+      ],
+      "source_identity": {
+        "commit": "b1c84bb939db25cf38ec3fe277e08a060c255365",
+        "material_sha256": "20474882784215acbf79a66729083dad40173e7bfaa7939537bb48735f6bc335",
+        "record_id": "cli-installation-matrix",
+        "repository_url": "https://github.com/cli/cli",
+        "split": "train"
+      }
+    },
+    {
+      "expected_relevant_ids": [
+        "deno-runtime-first-run"
+      ],
+      "expected_relevant_source_identities": [
+        {
+          "commit": "39f402ebd5e4f86c1e579597c4fce4a91665e7db",
+          "material_sha256": "83a959d62dea940f94ce1b50024928e34afb447de35197b7ea1d944fd6dbbcf7",
+          "record_id": "deno-runtime-first-run",
+          "repository_url": "https://github.com/denoland/deno",
+          "split": "train"
+        }
+      ],
+      "gold_sha256": "b82ee7cd279120fcbf5619c2ecdf574917bff8948147be647963cb715fdb388e",
+      "project_type": "runtime-toolchain",
+      "query": {
+        "evidence_sha256": "83a959d62dea940f94ce1b50024928e34afb447de35197b7ea1d944fd6dbbcf7",
+        "manifest_features": [
+          "pair a one-line runtime identity with platform-specific installation and an immediate first execution."
+        ],
+        "project_type": "runtime-toolchain",
+        "sections": [
+          "installation",
+          "quick-start"
+        ],
+        "tags": [
+          "cross-platform",
+          "first-run",
+          "runtime"
+        ]
+      },
+      "query_id": "deno-runtime-first-run",
+      "review": {
+        "human_reviewed": false,
+        "receipt_sha256": null,
+        "review_method": null,
+        "reviewed_at": null,
+        "reviewer_id": null
+      },
+      "section_intents": [
+        "installation",
+        "quick-start"
+      ],
+      "source_identity": {
+        "commit": "39f402ebd5e4f86c1e579597c4fce4a91665e7db",
+        "material_sha256": "83a959d62dea940f94ce1b50024928e34afb447de35197b7ea1d944fd6dbbcf7",
+        "record_id": "deno-runtime-first-run",
+        "repository_url": "https://github.com/denoland/deno",
+        "split": "train"
+      }
+    },
+    {
+      "expected_relevant_ids": [
+        "fastapi-proof-first-overview"
+      ],
+      "expected_relevant_source_identities": [
+        {
+          "commit": "95f8322ee1dcda7ceace7b1c4f6c9915b36d748f",
+          "material_sha256": "b765d1bb8a76106a5bff83fdae798a12150b03ef9cc99f37d68d1e5d8dc2938a",
+          "record_id": "fastapi-proof-first-overview",
+          "repository_url": "https://github.com/fastapi/fastapi",
+          "split": "train"
+        }
+      ],
+      "gold_sha256": "165eaa58231c27664289943baac867364ff60913bf7af565db7c87bb13b1aaad",
+      "project_type": "web-framework",
+      "query": {
+        "evidence_sha256": "b765d1bb8a76106a5bff83fdae798a12150b03ef9cc99f37d68d1e5d8dc2938a",
+        "manifest_features": [
+          "lead with framework value, follow with a tiny complete application, then show observable generated behavior."
+        ],
+        "project_type": "web-framework",
+        "sections": [
+          "overview",
+          "quick-start"
+        ],
+        "tags": [
+          "api",
+          "developer-experience",
+          "observable-output"
+        ]
+      },
+      "query_id": "fastapi-proof-first-overview",
+      "review": {
+        "human_reviewed": false,
+        "receipt_sha256": null,
+        "review_method": null,
+        "reviewed_at": null,
+        "reviewer_id": null
+      },
+      "section_intents": [
+        "overview",
+        "quick-start"
+      ],
+      "source_identity": {
+        "commit": "95f8322ee1dcda7ceace7b1c4f6c9915b36d748f",
+        "material_sha256": "b765d1bb8a76106a5bff83fdae798a12150b03ef9cc99f37d68d1e5d8dc2938a",
+        "record_id": "fastapi-proof-first-overview",
+        "repository_url": "https://github.com/fastapi/fastapi",
+        "split": "train"
+      }
+    },
+    {
+      "expected_relevant_ids": [
+        "flask-progressive-entry"
+      ],
+      "expected_relevant_source_identities": [
+        {
+          "commit": "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+          "material_sha256": "1f2de14735b1ee9d3a342fa7c5d5e87b95727276c0a56c8a9d77221f37880602",
+          "record_id": "flask-progressive-entry",
+          "repository_url": "https://github.com/pallets/flask",
+          "split": "train"
+        }
+      ],
+      "gold_sha256": "69e4df0f82a3b3d9d667b67054d56517f81387a514285776c617c2d18661fe6a",
+      "project_type": "web-framework",
+      "query": {
+        "evidence_sha256": "1f2de14735b1ee9d3a342fa7c5d5e87b95727276c0a56c8a9d77221f37880602",
+        "manifest_features": [
+          "use a compact identity statement and smallest runnable application before exposing the wider documentation map."
+        ],
+        "project_type": "web-framework",
+        "sections": [
+          "overview",
+          "quick-start"
+        ],
+        "tags": [
+          "minimal-example",
+          "progressive-disclosure",
+          "web"
+        ]
+      },
+      "query_id": "flask-progressive-entry",
+      "review": {
+        "human_reviewed": false,
+        "receipt_sha256": null,
+        "review_method": null,
+        "reviewed_at": null,
+        "reviewer_id": null
+      },
+      "section_intents": [
+        "overview",
+        "quick-start"
+      ],
+      "source_identity": {
+        "commit": "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+        "material_sha256": "1f2de14735b1ee9d3a342fa7c5d5e87b95727276c0a56c8a9d77221f37880602",
+        "record_id": "flask-progressive-entry",
+        "repository_url": "https://github.com/pallets/flask",
+        "split": "train"
+      }
+    },
+    {
+      "expected_relevant_ids": [
+        "httpx-dual-interface"
+      ],
+      "expected_relevant_source_identities": [
+        {
+          "commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+          "material_sha256": "d58f476c1273c9c06c978467c6596620d3840ea8c99ba9d32300ab3286f0e0c3",
+          "record_id": "httpx-dual-interface",
+          "repository_url": "https://github.com/encode/httpx",
+          "split": "train"
+        }
+      ],
+      "gold_sha256": "b4b5806cbaef7a97ef30ac4ca6657cd4edbd61c3648a778b4d37bf3ba422c975",
+      "project_type": "library",
+      "query": {
+        "evidence_sha256": "d58f476c1273c9c06c978467c6596620d3840ea8c99ba9d32300ab3286f0e0c3",
+        "manifest_features": [
+          "introduce a familiar basic interface, then surface the distinct advanced execution mode without mixing examples."
+        ],
+        "project_type": "library",
+        "sections": [
+          "compatibility",
+          "quick-start"
+        ],
+        "tags": [
+          "api-shape",
+          "async",
+          "migration"
+        ]
+      },
+      "query_id": "httpx-dual-interface",
+      "review": {
+        "human_reviewed": false,
+        "receipt_sha256": null,
+        "review_method": null,
+        "reviewed_at": null,
+        "reviewer_id": null
+      },
+      "section_intents": [
+        "compatibility",
+        "quick-start"
+      ],
+      "source_identity": {
+        "commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+        "material_sha256": "d58f476c1273c9c06c978467c6596620d3840ea8c99ba9d32300ab3286f0e0c3",
+        "record_id": "httpx-dual-interface",
+        "repository_url": "https://github.com/encode/httpx",
+        "split": "train"
+      }
+    },
+    {
+      "expected_relevant_ids": [
+        "pydantic-capability-to-proof"
+      ],
+      "expected_relevant_source_identities": [
+        {
+          "commit": "e8b6ff8dbaca8d41bc009864db24f7576237e3a2",
+          "material_sha256": "b5e7970366d994018b9add19d4eae4b75e6830cde25d279aa3e1907ed8970c6b",
+          "record_id": "pydantic-capability-to-proof",
+          "repository_url": "https://github.com/pydantic/pydantic",
+          "split": "train"
+        }
+      ],
+      "gold_sha256": "c34f0fbb66557c0d56bd3a6fccacf35928302455e46ee0c1269bc0e8b91282a0",
+      "project_type": "library",
+      "query": {
+        "evidence_sha256": "b5e7970366d994018b9add19d4eae4b75e6830cde25d279aa3e1907ed8970c6b",
+        "manifest_features": [
+          "connect each major capability to a compact example and its resulting validated or serialized output."
+        ],
+        "project_type": "library",
+        "sections": [
+          "overview",
+          "verification"
+        ],
+        "tags": [
+          "data-model",
+          "examples",
+          "validation"
+        ]
+      },
+      "query_id": "pydantic-capability-to-proof",
+      "review": {
+        "human_reviewed": false,
+        "receipt_sha256": null,
+        "review_method": null,
+        "reviewed_at": null,
+        "reviewer_id": null
+      },
+      "section_intents": [
+        "overview",
+        "verification"
+      ],
+      "source_identity": {
+        "commit": "e8b6ff8dbaca8d41bc009864db24f7576237e3a2",
+        "material_sha256": "b5e7970366d994018b9add19d4eae4b75e6830cde25d279aa3e1907ed8970c6b",
+        "record_id": "pydantic-capability-to-proof",
+        "repository_url": "https://github.com/pydantic/pydantic",
+        "split": "train"
+      }
+    },
+    {
+      "expected_relevant_ids": [
+        "requests-minimal-session"
+      ],
+      "expected_relevant_source_identities": [
+        {
+          "commit": "414f0513c33883adf6f2b46901d4f0b38a455851",
+          "material_sha256": "2a9268c9be5f4dc9abe9105740be7c5234babc3dd2b25eb11ca376c538a0c67b",
+          "record_id": "requests-minimal-session",
+          "repository_url": "https://github.com/psf/requests",
+          "split": "train"
+        }
+      ],
+      "gold_sha256": "077040e9df6fc6d6961f674172004bb74ecd508f27d45ef6e812d408fc3f58dd",
+      "project_type": "library",
+      "query": {
+        "evidence_sha256": "2a9268c9be5f4dc9abe9105740be7c5234babc3dd2b25eb11ca376c538a0c67b",
+        "manifest_features": [
+          "move from installation to one short request and immediately expose the response fields readers can inspect."
+        ],
+        "project_type": "library",
+        "sections": [
+          "installation",
+          "quick-start"
+        ],
+        "tags": [
+          "http",
+          "minimal-example",
+          "response"
+        ]
+      },
+      "query_id": "requests-minimal-session",
+      "review": {
+        "human_reviewed": false,
+        "receipt_sha256": null,
+        "review_method": null,
+        "reviewed_at": null,
+        "reviewer_id": null
+      },
+      "section_intents": [
+        "installation",
+        "quick-start"
+      ],
+      "source_identity": {
+        "commit": "414f0513c33883adf6f2b46901d4f0b38a455851",
+        "material_sha256": "2a9268c9be5f4dc9abe9105740be7c5234babc3dd2b25eb11ca376c538a0c67b",
+        "record_id": "requests-minimal-session",
+        "repository_url": "https://github.com/psf/requests",
+        "split": "train"
+      }
+    },
+    {
+      "expected_relevant_ids": [
+        "ruff-command-and-editor-paths"
+      ],
+      "expected_relevant_source_identities": [
+        {
+          "commit": "7da4b8b8d78fd6df2b3e06d8466d9cd49822900d",
+          "material_sha256": "20be65a9759fa6a929d3257c1b92ef62467bb36708611ad53060dc8a45cbd705",
+          "record_id": "ruff-command-and-editor-paths",
+          "repository_url": "https://github.com/astral-sh/ruff",
+          "split": "train"
+        }
+      ],
+      "gold_sha256": "ca3ea550ae44fd77d129e5093467ab34dbb3af83e07fd6378ad5ca45bd3354e6",
+      "project_type": "developer-tool",
+      "query": {
+        "evidence_sha256": "20be65a9759fa6a929d3257c1b92ef62467bb36708611ad53060dc8a45cbd705",
+        "manifest_features": [
+          "separate command-line first use from editor and automation integrations while keeping one shared project identity."
+        ],
+        "project_type": "developer-tool",
+        "sections": [
+          "installation",
+          "integration",
+          "quick-start"
+        ],
+        "tags": [
+          "cli",
+          "editor",
+          "tooling"
+        ]
+      },
+      "query_id": "ruff-command-and-editor-paths",
+      "review": {
+        "human_reviewed": false,
+        "receipt_sha256": null,
+        "review_method": null,
+        "reviewed_at": null,
+        "reviewer_id": null
+      },
+      "section_intents": [
+        "installation",
+        "integration",
+        "quick-start"
+      ],
+      "source_identity": {
+        "commit": "7da4b8b8d78fd6df2b3e06d8466d9cd49822900d",
+        "material_sha256": "20be65a9759fa6a929d3257c1b92ef62467bb36708611ad53060dc8a45cbd705",
+        "record_id": "ruff-command-and-editor-paths",
+        "repository_url": "https://github.com/astral-sh/ruff",
+        "split": "train"
+      }
+    },
+    {
+      "expected_relevant_ids": [
+        "tokio-feature-bounded-start"
+      ],
+      "expected_relevant_source_identities": [
+        {
+          "commit": "adc2ae7af2caaea83985fbdfbc7884c159c486f2",
+          "material_sha256": "f210aaee886ac25f85bb2e7fc6a7c7b8cd836d6f86cad90f119a34596d36875a",
+          "record_id": "tokio-feature-bounded-start",
+          "repository_url": "https://github.com/tokio-rs/tokio",
+          "split": "train"
+        }
+      ],
+      "gold_sha256": "a4ef656f0545a835b00147e11848508cfdf8455a7e56fb45df63ca7cd7fc9b2a",
+      "project_type": "runtime-toolchain",
+      "query": {
+        "evidence_sha256": "f210aaee886ac25f85bb2e7fc6a7c7b8cd836d6f86cad90f119a34596d36875a",
+        "manifest_features": [
+          "explain runtime role and feature selection before a minimal asynchronous program and its execution command."
+        ],
+        "project_type": "runtime-toolchain",
+        "sections": [
+          "architecture",
+          "installation",
+          "quick-start"
+        ],
+        "tags": [
+          "async",
+          "feature-flags",
+          "runtime"
+        ]
+      },
+      "query_id": "tokio-feature-bounded-start",
+      "review": {
+        "human_reviewed": false,
+        "receipt_sha256": null,
+        "review_method": null,
+        "reviewed_at": null,
+        "reviewer_id": null
+      },
+      "section_intents": [
+        "architecture",
+        "installation",
+        "quick-start"
+      ],
+      "source_identity": {
+        "commit": "adc2ae7af2caaea83985fbdfbc7884c159c486f2",
+        "material_sha256": "f210aaee886ac25f85bb2e7fc6a7c7b8cd836d6f86cad90f119a34596d36875a",
+        "record_id": "tokio-feature-bounded-start",
+        "repository_url": "https://github.com/tokio-rs/tokio",
+        "split": "train"
+      }
+    },
+    {
+      "expected_relevant_ids": [
+        "vite-scaffold-to-build"
+      ],
+      "expected_relevant_source_identities": [
+        {
+          "commit": "94fc91be25005db8bb38c43d5c8e86cd381f61a7",
+          "material_sha256": "588718673f32a3691b8e75b93fb4c2f8e8bc9a6dc0bf61794ba7b6c006594111",
+          "record_id": "vite-scaffold-to-build",
+          "repository_url": "https://github.com/vitejs/vite",
+          "split": "train"
+        }
+      ],
+      "gold_sha256": "808107767dec2b3ec237e6df317ba66afb73389cfaa94b1f48ea46e1151bfd2d",
+      "project_type": "runtime-toolchain",
+      "query": {
+        "evidence_sha256": "588718673f32a3691b8e75b93fb4c2f8e8bc9a6dc0bf61794ba7b6c006594111",
+        "manifest_features": [
+          "connect project scaffolding, development run, and production build as three explicit observable stages."
+        ],
+        "project_type": "runtime-toolchain",
+        "sections": [
+          "compatibility",
+          "quick-start",
+          "verification"
+        ],
+        "tags": [
+          "build",
+          "scaffold",
+          "toolchain"
+        ]
+      },
+      "query_id": "vite-scaffold-to-build",
+      "review": {
+        "human_reviewed": false,
+        "receipt_sha256": null,
+        "review_method": null,
+        "reviewed_at": null,
+        "reviewer_id": null
+      },
+      "section_intents": [
+        "compatibility",
+        "quick-start",
+        "verification"
+      ],
+      "source_identity": {
+        "commit": "94fc91be25005db8bb38c43d5c8e86cd381f61a7",
+        "material_sha256": "588718673f32a3691b8e75b93fb4c2f8e8bc9a6dc0bf61794ba7b6c006594111",
+        "record_id": "vite-scaffold-to-build",
+        "repository_url": "https://github.com/vitejs/vite",
+        "split": "train"
+      }
+    }
+  ],
+  "schema_version": 1,
+  "status": "pending-human-review"
+}
