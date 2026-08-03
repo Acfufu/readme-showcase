@@ -19,6 +19,10 @@
       "type": ["string", "null"],
       "enum": [null, "scan", "retrieve", "plan-import", "generation-request", "candidate", "bundle-assemble", "validation", "evaluation"]
     },
+    "current_revision": {
+      "type": ["string", "null"],
+      "pattern": "^stages/04-generation-request/revisions/[1-3]/revision-request\\.json$"
+    },
     "stages": {
       "type": "array",
       "minItems": 8,

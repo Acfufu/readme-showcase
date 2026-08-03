@@ -14,6 +14,8 @@ from unittest import mock
 from skill.scripts.pipeline_contracts import canonical_json_bytes
 from skill.scripts.pipeline_contracts import ContractError
 from skill.scripts.readme_showcase.orchestration import runner as runner_module
+from skill.scripts.readme_showcase.orchestration import workspace as workspace_module
+from skill.scripts.readme_showcase.orchestration.logging import StageLogger
 from skill.scripts.readme_showcase.generation.request import (
     MAX_REVISION_ATTEMPTS,
     canonical_revision_request,
@@ -116,6 +118,10 @@ class RevisionLoopTests(unittest.TestCase):
             self.assertTrue(request["reasons"])
             self.assertNotIn("target repository evidence", raw.decode())
             self.assertTrue(all(self.request(index)[0] == snapshots[index] for index in snapshots))
+            self.assertEqual(
+                self.manifest()["current_revision"],
+                f"stages/04-generation-request/revisions/{attempt}/revision-request.json",
+            )
 
         self.assertEqual(MAX_REVISION_ATTEMPTS, 3)
         self.mutate_candidate("Revision four")
@@ -125,6 +131,10 @@ class RevisionLoopTests(unittest.TestCase):
         self.assertFalse((self.revisions() / "4").exists())
         pointer = json.loads((self.revisions() / "revision-manifest.json").read_text())
         self.assertEqual(pointer, {"current": "3/revision-request.json"})
+        self.assertEqual(
+            self.manifest()["current_revision"],
+            "stages/04-generation-request/revisions/3/revision-request.json",
+        )
         after = [stage["output_sha256"] for stage in self.manifest()["stages"][:5]]
         self.assertEqual(after[:4], upstream[:4])
 
@@ -201,7 +211,7 @@ class RevisionLoopTests(unittest.TestCase):
         linked.symlink_to(other, target_is_directory=True)
         linked_result = self.cli("resume", "--workspace", str(other_workspace))
         self.assertEqual(linked_result.returncode, 2)
-        self.assertIn("E_RUN_PATH", linked_result.stderr)
+        self.assertIn("E_REVISION_POINTER", linked_result.stderr)
         self.assertEqual(list(other.iterdir()), [])
 
     def test_fifo_collision_and_history_mutation_fail_without_overwrite(self) -> None:
@@ -275,6 +285,168 @@ class RevisionLoopTests(unittest.TestCase):
         self.assertEqual(pointer_path.read_bytes(), pointer_raw)
         self.assertFalse((self.revisions() / "2").exists())
         self.assertFalse(any(path.name.endswith(".tmp") for path in self.revisions().iterdir()))
+
+    def test_run_manifest_failure_restores_attempt_one_and_retry_reuses_number(self) -> None:
+        self.start()
+        snapshots: list[bytes] = []
+        atomic_write = workspace_module.write_canonical_json_atomic
+
+        def fail_before_write(path: Path, value: object) -> None:
+            if (
+                path.name == "run-manifest.json"
+                and isinstance(value, dict)
+                and value.get("current_revision") is not None
+            ):
+                snapshots.append(path.read_bytes())
+                raise ContractError("E_TEST_MANIFEST", "injected manifest failure")
+            atomic_write(path, value)
+
+        with mock.patch.object(
+            workspace_module, "write_canonical_json_atomic", side_effect=fail_before_write
+        ):
+            with self.assertRaises(ContractError) as raised:
+                runner_module.resume_run(
+                    workspace_path=self.workspace,
+                    plan=None,
+                    stop_after=None,
+                    logger=StageLogger(),
+                )
+        self.assertEqual(raised.exception.code, "E_REVISION_COMMIT")
+        self.assertEqual((self.workspace / "run-manifest.json").read_bytes(), snapshots[0])
+        self.assertIsNone(self.manifest()["current_revision"])
+        self.assertFalse((self.revisions() / "1").exists())
+        self.assertFalse((self.revisions() / "revision-manifest.json").exists())
+
+        retry = self.cli("resume", "--workspace", str(self.workspace))
+        self.assertEqual(retry.returncode, 1, retry.stderr)
+        self.request(1)
+        self.assertEqual(
+            self.manifest()["current_revision"],
+            "stages/04-generation-request/revisions/1/revision-request.json",
+        )
+
+    def test_run_manifest_failure_restores_attempt_two_after_write(self) -> None:
+        self.start()
+        first = self.cli("resume", "--workspace", str(self.workspace))
+        self.assertEqual(first.returncode, 1, first.stderr)
+        revision_one = self.request(1)[0]
+        pointer_one = (self.revisions() / "revision-manifest.json").read_bytes()
+        self.mutate_candidate("Revision two")
+        snapshots: list[bytes] = []
+        atomic_write = workspace_module.write_canonical_json_atomic
+
+        def fail_after_write(path: Path, value: object) -> None:
+            if (
+                path.name == "run-manifest.json"
+                and isinstance(value, dict)
+                and value.get("current_revision", "").endswith("/2/revision-request.json")
+            ):
+                snapshots.append(path.read_bytes())
+                atomic_write(path, value)
+                raise ContractError("E_TEST_MANIFEST", "injected post-write failure")
+            atomic_write(path, value)
+
+        with mock.patch.object(
+            workspace_module, "write_canonical_json_atomic", side_effect=fail_after_write
+        ):
+            with self.assertRaises(ContractError) as raised:
+                runner_module.resume_run(
+                    workspace_path=self.workspace,
+                    plan=None,
+                    stop_after=None,
+                    logger=StageLogger(),
+                )
+        self.assertEqual(raised.exception.code, "E_REVISION_COMMIT")
+        self.assertEqual((self.workspace / "run-manifest.json").read_bytes(), snapshots[0])
+        self.assertEqual(self.request(1)[0], revision_one)
+        self.assertEqual((self.revisions() / "revision-manifest.json").read_bytes(), pointer_one)
+        self.assertFalse((self.revisions() / "2").exists())
+        self.assertEqual(
+            self.manifest()["current_revision"],
+            "stages/04-generation-request/revisions/1/revision-request.json",
+        )
+
+        retry = self.cli("resume", "--workspace", str(self.workspace))
+        self.assertEqual(retry.returncode, 1, retry.stderr)
+        self.request(2)
+        self.assertEqual(
+            self.manifest()["current_revision"],
+            "stages/04-generation-request/revisions/2/revision-request.json",
+        )
+
+    def test_stale_or_traversing_authoritative_pointer_fails_closed(self) -> None:
+        self.start()
+        first = self.cli("resume", "--workspace", str(self.workspace))
+        self.assertEqual(first.returncode, 1, first.stderr)
+        revision_raw = self.request(1)[0]
+        internal_raw = (self.revisions() / "revision-manifest.json").read_bytes()
+        manifest_path = self.workspace / "run-manifest.json"
+        manifest = self.manifest()
+        manifest["current_revision"] = None
+        manifest_path.write_bytes(canonical_json_bytes(manifest))
+        cleared = self.cli("resume", "--workspace", str(self.workspace))
+        self.assertEqual(cleared.returncode, 2)
+        self.assertIn("E_REVISION_POINTER", cleared.stderr)
+
+        manifest = self.manifest()
+        manifest["current_revision"] = (
+            "stages/04-generation-request/revisions/2/revision-request.json"
+        )
+        manifest_path.write_bytes(canonical_json_bytes(manifest))
+        stale = self.cli("resume", "--workspace", str(self.workspace))
+        self.assertEqual(stale.returncode, 2)
+        self.assertIn("E_REVISION_POINTER", stale.stderr)
+        self.assertEqual(self.request(1)[0], revision_raw)
+        self.assertEqual((self.revisions() / "revision-manifest.json").read_bytes(), internal_raw)
+        self.assertFalse((self.revisions() / "2").exists())
+
+        manifest["current_revision"] = "../outside/revision-request.json"
+        manifest_path.write_bytes(canonical_json_bytes(manifest))
+        traversing = self.cli("status", "--workspace", str(self.workspace))
+        self.assertEqual(traversing.returncode, 2)
+        self.assertIn("E_REVISION_POINTER", traversing.stderr)
+
+    def test_recovery_failure_is_explicit_and_preserves_recorded_state(self) -> None:
+        self.start()
+        atomic_write = workspace_module.write_canonical_json_atomic
+
+        def fail_after_write(path: Path, value: object) -> None:
+            if (
+                path.name == "run-manifest.json"
+                and isinstance(value, dict)
+                and value.get("current_revision") is not None
+            ):
+                atomic_write(path, value)
+                raise ContractError("E_TEST_MANIFEST", "injected post-write failure")
+            atomic_write(path, value)
+
+        with (
+            mock.patch.object(
+                workspace_module, "write_canonical_json_atomic", side_effect=fail_after_write
+            ),
+            mock.patch.object(
+                runner_module,
+                "_restore_canonical_file",
+                side_effect=ContractError("E_REVISION_RECOVERY", "injected restore failure"),
+            ),
+        ):
+            with self.assertRaises(ContractError) as raised:
+                runner_module.resume_run(
+                    workspace_path=self.workspace,
+                    plan=None,
+                    stop_after=None,
+                    logger=StageLogger(),
+                )
+        self.assertEqual(raised.exception.code, "E_REVISION_RECOVERY")
+        self.assertEqual(
+            self.manifest()["current_revision"],
+            "stages/04-generation-request/revisions/1/revision-request.json",
+        )
+        self.request(1)
+        self.assertEqual(
+            json.loads((self.revisions() / "revision-manifest.json").read_text()),
+            {"current": "1/revision-request.json"},
+        )
 
 
 if __name__ == "__main__":

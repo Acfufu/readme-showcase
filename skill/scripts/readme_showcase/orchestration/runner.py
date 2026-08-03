@@ -367,6 +367,128 @@ def read_json_object_bytes_from_bytes(raw: bytes) -> dict[str, Any]:
     return value
 
 
+def _restore_canonical_file(path: Path, raw: bytes, *, code: str) -> None:
+    value = read_json_object_bytes_from_bytes(raw)
+    write_canonical_json_atomic(path, value)
+    try:
+        restored = read_regular_bytes(path, maximum=max(len(raw), 4096))
+    except ContractError as exc:
+        raise ContractError(code, f"cannot verify restored file: {path.name}") from exc
+    if restored != raw:
+        raise ContractError(code, f"restored file bytes differ: {path.name}")
+
+
+def _remove_revision_attempt(root: Path, attempt: int) -> None:
+    directory = root / str(attempt)
+    info = directory.lstat()
+    if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+        raise ContractError("E_REVISION_RECOVERY", "new revision attempt is not a real directory")
+    request = directory / "revision-request.json"
+    request_info = request.lstat()
+    if not stat.S_ISREG(request_info.st_mode) or stat.S_ISLNK(request_info.st_mode):
+        raise ContractError("E_REVISION_RECOVERY", "new revision request is not a regular file")
+    request.unlink()
+    directory.rmdir()
+
+
+def _rollback_revision_commit(
+    workspace: RunWorkspace,
+    root: Path,
+    attempt: int,
+    prior_manifest: bytes,
+    prior_pointer: bytes | None,
+) -> None:
+    manifest_path = workspace.root / "run-manifest.json"
+    try:
+        current_manifest = read_regular_bytes(
+            manifest_path, maximum=MAX_GENERATION_REQUEST_BYTES
+        )
+        if current_manifest != prior_manifest:
+            _restore_canonical_file(
+                manifest_path, prior_manifest, code="E_REVISION_RECOVERY"
+            )
+        pointer_path = root / _REVISION_POINTER
+        if prior_pointer is None:
+            try:
+                pointer_path.unlink()
+            except FileNotFoundError:
+                pass
+        else:
+            _restore_canonical_file(
+                pointer_path, prior_pointer, code="E_REVISION_RECOVERY"
+            )
+        _remove_revision_attempt(root, attempt)
+    except Exception as exc:
+        if isinstance(exc, ContractError) and exc.code == "E_REVISION_RECOVERY":
+            raise
+        raise ContractError(
+            "E_REVISION_RECOVERY",
+            f"revision {attempt} recovery failed; preserved workspace state requires manual repair",
+        ) from exc
+
+
+def _commit_revision(
+    workspace: RunWorkspace,
+    manifest: dict[str, Any],
+    root: Path,
+    request: dict[str, Any],
+    prior_pointer: bytes | None,
+) -> None:
+    manifest_path = workspace.root / "run-manifest.json"
+    prior_manifest = read_regular_bytes(
+        manifest_path, maximum=MAX_GENERATION_REQUEST_BYTES
+    )
+    if prior_manifest != canonical_json_bytes(manifest):
+        raise ContractError("E_RUN_MANIFEST_STALE", "revision manifest snapshot is stale")
+    _append_revision(root, request, prior_pointer)
+    current_revision = (
+        "stages/04-generation-request/revisions/"
+        f"{request['attempt']}/revision-request.json"
+    )
+    updated = deepcopy(manifest)
+    updated["current_revision"] = current_revision
+    try:
+        workspace.write_manifest(updated)
+    except Exception as exc:
+        try:
+            _rollback_revision_commit(
+                workspace,
+                root,
+                request["attempt"],
+                prior_manifest,
+                prior_pointer,
+            )
+        except ContractError as recovery:
+            raise ContractError(
+                "E_REVISION_RECOVERY",
+                f"revision {request['attempt']} commit and recovery failed",
+            ) from recovery
+        raise ContractError(
+            "E_REVISION_COMMIT",
+            f"revision {request['attempt']} run-manifest commit failed and was rolled back",
+        ) from exc
+    manifest.clear()
+    manifest.update(updated)
+
+
+def _assert_authoritative_revision_pointer(
+    manifest: dict[str, Any], history: list[dict[str, Any]]
+) -> None:
+    current = manifest.get("current_revision")
+    expected = (
+        None
+        if not history
+        else "stages/04-generation-request/revisions/"
+        f"{history[-1]['attempt']}/revision-request.json"
+    )
+    legacy_absent = "current_revision" not in manifest
+    if current != expected and not (legacy_absent and current is None):
+        raise ContractError(
+            "E_REVISION_POINTER",
+            "run manifest current_revision does not match immutable revision history",
+        )
+
+
 def _record_revision_if_content_failure(workspace: RunWorkspace, manifest: dict[str, Any]) -> bool:
     validation_attempt = manifest["stages"][6]["attempt"]
     report_path = (
@@ -406,6 +528,7 @@ def _record_revision_if_content_failure(workspace: RunWorkspace, manifest: dict[
         else:
             raise
     history = _revision_history(root)
+    _assert_authoritative_revision_pointer(manifest, history)
     if history and history[0]["original_request_sha256"] != original_sha256:
         return False
     if history and history[-1]["after_candidate_sha256"] == candidate_sha256:
@@ -434,7 +557,7 @@ def _record_revision_if_content_failure(workspace: RunWorkspace, manifest: dict[
         allowed_files=allowed_files,
         forbidden_paths=forbidden_paths,
     )
-    _append_revision(root, request, previous_pointer)
+    _commit_revision(workspace, manifest, root, request, previous_pointer)
     return True
 
 
@@ -481,8 +604,6 @@ def _drive(workspace: RunWorkspace, logger: StageLogger, stop_after: str | None)
             if result.files:
                 workspace.append_attempt(index + 1, adapter.name, result.files)
                 manifest = workspace.read_manifest()
-            if index == 6 and result.status != "pass":
-                _record_revision_if_content_failure(workspace, manifest)
             stage = manifest["stages"][index]
             stage.update(
                 {
@@ -504,9 +625,22 @@ def _drive(workspace: RunWorkspace, logger: StageLogger, stop_after: str | None)
                 manifest["status"] = "running"
                 manifest["current_stage"] = STAGES[index + 1].name
             manifest = _write_state(workspace, manifest)
+            if index == 6 and result.status != "pass":
+                _record_revision_if_content_failure(workspace, manifest)
             logger.emit("stage.completed", run_id=manifest["run_id"], stage=adapter.name, status=result.status, duration_ms=int((time.monotonic() - started) * 1000), input_sha256=input_sha256, output_sha256=stage["output_sha256"])
             if result.status != "pass" or stop_after == adapter.name:
                 return _summary(manifest)
+        except ContractError as exc:
+            if exc.code in {"E_REVISION_COMMIT", "E_REVISION_RECOVERY"}:
+                raise
+            manifest = workspace.read_manifest()
+            failed = manifest["stages"][index]
+            failed["status"] = "failed"
+            failed["completed_at"] = utc_now()
+            manifest["status"] = "failed"
+            manifest["current_stage"] = adapter.name
+            _write_state(workspace, manifest)
+            raise
         except Exception:
             manifest = workspace.read_manifest()
             failed = manifest["stages"][index]

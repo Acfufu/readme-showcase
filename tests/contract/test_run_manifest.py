@@ -67,6 +67,32 @@ class RunManifestContractTests(unittest.TestCase):
         self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
         self.assertFalse(schema["additionalProperties"])
 
+    def test_current_revision_is_optional_nullable_and_strictly_relative(self) -> None:
+        legacy = json.loads((FIXTURES / "run-manifest-v1.valid.json").read_text())
+        self.assertNotIn("current_revision", legacy)
+        self.assertEqual(validate_run_manifest(legacy), legacy)
+        nullable = json.loads(json.dumps(legacy))
+        nullable["current_revision"] = None
+        self.assertEqual(validate_run_manifest(nullable), nullable)
+        current = json.loads(json.dumps(legacy))
+        current["current_revision"] = (
+            "stages/04-generation-request/revisions/2/revision-request.json"
+        )
+        self.assertEqual(validate_run_manifest(current), current)
+        for invalid in (
+            "../revision-request.json",
+            "/tmp/revision-request.json",
+            "stages/04-generation-request/revisions/0/revision-request.json",
+            "stages/04-generation-request/revisions/4/revision-request.json",
+            "stages/04-generation-request/revisions/1/../revision-request.json",
+            "stages/04-generation-request/revisions/1/other.json",
+        ):
+            changed = json.loads(json.dumps(legacy))
+            changed["current_revision"] = invalid
+            with self.subTest(invalid=invalid), self.assertRaises(ContractError) as raised:
+                validate_run_manifest(changed)
+            self.assertEqual(raised.exception.code, "E_REVISION_POINTER")
+
     def test_run_id_is_stable_and_excludes_time_paths_and_secrets(self) -> None:
         first = self.create(clock=lambda: "2026-08-02T00:00:00Z").read_manifest()
         other_root = self.root / "other"

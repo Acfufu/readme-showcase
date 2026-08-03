@@ -24,6 +24,7 @@ from ..contracts.run import (
     STAGE_NAMES,
     canonical_repository,
     compute_run_id,
+    current_revision_attempt,
     normalize_configuration,
     validate_run_manifest,
 )
@@ -226,6 +227,7 @@ class RunWorkspace:
                 },
                 "configuration": normalized_configuration,
                 "current_stage": STAGE_NAMES[0],
+                "current_revision": None,
                 "stages": initial_stages(),
             }
             validate_run_manifest(manifest)
@@ -254,6 +256,46 @@ class RunWorkspace:
                 for candidate, existing in zip(payload["stages"], current["stages"], strict=True)
             ):
                 raise ContractError("E_RUN_MANIFEST_STALE", "manifest snapshot would rewrite immutable run history")
+            current_revision = current_revision_attempt(current.get("current_revision"))
+            candidate_revision = current_revision_attempt(payload.get("current_revision"))
+            if candidate_revision != current_revision:
+                expected = 1 if current_revision is None else current_revision + 1
+                if candidate_revision != expected:
+                    raise ContractError(
+                        "E_REVISION_POINTER",
+                        "run manifest current_revision must advance contiguously",
+                    )
+            if candidate_revision is not None:
+                revision_root = self.root / "stages/04-generation-request/revisions"
+                try:
+                    raw, pointer = read_json_object_bytes(
+                        revision_root / "revision-manifest.json"
+                    )
+                except (ContractError, OSError) as exc:
+                    raise ContractError(
+                        "E_REVISION_POINTER",
+                        "run manifest current_revision lacks matching internal pointer",
+                    ) from exc
+                if raw != canonical_json_bytes(pointer) or pointer != {
+                    "current": f"{candidate_revision}/revision-request.json"
+                }:
+                    raise ContractError(
+                        "E_REVISION_POINTER",
+                        "run manifest current_revision lacks matching internal pointer",
+                    )
+                request = revision_root / str(candidate_revision) / "revision-request.json"
+                try:
+                    info = request.lstat()
+                except OSError as exc:
+                    raise ContractError(
+                        "E_REVISION_POINTER",
+                        "run manifest current_revision lacks immutable request",
+                    ) from exc
+                if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+                    raise ContractError(
+                        "E_REVISION_POINTER",
+                        "run manifest current_revision lacks immutable request",
+                    )
             write_canonical_json_atomic(self.root / "run-manifest.json", payload)
 
     def append_attempt(

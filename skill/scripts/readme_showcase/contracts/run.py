@@ -42,6 +42,9 @@ STAGE_NAMES = (
 _SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
+_CURRENT_REVISION = re.compile(
+    r"stages/04-generation-request/revisions/([1-3])/revision-request\.json\Z"
+)
 _CONFIGURATION_FIELDS = frozenset({"mode", "project_type", "locales", "scanner_profile"})
 
 
@@ -49,6 +52,23 @@ def _string(value: Any, path: str) -> str:
     if not isinstance(value, str) or not value:
         raise ContractError("E_SCHEMA_TYPE", f"{path} must be a non-empty string")
     return value
+
+
+def current_revision_attempt(value: Any) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ContractError(
+            "E_REVISION_POINTER",
+            "run manifest.current_revision must be null or a canonical relative revision request path",
+        )
+    match = _CURRENT_REVISION.fullmatch(value)
+    if match is None:
+        raise ContractError(
+            "E_REVISION_POINTER",
+            "run manifest.current_revision must be null or a canonical relative revision request path",
+        )
+    return int(match.group(1))
 
 
 def canonical_repository(repository: str) -> str:
@@ -129,7 +149,7 @@ def validate_run_manifest(payload: Any) -> dict[str, Any]:
             "current_stage",
             "stages",
         },
-        optional=set(),
+        optional={"current_revision"},
         context="run manifest",
     )
     if not isinstance(manifest["run_id"], str) or not _SHA256.fullmatch(manifest["run_id"]):
@@ -157,6 +177,7 @@ def validate_run_manifest(payload: Any) -> dict[str, Any]:
 
     if manifest["current_stage"] is not None and manifest["current_stage"] not in STAGE_NAMES:
         raise ContractError("E_SCHEMA_VALUE", "run manifest.current_stage is unsupported")
+    current_revision_attempt(manifest.get("current_revision"))
     stages = manifest["stages"]
     if not isinstance(stages, list) or len(stages) != len(STAGE_NAMES):
         raise ContractError("E_SCHEMA_TYPE", "run manifest.stages must contain the eight ordered stages")
