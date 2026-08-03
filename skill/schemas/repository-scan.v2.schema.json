@@ -46,6 +46,7 @@
     }
   ],
   "x-python-semantic-validation": {
+    "codes": ["E_SCAN_COVERAGE", "E_SCAN_FILE", "E_SCAN_POLICY", "E_SCAN_SKIP", "E_SCAN_STATUS"],
     "validator": "skill.scripts.readme_showcase.contracts.scan.validate_repository_scan_v2",
     "rules": [
       "selected_files == content_files + skipped_files",
