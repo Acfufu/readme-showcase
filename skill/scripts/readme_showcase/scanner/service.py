@@ -14,7 +14,7 @@ ContractError = importlib.import_module(
     "skill.scripts.pipeline_contracts" if __package__.startswith("skill.") else "pipeline_contracts"
 ).ContractError
 from .git import base_sha, tracked_paths, tracked_state
-from .index import build_file_index
+from .index import _regular_file, build_file_index
 from .policies import (
     FIXED_EXCLUDED_DIRECTORIES,
     SECRET_NAMES,
@@ -348,6 +348,7 @@ def scan_repository_v2(
     limits, indexed_cap = _v2_limits(limits, policy)
     state = tracked_state(canonical_root)
     base, tracked = state if state is not None else (None, None)
+    tracked_set = set(tracked or ())
     assert_scanner_policy_unchanged(canonical_root, policy_snapshot)
     tracked_only = policy.tracked_only if policy is not None else tracked is not None
     started = clock()
@@ -392,6 +393,14 @@ def scan_repository_v2(
         if entry.suffix.lower() in BINARY_SUFFIXES:
             skipped.append(_v2_skip(relative, "binary"))
             continue
+        if relative in tracked_set:
+            try:
+                _regular_file(canonical_root, relative)
+            except ContractError as exc:
+                if exc.code not in {"E_SCAN_IO", "E_SCAN_RACE"}:
+                    raise
+                skipped.append(_v2_skip(relative, "race"))
+                continue
         if len(files) >= limits.files:
             skipped.append(_v2_skip(relative, "file-count-limit"))
             break

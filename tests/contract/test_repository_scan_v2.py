@@ -201,6 +201,34 @@ class RepositoryScanV2ContractTests(unittest.TestCase):
             )
             self.assertNotIn(".env", [call.args[2] for call in read.call_args_list])
 
+    def test_tracked_nested_parent_symlink_is_skipped_without_outside_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = self.make_cli(base)
+            nested = root / "nested"
+            nested.mkdir()
+            (nested / "tracked.txt").write_text("committed-safe\n", encoding="utf-8")
+            self.git(root, "add", "nested/tracked.txt")
+            self.git(root, "commit", "-qm", "nested fixture")
+
+            outside = base / "outside"
+            outside.mkdir()
+            (outside / "tracked.txt").write_text("OUTSIDE_SENTINEL_BYTES\n", encoding="utf-8")
+            nested.rename(root / "nested-real")
+            nested.symlink_to(outside, target_is_directory=True)
+
+            result = scan_repository_v2(root, "cli")
+            serialized = json.dumps(result)
+
+            self.assertNotIn("OUTSIDE_SENTINEL_BYTES", serialized)
+            self.assertNotIn("nested/tracked.txt", [item["path"] for item in result["files"]])
+            self.assertEqual(result["status"], "partial")
+            self.assertEqual(
+                next(item for item in result["skipped"] if item["path"] == "nested/tracked.txt")["reason"],
+                "race",
+            )
+            validate_repository_scan_v2(result)
+
     def test_v1_adapter_preserves_input_bytes_order_and_errors(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = self.make_cli(Path(temporary))
