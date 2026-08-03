@@ -82,11 +82,17 @@ README_SHOWCASE_SKILL="${CODEX_HOME:-$HOME/.codex}/skills/readme-showcase"
    ```
 
 4. Write `readme-plan.json`, candidate files, `claim-map.json`, and
-   `asset-manifest.json` directly from target evidence. For multilingual work,
-   list every requested language in the plan and every locale-specific visual
-   in the manifest. Text-bearing SVGs must use a locale-matched path such as
-   `workflow-zh.svg`; only truly language-neutral text may share one asset via
-   `data-readme-language="neutral"`. If route is `elk`,
+   `asset-manifest.json` directly from target evidence. For v2 multilingual
+   work, use an explicit ordered `locales` array of `{tag, readme_path}`
+   mappings; allowed tags are exactly `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`,
+   `fr`, and `de`. Every asset must declare either a supported `locale` or
+   `language_neutral: true`, never both. Do not infer, normalize, or pair
+   locales from filenames, directories, or suffixes: `workflow-zh.svg` is not
+   locale metadata; legacy visual markup such as
+   `data-readme-language="neutral"` is an output annotation, not v2 manifest
+   metadata. Use semantic `language_pair_id` values and matching ordered
+   evidence/support for localized claims. Keep v1 bilingual
+   `README.md`/`README_zh.md` inputs readable and unchanged. If route is `elk`,
    invoke optional adapter once; its two fresh runs are validation, not hidden
    retries:
 
