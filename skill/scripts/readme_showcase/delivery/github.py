@@ -71,7 +71,7 @@ def build_remote_state_v2(
     *,
     permissions: dict[str, bool] | None = None,
 ) -> dict[str, object]:
-    allowed = permissions or {action: True for action in ACTIONS}
+    allowed = {action: True for action in ACTIONS} if permissions is None else permissions
     state = {
         "schema_version": 2,
         "operation_id": plan["operation_id"],

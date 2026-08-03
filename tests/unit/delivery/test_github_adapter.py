@@ -80,6 +80,14 @@ class GitHubAdapterTests(unittest.TestCase):
             self.assertEqual(item["checked_approval_sha256"], plan["operation_id"])
             self.assertIsNone(item["observed"])
 
+    def test_explicit_empty_permissions_fail_closed_without_changing_none_default(self) -> None:
+        plan = self.plan()
+        denied = build_remote_state_v2(plan, permissions={})
+        self.assertEqual([item["permission"] for item in denied["actions"]], [False] * len(ACTIONS))
+
+        default = build_remote_state_v2(plan, permissions=None)
+        self.assertEqual([item["permission"] for item in default["actions"]], [True] * len(ACTIONS))
+
     def test_mock_execute_calls_exact_actions_and_returns_only_observations(self) -> None:
         plan = self.plan()
         state = build_remote_state_v2(plan)
