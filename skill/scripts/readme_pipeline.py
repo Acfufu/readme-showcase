@@ -21,6 +21,7 @@ _RUN_LOGGING = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.orchestrat
 _RUN_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.run")
 _SCANNER = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.scanner.service")
 _EVALUATION_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.evaluation")
+_APPROVAL = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.delivery.approval")
 ContractError = _CONTRACTS.ContractError
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
 canonical_sha256 = _CONTRACTS.canonical_sha256
@@ -193,6 +194,19 @@ def _check_publish_gate(arguments: argparse.Namespace) -> dict[str, object]:
     return result
 
 
+def _create_approval_template(arguments: argparse.Namespace) -> dict[str, object]:
+    target_root = Path.cwd().resolve()
+    if any(_within(path, target_root) for path in (arguments.pr_bundle, arguments.output)):
+        raise ContractError(
+            _APPROVAL.INPUT_ERROR_CODE,
+            "approval inputs and output must stay outside target repository",
+        )
+    return _APPROVAL.create_approval_template_from_path(
+        arguments.pr_bundle,
+        arguments.output,
+    )
+
+
 def _stage_logger(arguments: argparse.Namespace) -> object:
     return StageLogger(format=arguments.log_format, verbosity=arguments.verbosity)
 
@@ -352,9 +366,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_approval_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="readme_pipeline.py create-approval-template",
+        description="Create a canonical reject-default approval envelope.",
+    )
+    _path_argument(parser, "--pr-bundle")
+    _path_argument(parser, "--output")
+    parser.set_defaults(handler=_create_approval_template)
+    return parser
+
+
 def main(arguments: list[str] | None = None) -> int:
-    parser = build_parser()
-    parsed = parser.parse_args(arguments)
+    raw_arguments = list(sys.argv[1:] if arguments is None else arguments)
+    if raw_arguments[:1] == ["create-approval-template"]:
+        parser = _build_approval_parser()
+        parsed = parser.parse_args(raw_arguments[1:])
+    else:
+        parser = build_parser()
+        parsed = parser.parse_args(raw_arguments)
     try:
         result = parsed.handler(parsed)
     except (ContractError, RunContractError) as exc:
