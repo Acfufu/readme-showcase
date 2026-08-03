@@ -13,6 +13,7 @@ _RETRIEVAL_SERVICE = importlib.import_module(f"{_PREFIX}readme_showcase.retrieva
 _BUNDLE = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.validation.legacy")
 _EVALUATION = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.evaluation.legacy")
 _DELIVERY = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.delivery.legacy")
+_DELIVERY_WORKTREE = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.delivery.worktree")
 
 ContractError = _CONTRACTS.ContractError
 canonical_sha256 = _CONTRACTS.canonical_sha256
@@ -190,6 +191,31 @@ def build_pr_bundle(
     return cast(dict[str, object], _DELIVERY.build_pr_bundle(
         payload, evaluation, artifact_root, target_root,
     ))
+
+
+def prepare_delivery_worktree(
+    payload: Any,
+    artifact_root: Path,
+    target_root: Path,
+    allowed_paths: set[str],
+    *,
+    audit_retain_failure: bool = False,
+    retention_reason: str | None = None,
+    temporary_parent: Path | None = None,
+) -> dict[str, object]:
+    return cast(dict[str, object], _DELIVERY_WORKTREE.prepare_delivery_worktree(
+        payload,
+        artifact_root,
+        target_root,
+        allowed_paths,
+        audit_retain_failure=audit_retain_failure,
+        retention_reason=retention_reason,
+        temporary_parent=temporary_parent,
+    ))
+
+
+def cleanup_delivery_worktree(target_root: Path, worktree_path: Path) -> None:
+    _DELIVERY_WORKTREE.cleanup_delivery_worktree(target_root, worktree_path)
 
 
 def check_publish_gate(
