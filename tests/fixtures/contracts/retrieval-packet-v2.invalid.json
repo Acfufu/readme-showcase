@@ -1,0 +1,119 @@
+{
+    "cases": [
+        {
+            "code": "E_SCHEMA_FLOAT",
+            "name": "float-score",
+            "payload": {
+                "dataset": null,
+                "mode": "production",
+                "query": {
+                    "evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "manifest_features": [
+                    1.5
+                ],
+                    "project_type": "unknown",
+                    "sections": [],
+                    "tags": []
+                },
+                "reason": "manifest-unavailable",
+                "records": [],
+            "schema_version": 2,
+                "status": "unavailable"
+            }
+        },
+        {
+            "code": "E_SCHEMA_UNKNOWN_FIELD",
+            "name": "unknown-field",
+            "payload": {
+                "dataset": null,
+                "mode": "production",
+                "query": {
+                    "evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "manifest_features": [],
+                    "project_type": "unknown",
+                    "sections": [],
+                    "tags": []
+                },
+                "reason": "manifest-unavailable",
+                "records": [],
+                "schema_version": 2,
+                "status": "unavailable",
+                "unknown": true
+            }
+        },
+        {
+            "code": "E_DATASET_SPLIT_LEAK",
+            "name": "production-test-split",
+            "payload": {
+                "dataset": {
+                    "dataset_id": "readme-showcase-retrieval",
+                    "dataset_revision": 2,
+                    "manifest_sha256": "45aa6396def1954f52b8d12c96627039664fac39ab5ec24ac2858c6dbdde7486"
+                },
+                "mode": "production",
+                "query": {
+                    "evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "manifest_features": [],
+                    "project_type": "web-framework",
+                    "sections": [
+                        "overview"
+                    ],
+                    "tags": [
+                        "api"
+                    ]
+                },
+                "reason": null,
+                "records": [
+                    {
+                        "pattern": {
+                            "proof": "proof",
+                            "structure": "structure",
+                            "summary": "summary"
+                        },
+                        "project_types": [
+                            "web-framework"
+                        ],
+                        "reasons": [
+                            {
+                                "code": "retrieval.project-type",
+                                "matched_values": [
+                                    "web-framework"
+                                ],
+                                "signal": "project_type_basis_points"
+                            }
+                        ],
+                        "record_id": "test-record",
+                        "score_basis_points": 7000,
+                        "section_intents": [
+                            "overview"
+                        ],
+                        "signals": {
+                            "bm25_basis_points": 0,
+                            "diversity_penalty_basis_points": 0,
+                            "manifest_feature_overlap_basis_points": 0,
+                            "project_type_basis_points": 10000,
+                            "section_overlap_basis_points": 0,
+                            "tag_overlap_basis_points": 0
+                        },
+                        "source": {
+                            "commit": "95f8322ee1dcda7ceace7b1c4f6c9915b36d748f",
+                            "human_reviewed": true,
+                            "license_evidence_sha256": "4ec89ffc81485b97fec584b2d4a961032eeffe834453894fd9c1274906cc744e",
+                            "license_evidence_spdx": "MIT",
+                            "license_evidence_url": "https://github.com/fastapi/fastapi/blob/95f8322ee1dcda7ceace7b1c4f6c9915b36d748f/LICENSE",
+                            "license_spdx": "MIT",
+                            "material_sha256": "b765d1bb8a76106a5bff83fdae798a12150b03ef9cc99f37d68d1e5d8dc2938a",
+                            "repository_url": "https://github.com/fastapi/fastapi"
+                        },
+                        "source_split": "test",
+                        "tags": [
+                            "api"
+                        ]
+                    }
+                ],
+                "schema_version": 2,
+                "status": "available"
+            }
+        }
+    ]
+}
