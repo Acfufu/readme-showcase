@@ -23,6 +23,17 @@ def read_fixture(name: str) -> str:
 
 
 class EditorialTests(unittest.TestCase):
+    def test_explicit_locale_mapping_ignores_misleading_arbitrary_paths(self) -> None:
+        text = "# Demo\n\nProject definition is clear enough for readers.\n\n## Quick Start\n"
+        readmes = {"docs/readme-zh.md": text, "localized/README.md": text}
+        report = evaluate_editorial(
+            readmes,
+            locale_by_path={"docs/readme-zh.md": "en", "localized/README.md": "ja"},
+        )
+        self.assertNotIn("W_EDITORIAL_LOCALE_STRUCTURE", {item.code for item in report.findings})
+        with self.assertRaises(ValueError):
+            evaluate_editorial(readmes, locale_by_path={"docs/readme-zh.md": "en"})
+
     def evaluate(self, en: str, zh: str, **kwargs: object):
         diffs = kwargs.pop("diff_lines", {"README.md": 0, "README_zh.md": 0})
         return evaluate_editorial(

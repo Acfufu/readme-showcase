@@ -122,9 +122,19 @@ def compute_advisory_metrics(
     covered_sources = set(planned_evidence).intersection(claim_used_ids)
     unused_sources = sorted(set(planned_evidence) - covered_sources)
 
-    languages = plan.get("languages")
-    if not isinstance(languages, list) or any(not isinstance(value, str) for value in languages):
-        raise ContractError("E_EVALUATION_METRIC", "README plan.languages must be a string list")
+    locales = plan.get("locales")
+    if (
+        not isinstance(locales, list)
+        or not locales
+        or any(
+            not isinstance(value, Mapping)
+            or not isinstance(value.get("tag"), str)
+            or not isinstance(value.get("readme_path"), str)
+            for value in locales
+        )
+    ):
+        raise ContractError("E_EVALUATION_METRIC", "README plan.locales must contain explicit mappings")
+    locale_tags = [str(value["tag"]) for value in locales]
     pair_claims: dict[str, list[dict[str, Any]]] = {}
     for claim in claim_entries:
         pair_id = claim.get("language_pair_id")
@@ -133,7 +143,15 @@ def compute_advisory_metrics(
     complete_pairs = {
         pair_id
         for pair_id, values in pair_claims.items()
-        if len(values) == len(languages) and all(claim_verified[str(value.get("claim_id"))] for value in values)
+        if (
+            len(values) == len(locale_tags)
+            and {
+                str(value.get("claim_id")).split(":", 2)[1]
+                for value in values
+                if len(str(value.get("claim_id")).split(":", 2)) == 3
+            } == set(locale_tags)
+            and all(claim_verified[str(value.get("claim_id"))] for value in values)
+        )
     }
 
     commands = plan.get("commands")

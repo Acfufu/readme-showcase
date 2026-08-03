@@ -182,9 +182,12 @@ def candidate_files(context: RunContext) -> list[tuple[str, bytes]] | None:
     _, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
     required = ["claim-map.json", "asset-manifest.json"]
     if context.manifest["configuration"]["mode"] == "readme":
-        required.append("README.md")
-    if "zh" in plan["languages"]:
-        required.append("README_zh.md")
+        if plan["schema_version"] == 2:
+            required.extend(entry["readme_path"] for entry in plan["locales"])
+        else:
+            required.append("README.md")
+            if "zh" in plan["languages"]:
+                required.append("README_zh.md")
     output: list[tuple[str, bytes]] = []
     for relative in required:
         try:
@@ -232,6 +235,7 @@ class BundleAssembleStage:
         return canonical_sha256({"candidate": _upstream(context, 4), "plan": _upstream(context, 2), "retrieval": _upstream(context, 1)})
 
     def execute(self, context: RunContext) -> StageResult:
+        _, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
         _, manifest = _canonical_object(context.workspace.root / "stages/05-candidate/asset-manifest.json")
         assets = manifest.get("assets")
         if not isinstance(assets, list):
@@ -251,8 +255,9 @@ class BundleAssembleStage:
         mode = context.manifest["configuration"]["mode"]
         readme = None
         if mode == "readme":
-            raw = _read_candidate(context, "README.md")
-            readme = {"path": "README.md", "sha256": hashlib.sha256(raw).hexdigest()}
+            readme_path = plan["locales"][0]["readme_path"] if plan["schema_version"] == 2 else "README.md"
+            raw = _read_candidate(context, readme_path)
+            readme = {"path": readme_path, "sha256": hashlib.sha256(raw).hexdigest()}
         refs = {
             "plan": ("readme-plan.json", context.attempt_file(2, "readme-plan.json")),
             "retrieval": ("retrieval-packet.json", context.attempt_file(1, "retrieval-packet.json")),
@@ -282,8 +287,14 @@ def _materialize(context: RunContext, root: Path) -> dict[str, Any]:
         "claim-map.json": context.workspace.root / "stages/05-candidate/claim-map.json",
         "asset-manifest.json": context.workspace.root / "stages/05-candidate/asset-manifest.json",
     }
-    for name in ("README.md", "README_zh.md"):
-        candidate = context.workspace.root / "stages/05-candidate" / name
+    _, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
+    readme_paths = (
+        [entry["readme_path"] for entry in plan["locales"]]
+        if plan["schema_version"] == 2
+        else ["README.md", "README_zh.md"]
+    )
+    for name in readme_paths:
+        candidate = context.workspace.root.joinpath("stages/05-candidate", *PurePosixPath(name).parts)
         if candidate.exists():
             sources[name] = candidate
     for item in bundle["candidate"]["assets"]:

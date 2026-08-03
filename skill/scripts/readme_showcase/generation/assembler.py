@@ -129,37 +129,18 @@ def canonical_markdown_blocks(raw: bytes, context: str = "candidate README") -> 
     return blocks
 
 
-def _readme_locale(path: str) -> str:
-    name = Path(path).name.casefold()
-    return "zh" if name.startswith("readme_zh") or name.startswith("readme-zh") else "en"
-
-
-def _readme_path(primary: str, locale: str) -> str:
-    path = Path(primary)
-    primary_locale = _readme_locale(primary)
-    if locale == primary_locale:
-        return primary
-    name = path.name
-    if locale == "zh" and name.casefold().startswith("readme"):
-        name = f"{name[:6]}_zh{name[6:]}"
-    elif locale == "en" and name.casefold().startswith(("readme_zh", "readme-zh")):
-        name = f"{name[:6]}{name[9:]}"
-    else:
-        raise ContractError("E_CLAIM_COVERAGE", f"candidate README has no deterministic {locale} companion")
-    return path.with_name(name).as_posix()
-
-
 def _readme_blocks(
     root: Path,
     readme: Mapping[str, str] | None,
-    languages: list[str],
+    locales: list[Mapping[str, str]],
     primary_raw: bytes | None,
 ) -> dict[str, list[bytes]]:
     if readme is None:
         return {}
     documents: dict[str, list[bytes]] = {}
-    for locale in languages:
-        path = _readme_path(readme["path"], locale)
+    for mapping in locales:
+        locale = mapping["tag"]
+        path = mapping["readme_path"]
         if path == readme["path"] and primary_raw is not None:
             raw = primary_raw
         else:
@@ -290,6 +271,8 @@ def _validate_generated_bundle_v2(
     for index, reference in enumerate(assets):
         _read_bytes(artifact_root, reference, f"generated bundle.candidate.assets[{index}]")
     plan = validate_readme_plan_v2(_read_json(artifact_root, artifacts["plan"], "generated bundle.artifacts.plan"), mode=mode)
+    if readme is not None and readme["path"] != plan["locales"][0]["readme_path"]:
+        raise ContractError("E_CLAIM_COVERAGE", "candidate README must match first declared README path")
     retrieval = _read_json(artifact_root, artifacts["retrieval"], "generated bundle.artifacts.retrieval")
     if type(retrieval.get("schema_version")) is not int or retrieval["schema_version"] != 1:
         raise ContractError("E_SCHEMA_VERSION", "generated bundle retrieval artifact requires schema_version 1")
@@ -304,7 +287,7 @@ def _validate_generated_bundle_v2(
         if canonical_sha256(raw_claims) != artifacts["claim_map"]["sha256"]:
             raise ContractError("E_BUNDLE_HASH", "generated bundle.artifacts.claim_map bytes differ from reference")
     claims = validate_claim_map(raw_claims, evidence_graph=evidence)
-    _validate_claim_content(claims, _readme_blocks(artifact_root, readme, plan["languages"], readme_raw))
+    _validate_claim_content(claims, _readme_blocks(artifact_root, readme, plan["locales"], readme_raw))
     claim_ids = {
         identifier
         for collection in (claims["markdown_blocks"], claims["diagram_labels"])
@@ -323,16 +306,16 @@ def _validate_generated_bundle_v2(
     if not asset_ids.issubset(set(plan["evidence_ids"])):
         raise ContractError("E_CLAIM_EVIDENCE", "asset manifest references evidence outside README plan")
     used_locales = {
-        *(asset["locale"] for asset in manifest["assets"]),
+        *(asset["locale"] for asset in manifest["assets"] if not asset["language_neutral"]),
         *(
             claim["claim_id"].split(":", 2)[1]
             for collection in (claims["markdown_blocks"], claims["diagram_labels"])
             for claim in collection
             if len(claim["claim_id"].split(":", 2)) == 3
-            and claim["claim_id"].split(":", 2)[1] in {"en", "zh"}
+            and claim["claim_id"].split(":", 2)[1] in {entry["tag"] for entry in plan["locales"]}
         ),
     }
-    if not used_locales.issubset(set(plan["languages"])):
+    if not used_locales.issubset({entry["tag"] for entry in plan["locales"]}):
         raise ContractError("E_CLAIM_LANGUAGE", "claim or asset locale differs from README plan")
     evaluation = _closed(
         _read_json(artifact_root, artifacts["evaluation"], "generated bundle.artifacts.evaluation"),
@@ -379,7 +362,7 @@ def assemble_generated_bundle(
         claim_reference = _reference(artifacts_copy.get("claim_map"), "generated bundle.artifacts.claim_map")
         claims = _derive_claim_content(
             _read_json(artifact_root, claim_reference, "generated bundle.artifacts.claim_map"),
-            _readme_blocks(artifact_root, readme_reference, plan["languages"], readme_raw),
+            _readme_blocks(artifact_root, readme_reference, plan["locales"], readme_raw),
         )
         artifacts_copy["claim_map"]["sha256"] = canonical_sha256(claims)
     else:

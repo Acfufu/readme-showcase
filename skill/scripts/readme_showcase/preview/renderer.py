@@ -106,6 +106,8 @@ def _document(title: str, source: str) -> bytes:
 
 
 def _index(report: dict[str, Any], readmes: dict[str, str]) -> bytes:
+    primary_path = report["mobile"]["source"]
+    primary = readmes[primary_path]
     report_text = canonical_json_bytes(report).decode("utf-8")
     diff_text = "\n".join(f"## {name}\n{value}" for name, value in report["diff"].items())
     evidence_text = canonical_json_bytes({"evidence": report["evidence"], "claims": report["claims"]}).decode("utf-8")
@@ -116,11 +118,11 @@ def _index(report: dict[str, Any], readmes: dict[str, str]) -> bytes:
         f"<title>README preview</title><style>{_CSS}</style></head><body><main>"
         "<h1>README offline preview</h1>"
         f"<p class=\"meta\">Fixed run time: {html.escape(report['generated_at'])}</p>"
-        f"<section><h2>Rendered README</h2><pre>{html.escape(readmes['README.md'], quote=True)}</pre></section>"
+        f"<section><h2>Rendered README</h2><pre>{html.escape(primary, quote=True)}</pre></section>"
         f"<section><h2>Diff</h2><pre>{html.escape(diff_text, quote=True)}</pre></section>"
         f"<section><h2>Evidence and claims</h2><pre>{html.escape(evidence_text, quote=True)}</pre></section>"
         f"<section><h2>Evaluation</h2><pre>{html.escape(evaluation_text, quote=True)}</pre></section>"
-        f"<section><h2>Mobile / narrow view</h2><div class=\"mobile-preview\"><pre>{html.escape(readmes['README.md'], quote=True)}</pre></div></section>"
+        f"<section><h2>Mobile / narrow view</h2><div class=\"mobile-preview\"><pre>{html.escape(primary, quote=True)}</pre></div></section>"
         f"<section><h2>Canonical report</h2><pre>{html.escape(report_text, quote=True)}</pre></section>"
         "</main></body></html>\n"
     ).encode("utf-8")
@@ -143,6 +145,19 @@ def _tree_bytes(root: Path) -> dict[str, bytes] | None:
     return output
 
 
+def _readme_documents(report: dict[str, Any], readmes: dict[str, str]) -> dict[str, bytes]:
+    locale_by_path = report.get("locale_by_path")
+    if isinstance(locale_by_path, dict):
+        return {
+            f"locales/{locale}.escaped.html": _document(f"{path} escaped source", readmes[path])
+            for path, locale in locale_by_path.items()
+        }
+    return {
+        "README.escaped.html": _document("README.md escaped source", readmes["README.md"]),
+        "README_zh.escaped.html": _document("README_zh.md escaped source", readmes["README_zh.md"]),
+    }
+
+
 def render_preview(workspace: RunWorkspace, manifest: dict[str, Any]) -> dict[str, object]:
     snapshot = PreviewInputSnapshot()
     assets = _collect_assets(workspace, snapshot)
@@ -150,10 +165,9 @@ def render_preview(workspace: RunWorkspace, manifest: dict[str, Any]) -> dict[st
     files = {
         "index.html": _index(report, readmes),
         "report.json": canonical_json_bytes(report),
-        "README.escaped.html": _document("README.md escaped source", readmes["README.md"]),
-        "README_zh.escaped.html": _document("README_zh.md escaped source", readmes["README_zh.md"]),
         **assets,
     }
+    files.update(_readme_documents(report, readmes))
     output_root = workspace.root / "output"
     output_info = output_root.lstat()
     if not stat.S_ISDIR(output_info.st_mode) or stat.S_ISLNK(output_info.st_mode):

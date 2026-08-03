@@ -17,6 +17,7 @@ from unittest import mock
 from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes
 from skill.scripts.readme_showcase.orchestration import runner as runner_module
 from skill.scripts.readme_showcase.preview import report as report_module
+from skill.scripts.readme_showcase.preview import renderer as renderer_module
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -37,6 +38,16 @@ class _OfflineHTMLParser(HTMLParser):
 
 
 class PreviewReportTests(unittest.TestCase):
+    def test_renderer_exposes_arbitrary_declared_locales_without_filename_inference(self) -> None:
+        readmes = {"docs/readme-zh.md": "English", "localized/README.md": "日本語"}
+        report = {
+            "locale_by_path": {"docs/readme-zh.md": "en", "localized/README.md": "ja"},
+        }
+        files = renderer_module._readme_documents(report, readmes)
+        self.assertEqual(set(files), {"locales/en.escaped.html", "locales/ja.escaped.html"})
+        self.assertIn(b"English", files["locales/en.escaped.html"])
+        self.assertIn("日本語".encode(), files["locales/ja.escaped.html"])
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

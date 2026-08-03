@@ -9,16 +9,16 @@ from typing import Any, Mapping, Sequence
 from ...pipeline_contracts import ContractError, canonical_json_bytes
 from .common import MAX_SOURCE_BYTES, normalize_posix_path, normalize_text, read_source_bytes
 from .evidence import validate_evidence_graph
+from .locale import parse_locale
 
 
 ASSET_MANIFEST_SCHEMA_VERSION = 2
 MAX_ASSETS = 10_000
-ASSET_LOCALES = frozenset({"en", "zh"})
 PROVENANCE_KINDS = frozenset({"hand-authored", "derived", "generated"})
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _EVIDENCE_ID = re.compile(r"[a-z]+:[0-9a-f]{64}\Z")
 _ASSET_FIELDS = {
-    "asset_id", "path", "locale", "provenance", "artifact_sha256",
+    "asset_id", "path", "locale", "language_neutral", "provenance", "artifact_sha256",
     "candidate_sha256", "evidence_ids",
 }
 _PROVENANCE_FIELDS = {"kind", "path", "sha256"}
@@ -114,16 +114,29 @@ def validate_asset_manifest(
     seen_paths: set[str] = set()
     for index, raw in enumerate(raw_assets):
         context = f"asset manifest.assets[{index}]"
-        asset = _closed(raw, _ASSET_FIELDS, context)
+        if not isinstance(raw, dict):
+            raise ContractError("E_SCHEMA_TYPE", f"{context} must be an object")
+        unknown = sorted(set(raw) - _ASSET_FIELDS)
+        required = _ASSET_FIELDS - {"locale"}
+        missing = sorted(required - set(raw))
+        if unknown:
+            raise ContractError("E_SCHEMA_UNKNOWN_FIELD", f"{context} contains unknown field: {unknown[0]}")
+        if missing:
+            raise ContractError("E_SCHEMA_MISSING_FIELD", f"{context} is missing field: {missing[0]}")
+        asset = raw
         asset_id = normalize_text(asset["asset_id"], f"{context}.asset_id", maximum=512)
         path = _path(asset["path"], f"{context}.path")
         if asset_id in seen_ids or path in seen_paths:
             raise ContractError("E_BUNDLE_ASSET", f"{context} duplicates asset identity or path")
         seen_ids.add(asset_id)
         seen_paths.add(path)
-        locale = asset["locale"]
-        if locale not in ASSET_LOCALES:
-            raise ContractError("E_README_LANGUAGE", f"{context}.locale is unsupported")
+        neutral = asset["language_neutral"]
+        if type(neutral) is not bool:
+            raise ContractError("E_ASSET_LOCALE", f"{context}.language_neutral must be boolean")
+        has_locale = "locale" in asset
+        if neutral == has_locale:
+            raise ContractError("E_ASSET_LOCALE", f"{context} must declare exactly localized or language-neutral metadata")
+        locale = None if neutral else parse_locale(asset["locale"], f"{context}.locale")
         provenance = _closed(asset["provenance"], _PROVENANCE_FIELDS, f"{context}.provenance")
         kind = provenance["kind"]
         if kind not in PROVENANCE_KINDS:
@@ -155,15 +168,18 @@ def validate_asset_manifest(
                 raise ContractError("E_BUNDLE_HASH", f"{context} provenance bytes changed")
             if hashlib.sha256(_safe_read(artifact_root, path, context)).hexdigest() != artifact_hash:
                 raise ContractError("E_BUNDLE_HASH", f"{context} artifact bytes changed")
-        normalized.append({
+        normalized_asset = {
             "asset_id": asset_id,
             "path": path,
-            "locale": locale,
+            "language_neutral": neutral,
             "provenance": {"kind": kind, "path": source_path, "sha256": source_hash},
             "artifact_sha256": artifact_hash,
             "candidate_sha256": candidate_hash,
             "evidence_ids": identifiers,
-        })
+        }
+        if locale is not None:
+            normalized_asset["locale"] = locale
+        normalized.append(normalized_asset)
     if [item["path"] for item in normalized] != sorted(item["path"] for item in normalized):
         raise ContractError("E_BUNDLE_ASSET", "asset manifest must use path order")
     if candidates is not None and set(candidates) != seen_paths:

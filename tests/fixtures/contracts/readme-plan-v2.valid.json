@@ -1,1 +1,1 @@
-{"commands":[],"diagram_route":"static","evidence_ids":["FACT_ID"],"languages":["en"],"mode":"readme","schema_version":2,"sections":["overview"],"visual_intent":"hero"}
+{"commands":[],"diagram_route":"static","evidence_ids":["FACT_ID"],"locales":[{"readme_path":"docs/primary.md","tag":"en"},{"readme_path":"localized/guide.md","tag":"zh-Hans"},{"readme_path":"notes/release.md","tag":"ja"}],"mode":"readme","schema_version":2,"sections":["overview"],"visual_intent":"hero"}

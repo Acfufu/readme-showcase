@@ -8,6 +8,8 @@ from typing import Any, Mapping, Sequence
 
 from ...pipeline_contracts import ContractError, canonical_json_bytes, validate_contract
 from ..contracts.plan import normalize_generation_text, validate_readme_plan
+from ..contracts.locale import parse_locale
+from ..contracts.evidence import validate_evidence_graph
 from ..contracts.run import canonical_repository
 from ..errors import AGGREGATABLE_CODES
 
@@ -20,7 +22,6 @@ MAX_REQUEST_ITEMS = 10_000
 MAX_REQUEST_TEXT_BYTES = 4096
 PROJECT_CLASSIFICATIONS = frozenset({"developer-tool", "library", "runtime-toolchain", "web-framework"})
 REQUEST_MODES = frozenset({"readme", "asset-only", "audit-only"})
-REQUEST_LOCALES = frozenset({"en", "zh-Hans"})
 _SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -352,15 +353,20 @@ def validate_generation_request(payload: Any) -> dict[str, Any]:
     locales = request["locales"]
     if not isinstance(locales, list) or not locales or len(locales) != len(set(locales)):
         raise ContractError("E_SCHEMA_TYPE", "generation request.locales must be a non-empty unique array")
-    normalized_locales = [_text(locale, "generation request.locales[]") for locale in locales]
-    if not set(normalized_locales).issubset(REQUEST_LOCALES):
-        raise ContractError("E_SCHEMA_VALUE", "generation request locale is unsupported")
+    normalized_locales = [parse_locale(locale, "generation request.locales[]") for locale in locales]
     classification = request["project_classification"]
     if classification is not None:
         classification = _text(classification, "generation request.project_classification")
         if classification not in PROJECT_CLASSIFICATIONS:
             raise ContractError("E_SCHEMA_VALUE", "generation request project classification is unsupported")
     plan = validate_readme_plan(request["plan"], mode=mode)
+    plan_locales = (
+        [entry["tag"] for entry in plan["locales"]]
+        if plan["schema_version"] == 2
+        else ["zh-Hans" if tag == "zh" else tag for tag in plan["languages"]]
+    )
+    if normalized_locales != plan_locales:
+        raise ContractError("E_LOCALE", "generation request.locales must match README plan order")
     evidence_index = _evidence_index(request["evidence_index"])
     if {entry["fact_id"] for entry in evidence_index} != set(plan["evidence_ids"]):
         raise ContractError("E_GENERATION_EVIDENCE_DANGLING", "generation request evidence index does not bind every plan fact")
@@ -418,6 +424,17 @@ def _source_records(packet: Any) -> list[dict[str, Any]]:
 
 
 def _source_evidence(packet: Any, fact_ids: Sequence[str], base_sha: str) -> tuple[str, list[dict[str, str]]]:
+    if isinstance(packet, Mapping) and packet.get("schema_version") == 2:
+        graph = validate_evidence_graph(dict(packet))
+        packet_sha256 = hashlib.sha256(canonical_json_bytes(graph)).hexdigest()
+        by_id = {fact["fact_id"]: fact["evidence_sha256"] for fact in graph["facts"]}
+        missing = sorted(set(fact_ids) - set(by_id))
+        if missing:
+            raise ContractError("E_GENERATION_EVIDENCE_DANGLING", f"README plan references missing evidence: {missing[0]}")
+        return packet_sha256, [
+            {"fact_id": fact_id, "evidence_sha256": by_id[fact_id], "packet_sha256": packet_sha256}
+            for fact_id in sorted(fact_ids)
+        ]
     if not isinstance(packet, Mapping) or packet.get("schema_version") != 1 or packet.get("status") != "complete":
         raise ContractError("E_GENERATION_EVIDENCE", "evidence packet is not complete v1 data")
     packet_sha256 = hashlib.sha256(canonical_json_bytes(dict(packet))).hexdigest()
@@ -491,9 +508,12 @@ def build_generation_request(
         raise ContractError("E_GENERATION_RETRIEVAL", "retrieval packet does not bind project classification")
     required = ["asset-manifest.json", "claim-map.json"]
     if normalized_plan["mode"] == "readme":
-        required.append("README.md")
-    if "zh" in normalized_plan["languages"]:
-        required.append("README_zh.md")
+        if normalized_plan["schema_version"] == 2:
+            required.extend(entry["readme_path"] for entry in normalized_plan["locales"])
+        else:
+            required.append("README.md")
+            if "zh" in normalized_plan["languages"]:
+                required.append("README_zh.md")
     request: dict[str, Any] = {
         "schema_version": GENERATION_REQUEST_SCHEMA_VERSION,
         "mode": normalized_plan["mode"],

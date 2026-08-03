@@ -6,6 +6,8 @@ import unicodedata
 from typing import Any
 
 from ...pipeline_contracts import ContractError, canonical_json_bytes, validate_contract
+from .common import normalize_posix_path
+from .locale import parse_locale
 
 
 README_PLAN_SCHEMA_VERSION = 1
@@ -113,17 +115,53 @@ def _strings(
     return result
 
 
+def _readme_path(value: Any, context: str) -> str:
+    try:
+        return normalize_posix_path(value)
+    except ValueError as exc:
+        raise ContractError("E_README_PATH", f"{context} must be a safe repository-relative POSIX path") from exc
+
+
+def validate_locale_mappings(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list) or not value:
+        raise ContractError("E_LOCALE", "README plan.locales must be a non-empty array")
+    mappings: list[dict[str, str]] = []
+    tags: set[str] = set()
+    paths: set[str] = set()
+    for index, raw in enumerate(value):
+        context = f"README plan.locales[{index}]"
+        if not isinstance(raw, dict):
+            raise ContractError("E_SCHEMA_TYPE", f"{context} must be an object")
+        unknown = sorted(set(raw) - {"tag", "readme_path"})
+        missing = sorted({"tag", "readme_path"} - set(raw))
+        if unknown:
+            raise ContractError("E_SCHEMA_UNKNOWN_FIELD", f"{context} contains unknown field: {unknown[0]}")
+        if missing:
+            raise ContractError("E_SCHEMA_MISSING_FIELD", f"{context} is missing field: {missing[0]}")
+        tag = parse_locale(raw["tag"], f"{context}.tag")
+        path = _readme_path(raw["readme_path"], f"{context}.readme_path")
+        if tag in tags:
+            raise ContractError("E_LOCALE", "README plan.locales contains duplicate tag")
+        if path in paths:
+            raise ContractError("E_README_PATH", "README plan.locales contains duplicate readme_path")
+        tags.add(tag)
+        paths.add(path)
+        mappings.append({"tag": tag, "readme_path": path})
+    return mappings
+
+
 def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, Any]:
     _reject_float(payload)
-    fields = {
-        "schema_version", "mode", "languages", "sections", "visual_intent",
-        "diagram_route", "commands", "evidence_ids",
-    }
     if not isinstance(payload, dict):
         raise ContractError("E_SCHEMA_TYPE", "README plan must be a JSON object")
     version = payload.get("schema_version")
     if type(version) is not int or version not in {README_PLAN_SCHEMA_VERSION, README_PLAN_V2_SCHEMA_VERSION}:
         raise ContractError("E_SCHEMA_VERSION", "README plan requires schema_version 1 or 2")
+    version_field = "languages" if version == README_PLAN_SCHEMA_VERSION else "locales"
+    fields = {
+        "schema_version", "mode", version_field, "sections", "visual_intent",
+        "diagram_route", "commands", "evidence_ids",
+    }
     unknown = sorted(set(payload) - fields)
     missing = sorted(fields - set(payload))
     if unknown:
@@ -134,9 +172,14 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
     normalized_mode = normalize_generation_text(plan["mode"], "README plan.mode")
     if normalized_mode not in PLAN_MODES or (mode is not None and normalized_mode != mode):
         raise ContractError("E_BUNDLE_PLAN", "README plan mode is unsupported")
-    languages = _strings(plan["languages"], "README plan.languages", allowed=PLAN_LANGUAGES)
-    if not languages:
-        raise ContractError("E_README_LANGUAGE", "README plan.languages must not be empty")
+    if version == README_PLAN_SCHEMA_VERSION:
+        locale_contract: dict[str, Any] = {
+            "languages": _strings(plan["languages"], "README plan.languages", allowed=PLAN_LANGUAGES)
+        }
+        if not locale_contract["languages"]:
+            raise ContractError("E_README_LANGUAGE", "README plan.languages must not be empty")
+    else:
+        locale_contract = {"locales": validate_locale_mappings(plan["locales"])}
     diagram_route = normalize_generation_text(plan["diagram_route"], "README plan.diagram_route")
     if diagram_route not in DIAGRAM_ROUTES:
         raise ContractError("E_BUNDLE_PLAN", "README plan diagram route is unsupported")
@@ -148,7 +191,7 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
     normalized = {
         "schema_version": version,
         "mode": normalized_mode,
-        "languages": languages,
+        **locale_contract,
         "sections": _strings(plan["sections"], "README plan.sections"),
         "visual_intent": normalize_generation_text(
             plan["visual_intent"], "README plan.visual_intent"

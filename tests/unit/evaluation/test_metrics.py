@@ -33,7 +33,7 @@ class AdvisoryMetricTests(unittest.TestCase):
             "readme-plan.json": {
                 "schema_version": 2,
                 "mode": "readme",
-                "languages": ["en"],
+                "locales": [{"tag": "en", "readme_path": "README.md"}],
                 "sections": ["overview"],
                 "visual_intent": "hero",
                 "diagram_route": "static",
@@ -60,6 +60,7 @@ class AdvisoryMetricTests(unittest.TestCase):
                     "asset_id": "hero",
                     "path": "assets/hero.png",
                     "locale": "en",
+                    "language_neutral": False,
                     "provenance": {
                         "kind": "derived",
                         "path": "source/README.md",
@@ -140,7 +141,7 @@ class AdvisoryMetricTests(unittest.TestCase):
 
     def test_zero_total_is_not_applicable_and_decorative_visual_is_excluded(self) -> None:
         result = compute_advisory_metrics(
-            plan={"commands": [], "evidence_ids": [], "languages": ["en"], "sections": []},
+            plan={"commands": [], "evidence_ids": [], "locales": [{"tag": "en", "readme_path": "README.md"}], "sections": []},
             retrieval={"records": []},
             evidence={"facts": []},
             claims={"markdown_blocks": [], "diagram_labels": []},
@@ -168,11 +169,42 @@ class AdvisoryMetricTests(unittest.TestCase):
             )
             self.assertEqual(decorative["visual_provenance"], {"covered": 0, "reasons": [], "status": "not-applicable", "total": 0})
 
+    def test_explicit_locale_pairs_and_neutral_assets_do_not_infer_filename_locale(self) -> None:
+        fact_id = "file:" + "a" * 64
+        claims = []
+        for locale in ("en", "ja"):
+            claims.append({
+                "claim_id": f"markdown:{locale}:overview",
+                "claim_kind": "factual",
+                "evidence_ids": [fact_id],
+                "support_level": "direct",
+                "language_pair_id": "overview",
+            })
+        result = compute_advisory_metrics(
+            plan={
+                "commands": [], "evidence_ids": [fact_id], "sections": [],
+                "locales": [
+                    {"tag": "en", "readme_path": "docs/日本語.md"},
+                    {"tag": "ja", "readme_path": "docs/readme-zh.md"},
+                ],
+            },
+            retrieval={"records": []},
+            evidence={"facts": [{"fact_id": fact_id}]},
+            claims={"markdown_blocks": claims, "diagram_labels": []},
+            asset_manifest={"assets": [{
+                "asset_id": "neutral", "path": "assets/deceptive-zh.png",
+                "language_neutral": True, "evidence_ids": [fact_id], "provenance": {},
+            }]},
+        )
+        self.assertEqual(result["language_truth_pairs"]["covered"], 1)
+        self.assertEqual(result["language_truth_pairs"]["total"], 1)
+        self.assertEqual(result["visual_provenance"]["total"], 1)
+
     def test_unique_normative_evidence_ids_not_truth_ids_or_raw_uses(self) -> None:
         first = "file:" + "a" * 64
         second = "config:" + "b" * 64
         result = compute_advisory_metrics(
-            plan={"commands": [], "evidence_ids": [first, second], "languages": ["en"], "sections": []},
+            plan={"commands": [], "evidence_ids": [first, second], "locales": [{"tag": "en", "readme_path": "README.md"}], "sections": []},
             retrieval={"records": []},
             evidence={"facts": [{"fact_id": first}, {"fact_id": second}]},
             claims={"markdown_blocks": [
@@ -186,7 +218,7 @@ class AdvisoryMetricTests(unittest.TestCase):
             "reasons": [f"unused-evidence:{second}"], "status": "measured", "total": 2,
         })
         reversed_result = compute_advisory_metrics(
-            plan={"commands": [], "evidence_ids": [second, first], "languages": ["en"], "sections": []},
+            plan={"commands": [], "evidence_ids": [second, first], "locales": [{"tag": "en", "readme_path": "README.md"}], "sections": []},
             retrieval={"records": []},
             evidence={"facts": [{"fact_id": second}, {"fact_id": first}]},
             claims={"markdown_blocks": list(reversed([
@@ -200,7 +232,7 @@ class AdvisoryMetricTests(unittest.TestCase):
     def test_duplicate_and_dangling_evidence_fail_closed(self) -> None:
         fact_id = "file:" + "a" * 64
         base = {
-            "plan": {"commands": [], "evidence_ids": [fact_id], "languages": ["en"], "sections": []},
+            "plan": {"commands": [], "evidence_ids": [fact_id], "locales": [{"tag": "en", "readme_path": "README.md"}], "sections": []},
             "retrieval": {"records": []},
             "evidence": {"facts": [{"fact_id": fact_id}]},
             "claims": {"markdown_blocks": [], "diagram_labels": []},

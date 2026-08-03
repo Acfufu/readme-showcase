@@ -80,7 +80,7 @@ class EvaluationTests(unittest.TestCase):
         graph = EvidenceGraph([fact]).to_dict()
         fact_id = fact["fact_id"]
         plan = {
-            "schema_version": 2, "mode": "readme", "languages": ["en"],
+            "schema_version": 2, "mode": "readme", "locales": [{"tag": "en", "readme_path": readme_name}],
             "sections": ["overview"], "visual_intent": "hero",
             "diagram_route": "static", "commands": ["python -m demo"],
             "evidence_ids": [fact_id],
@@ -103,7 +103,7 @@ class EvaluationTests(unittest.TestCase):
         assets = {
             "schema_version": 2,
             "assets": [{
-                "asset_id": "hero", "path": asset_name, "locale": "en",
+                "asset_id": "hero", "path": asset_name, "locale": "en", "language_neutral": False,
                 "provenance": {
                     "kind": "derived", "path": "source/README.md",
                     "sha256": hashlib.sha256(source).hexdigest(),

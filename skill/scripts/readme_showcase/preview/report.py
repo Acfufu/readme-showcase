@@ -7,7 +7,7 @@ import json
 import os
 import stat
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ...pipeline_contracts import (
@@ -205,32 +205,42 @@ def build_preview_snapshot(
     plan_path = _attempt_path(workspace, manifest, 2, "readme-plan.json")
     plan = _canonical_object(snapshot, plan_path) if plan_path is not None else None
     planned_sections = plan.get("sections", []) if isinstance(plan, dict) else []
-    languages = plan.get("languages", []) if isinstance(plan, dict) else []
-    localized_required = isinstance(languages, list) and "zh" in languages
-
-    primary = _text(snapshot, candidate_root / "README.md")
-    localized = _text(
-        snapshot,
-        candidate_root / "README_zh.md",
-        required=localized_required,
-        fallback="Localized README was not requested for this run.\n",
-    ) if localized_required else "Localized README was not requested for this run.\n"
-    before_primary = _text(
-        snapshot, workspace.target_root / "README.md", required=False
-    )
-    before_localized = (
-        _text(snapshot, workspace.target_root / "README_zh.md", required=False)
-        if localized_required else ""
-    )
-    readmes = {"README.md": primary, "README_zh.md": localized}
-    diffs = {
-        "README.md": _diff("README.md", before_primary, primary),
-        "README_zh.md": _diff("README_zh.md", before_localized, localized),
-    }
+    explicit_locales = plan.get("locales") if isinstance(plan, dict) and plan.get("schema_version") == 2 else None
+    locale_by_path: dict[str, str] | None = None
+    if isinstance(explicit_locales, list):
+        locale_by_path = {entry["readme_path"]: entry["tag"] for entry in explicit_locales}
+        readmes = {
+            path: _text(snapshot, candidate_root.joinpath(*PurePosixPath(path).parts))
+            for path in locale_by_path
+        }
+        diffs = {
+            path: _diff(
+                path,
+                _text(snapshot, workspace.target_root.joinpath(*PurePosixPath(path).parts), required=False),
+                readmes[path],
+            )
+            for path in locale_by_path
+        }
+    else:
+        languages = plan.get("languages", []) if isinstance(plan, dict) else []
+        localized_required = isinstance(languages, list) and "zh" in languages
+        primary = _text(snapshot, candidate_root / "README.md")
+        localized = _text(
+            snapshot,
+            candidate_root / "README_zh.md",
+            required=localized_required,
+            fallback="Localized README was not requested for this run.\n",
+        ) if localized_required else "Localized README was not requested for this run.\n"
+        readmes = {"README.md": primary, "README_zh.md": localized}
+        diffs = {
+            "README.md": _diff("README.md", _text(snapshot, workspace.target_root / "README.md", required=False), primary),
+            "README_zh.md": _diff("README_zh.md", _text(snapshot, workspace.target_root / "README_zh.md", required=False) if localized_required else "", localized),
+        }
     editorial = evaluate_editorial(
         readmes,
         planned_sections=planned_sections if isinstance(planned_sections, list) else [],
         diff_lines={name: sum(line.startswith(("+", "-")) and not line.startswith(("+++", "---")) for line in value.splitlines()) for name, value in diffs.items()},
+        locale_by_path=locale_by_path,
     ).as_dict()
 
     validation_path = _attempt_path(workspace, manifest, 6, "validation-report.json")
@@ -264,9 +274,11 @@ def build_preview_snapshot(
         "diagnostics": diagnostics,
         "evaluation": evaluation,
         "editorial": editorial,
-        "mobile": {"source": "README.md", "width_px": 375},
+        "mobile": {"source": next(iter(readmes)), "width_px": 375},
         "revision": {"current": manifest.get("current_revision") or "none"},
     }
+    if locale_by_path is not None:
+        report["locale_by_path"] = locale_by_path
     return report, readmes
 
 

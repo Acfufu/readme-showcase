@@ -25,9 +25,8 @@
     "locales": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 2,
       "uniqueItems": true,
-      "items": {"enum": ["en", "zh-Hans"]}
+      "items": {"$ref": "#/$defs/locale"}
     },
     "project_classification": {
       "type": ["string", "null"],
@@ -64,7 +63,9 @@
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "text": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!.*(?:^|\\s)(?:/|~/))(?!.*(?i:api[_-]?key|api[_-]?token|access[_-]?token|auth[_-]?token|password|private[_-]?key|secret)\\s*[:=])[^\\u0000]+$"},
     "path": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!/|~/)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\\\u0000]+$"},
-    "plan": {
+    "locale": {"enum": ["en", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de"]},
+    "plan": {"oneOf": [{"$ref": "#/$defs/planV1"}, {"$ref": "#/$defs/planV2"}]},
+    "planV1": {
       "type": "object",
       "additionalProperties": false,
       "required": ["schema_version", "mode", "languages", "sections", "visual_intent", "diagram_route", "commands", "evidence_ids"],
@@ -77,6 +78,30 @@
         "diagram_route": {"enum": ["none", "static", "elk"]},
         "commands": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
         "evidence_ids": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}}
+      }
+    },
+    "planV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "mode", "locales", "sections", "visual_intent", "diagram_route", "commands", "evidence_ids"],
+      "properties": {
+        "schema_version": {"const": 2},
+        "mode": {"enum": ["readme", "asset-only", "audit-only"]},
+        "locales": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tag", "readme_path"],
+            "properties": {"tag": {"$ref": "#/$defs/locale"}, "readme_path": {"$ref": "#/$defs/path"}}
+          }
+        },
+        "sections": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "visual_intent": {"$ref": "#/$defs/text"},
+        "diagram_route": {"enum": ["none", "static", "elk"]},
+        "commands": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}}
       }
     },
     "retrievalRecord": {

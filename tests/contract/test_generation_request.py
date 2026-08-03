@@ -20,6 +20,9 @@ from skill.scripts.readme_showcase.contracts.plan import (
     normalize_generation_text,
     validate_readme_plan,
 )
+from skill.scripts.readme_showcase.contracts.locale import parse_locale
+from skill.scripts.readme_showcase.contracts.evidence import build_fact
+from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
 from skill.scripts.readme_showcase.generation.request import (
     MAX_GENERATION_REQUEST_BYTES,
     build_generation_request,
@@ -33,6 +36,45 @@ FIXTURES = ROOT / "tests" / "fixtures" / "contracts"
 
 
 class GenerationRequestContractTests(unittest.TestCase):
+    def test_exact_seven_locales_and_v2_explicit_output_paths(self) -> None:
+        allowed = ("en", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de")
+        self.assertEqual(tuple(parse_locale(tag) for tag in allowed), allowed)
+        for tag in ("", "EN", "zh_CN", "zh-Hans-CN", "en-US", "es", "x-private", "en-u-hc-h12"):
+            with self.subTest(tag=tag):
+                self.assert_code("E_LOCALE", parse_locale, tag)
+
+        fact = build_fact(kind="file-presence", path="README.md", locator=None, semantic_key="presence", value=True, source_bytes=b"source\n")
+        evidence = EvidenceGraph([fact]).to_dict()
+        plan = {
+            "schema_version": 2,
+            "mode": "readme",
+            "locales": [
+                {"tag": "en", "readme_path": "docs/primary.md"},
+                {"tag": "zh-Hans", "readme_path": "localized/guide.md"},
+                {"tag": "ja", "readme_path": "notes/release.md"},
+            ],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": "none",
+            "commands": [],
+            "evidence_ids": [fact["fact_id"]],
+        }
+        retrieval = self.retrieval()
+        retrieval["query"]["evidence_sha256"] = hashlib.sha256(canonical_json_bytes(evidence)).hexdigest()
+        request = build_generation_request(
+            target={"repository": "owner/demo", "base_sha": "a" * 40},
+            locales=["en", "zh-Hans", "ja"],
+            project_classification="developer-tool",
+            plan=plan,
+            retrieval_packet=retrieval,
+            evidence_packet=evidence,
+        )
+        self.assertEqual(request["locales"], ["en", "zh-Hans", "ja"])
+        self.assertEqual(
+            request["output_contract"]["required_files"],
+            ["asset-manifest.json", "claim-map.json", "docs/primary.md", "localized/guide.md", "notes/release.md"],
+        )
+
     def plan(self) -> dict[str, object]:
         return {
             "schema_version": 1,

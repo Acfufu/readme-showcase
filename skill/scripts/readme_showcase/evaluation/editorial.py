@@ -7,8 +7,9 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Iterable, Literal, Mapping, Sequence
 
-from ...pipeline_contracts import canonical_json_bytes
+from ...pipeline_contracts import ContractError, canonical_json_bytes
 from ...pipeline_core import segment_markdown_blocks
+from ..contracts.locale import parse_locale
 from ..diagnostics import Diagnostic
 
 
@@ -277,6 +278,7 @@ def _locale_structure(document: _Document) -> tuple[tuple[int, str], ...]:
 
 def evaluate_editorial(
     readmes: Mapping[str, str], *, planned_sections: Sequence[str] = (), diff_lines: Mapping[str, int] | None = None,
+    locale_by_path: Mapping[str, str] | None = None,
 ) -> EditorialReport:
     """Review Markdown strings deterministically; this function never opens paths or executes content."""
     if not isinstance(readmes, Mapping) or not all(isinstance(path, str) and isinstance(text, str) and "\0" not in path for path, text in readmes.items()):
@@ -285,24 +287,38 @@ def evaluate_editorial(
         raise ValueError("planned_sections must contain strings")
     if diff_lines is not None and (not isinstance(diff_lines, Mapping) or not all(isinstance(path, str) and type(lines) is int and lines >= 0 for path, lines in diff_lines.items())):
         raise ValueError("diff_lines must map paths to non-negative integers")
+    if locale_by_path is not None:
+        if not isinstance(locale_by_path, Mapping) or set(locale_by_path) != set(readmes):
+            raise ValueError("locale_by_path must map every README path exactly once")
+        try:
+            explicit_locales = {path: parse_locale(locale_by_path[path], f"locale_by_path[{path}]") for path in locale_by_path}
+        except ContractError as exc:
+            raise ValueError(str(exc)) from exc
+        if len(set(explicit_locales.values())) != len(explicit_locales):
+            raise ValueError("locale_by_path must contain unique locales")
+    else:
+        explicit_locales = {path: _locale(path) for path in readmes}
     planned = {_normalized(section) for section in planned_sections}
     documents = [_document(path, readmes[path]) for path in sorted(readmes)]
-    primary_locale = "en" if any(_locale(document.path) == "en" for document in documents) else "zh"
+    primary_locale = next(iter(explicit_locales.values())) if locale_by_path is not None else ("en" if "en" in explicit_locales.values() else "zh")
     findings: list[EditorialDiagnostic] = []
     not_applicable: list[EditorialDiagnostic] = []
     for document in documents:
-        document_findings, document_na = _review_document(document, planned if _locale(document.path) == primary_locale else set(), None if diff_lines is None else diff_lines.get(document.path))
+        document_findings, document_na = _review_document(document, planned if explicit_locales[document.path] == primary_locale else set(), None if diff_lines is None else diff_lines.get(document.path))
         findings.extend(document_findings)
         not_applicable.extend(document_na)
-    locales = {locale: document for locale, document in ((_locale(document.path), document) for document in documents) if locale in {"en", "zh"}}
-    if set(locales) == {"en", "zh"}:
-        en, zh = locales["en"], locales["zh"]
-        en_structure = _locale_structure(en)
-        zh_structure = _locale_structure(zh)
-        if en_structure != zh_structure:
-            mismatch = next((index for index, pair in enumerate(zip(en_structure, zh_structure)) if pair[0] != pair[1]), min(len(en_structure), len(zh_structure)))
-            document, anchor = (zh, zh.headings[mismatch]) if mismatch < len(zh.headings) else (en, en.headings[mismatch])
-            findings.append(_diagnostic("W_EDITORIAL_LOCALE_STRUCTURE", "English and Chinese README heading structures differ", document.path, anchor.line, anchor.text, "Align bilingual section identities, levels, and order.", ("locale-structure",)))
+    locales = {explicit_locales[document.path]: document for document in documents}
+    if len(locales) > 1:
+        primary = locales[primary_locale]
+        primary_structure = _locale_structure(primary)
+        for locale, document in locales.items():
+            if locale == primary_locale:
+                continue
+            structure = _locale_structure(document)
+            if primary_structure != structure:
+                mismatch = next((index for index, pair in enumerate(zip(primary_structure, structure)) if pair[0] != pair[1]), min(len(primary_structure), len(structure)))
+                anchor_document, anchor = (document, document.headings[mismatch]) if mismatch < len(document.headings) else (primary, primary.headings[mismatch])
+                findings.append(_diagnostic("W_EDITORIAL_LOCALE_STRUCTURE", "Localized README heading structures differ", anchor_document.path, anchor.line, anchor.text, "Align localized section identities, levels, and order.", ("locale-structure",)))
     else:
         not_applicable.append(_not_applicable("locale-structure"))
     return EditorialReport(tuple(sorted(set(findings), key=EditorialDiagnostic.sort_key)), tuple(sorted(set(not_applicable), key=EditorialDiagnostic.sort_key)))

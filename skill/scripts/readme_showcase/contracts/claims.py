@@ -7,6 +7,7 @@ from typing import Any, Mapping
 from ...pipeline_contracts import ContractError, canonical_json_bytes, canonical_sha256
 from .common import normalize_text
 from .evidence import validate_evidence_graph
+from .locale import parse_locale
 
 
 CLAIM_MAP_SCHEMA_VERSION = 2
@@ -61,7 +62,12 @@ def _evidence_ids(value: Any, context: str) -> list[str]:
 
 def _locale(claim_id: str) -> str | None:
     parts = claim_id.split(":", 2)
-    return parts[1] if len(parts) == 3 and parts[1] in {"en", "zh"} else None
+    if len(parts) != 3:
+        return None
+    try:
+        return parse_locale(parts[1], "claim locale")
+    except ContractError:
+        return None
 
 
 def validate_claim_map(
@@ -121,7 +127,7 @@ def validate_claim_map(
             if pair_id is not None:
                 pair_id = normalize_text(pair_id, f"{context}.language_pair_id", maximum=512)
                 if _locale(claim_id) is None:
-                    raise ContractError("E_CLAIM_LANGUAGE", f"{context} paired claim ID must declare en or zh locale")
+                    raise ContractError("E_CLAIM_LANGUAGE", f"{context} paired claim ID must declare a supported locale")
             item = {
                 "claim_id": claim_id,
                 "content_sha256": content_hash,
@@ -139,13 +145,14 @@ def validate_claim_map(
 
     for pair_id, pair in pairs.items():
         locales = [_locale(item["claim_id"]) for item in pair]
-        if sorted(locales) != ["en", "zh"]:
-            raise ContractError("E_CLAIM_LANGUAGE", f"language pair {pair_id} requires exactly en and zh")
-        first, second = pair
-        if (
-            first["evidence_ids"] != second["evidence_ids"]
-            or first["support_level"] != second["support_level"]
-            or first["claim_kind"] != second["claim_kind"]
+        if len(pair) < 2 or None in locales or len(set(locales)) != len(locales):
+            raise ContractError("E_CLAIM_LANGUAGE", f"language pair {pair_id} requires unique supported locale members")
+        first = pair[0]
+        if any(
+            first["evidence_ids"] != item["evidence_ids"]
+            or first["support_level"] != item["support_level"]
+            or first["claim_kind"] != item["claim_kind"]
+            for item in pair[1:]
         ):
             raise ContractError("E_CLAIM_LANGUAGE", f"language pair {pair_id} changed evidence or support semantics")
     return copy.deepcopy(normalized)

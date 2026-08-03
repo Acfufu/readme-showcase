@@ -34,6 +34,47 @@ FIXTURES = ROOT / "tests" / "fixtures" / "contracts"
 
 
 class BundleV2ContractTests(unittest.TestCase):
+    def test_explicit_plan_asset_and_generalized_pair_contracts(self) -> None:
+        plan = {
+            "schema_version": 2,
+            "mode": "readme",
+            "locales": [
+                {"tag": "en", "readme_path": "docs/start.md"},
+                {"tag": "ja", "readme_path": "docs/not-zh.md"},
+            ],
+            "sections": ["overview"],
+            "visual_intent": "hero",
+            "diagram_route": "static",
+            "commands": [],
+            "evidence_ids": ["file:" + "a" * 64],
+        }
+        self.assertEqual(validate_readme_plan(plan)["locales"], plan["locales"])
+
+        fact = self.fact()
+        graph = self.graph(fact)
+        claim = self.claim_map(fact["fact_id"])
+        first = claim["markdown_blocks"][0]
+        first["language_pair_id"] = "overview"
+        second = copy.deepcopy(first)
+        second["claim_id"] = "markdown:ja:overview"
+        second["content_sha256"] = "1" * 64
+        claim["markdown_blocks"].append(second)
+        validate_claim_map(claim, evidence_graph=graph)
+
+        neutral = {
+            "schema_version": 2,
+            "assets": [{
+                "asset_id": "hero",
+                "path": "assets/deceptive-zh.png",
+                "language_neutral": True,
+                "provenance": {"kind": "derived", "path": "source/README.md", "sha256": hashlib.sha256(b"source evidence\n").hexdigest()},
+                "artifact_sha256": "2" * 64,
+                "candidate_sha256": "2" * 64,
+                "evidence_ids": [fact["fact_id"]],
+            }],
+        }
+        self.assertTrue(validate_asset_manifest(neutral, evidence_graph=graph)["assets"][0]["language_neutral"])
+
     def assert_code(self, code: str, function: Callable[..., Any], *args: object, **kwargs: object) -> None:
         with self.assertRaises(ContractError) as raised:
             function(*args, **kwargs)
@@ -112,7 +153,7 @@ class BundleV2ContractTests(unittest.TestCase):
         english = bilingual["markdown_blocks"][0]
         english["language_pair_id"] = "overview"
         chinese = copy.deepcopy(english)
-        chinese["claim_id"] = "markdown:zh:overview"
+        chinese["claim_id"] = "markdown:zh-Hans:overview"
         chinese["content_sha256"] = hashlib.sha256("概览".encode()).hexdigest()
         bilingual["markdown_blocks"].append(chinese)
         validate_claim_map(bilingual, evidence_graph=graph)
@@ -156,7 +197,12 @@ class BundleV2ContractTests(unittest.TestCase):
         if bilingual:
             (root / "README_zh.generated.md").write_bytes("# 概览\n".encode())
         plan = {
-            "schema_version": 2, "mode": "readme", "languages": ["en", "zh"] if bilingual else ["en"],
+            "schema_version": 2,
+            "mode": "readme",
+            "locales": (
+                [{"tag": "en", "readme_path": "README.generated.md"}, {"tag": "zh-Hans", "readme_path": "README_zh.generated.md"}]
+                if bilingual else [{"tag": "en", "readme_path": "README.generated.md"}]
+            ),
             "sections": ["overview"], "visual_intent": "hero", "diagram_route": "static",
             "commands": [], "evidence_ids": [item["fact_id"] for item in graph["facts"]],
         }
@@ -165,13 +211,13 @@ class BundleV2ContractTests(unittest.TestCase):
             english = claims["markdown_blocks"][0]
             english["language_pair_id"] = "overview"
             chinese = copy.deepcopy(english)
-            chinese["claim_id"] = "markdown:zh:overview"
+            chinese["claim_id"] = "markdown:zh-Hans:overview"
             chinese["content_sha256"] = hashlib.sha256("# 概览".encode()).hexdigest()
             claims["markdown_blocks"].append(chinese)
         assets = {
             "schema_version": 2,
             "assets": [{
-                "asset_id": "hero", "path": "assets/hero.png", "locale": "en",
+                "asset_id": "hero", "path": "assets/hero.png", "locale": "en", "language_neutral": False,
                 "provenance": {"kind": "derived", "path": "source/README.md", "sha256": hashlib.sha256(source).hexdigest()},
                 "artifact_sha256": hashlib.sha256(asset_raw).hexdigest(),
                 "candidate_sha256": hashlib.sha256(asset_raw).hexdigest(),
