@@ -107,8 +107,58 @@ e\u0301
         self.assertEqual(first.canonical_bytes(), second.canonical_bytes())
         self.assertNotIn("W_EDITORIAL_BADGES", {item.code for item in first.findings})
         self.assertNotIn("W_EDITORIAL_HEADING_HIERARCHY", {item.code for item in first.findings})
-        self.assertEqual(hashlib.sha256(text.encode()).hexdigest(), hashlib.sha256(text.encode()).hexdigest())
+        self.assertEqual(first.findings, ())
         self.assertEqual(canonical_json_bytes(first.as_dict()), first.canonical_bytes())
+
+    def test_gate_regression_table_for_locale_images_and_comments(self) -> None:
+        base = "# Demo\n\nProject definition is clear enough for readers.\n\n[Quick Start](#quick-start)\n\n## Quick Start\n"
+        en = base + "\n## Install\n\nInstall it.\n\n## Usage\n\nUse it.\n"
+        rows = (
+            (
+                "reversed translated sections",
+                en,
+                base + "\n## 使用\n\n使用它。\n\n## 安装\n\n安装它。\n",
+                {"W_EDITORIAL_LOCALE_STRUCTURE"},
+                ("README_zh.md", "使用", 9),
+            ),
+            (
+                "matching translated sections",
+                en,
+                base + "\n## 安装\n\n安装它。\n\n## 使用\n\n使用它。\n",
+                set(),
+                None,
+            ),
+            (
+                "image blocks separated by blank lines",
+                base + "\n![](first.png)\n\n![](second.png)\n",
+                base,
+                {"W_EDITORIAL_ADJACENT_IMAGES"},
+                ("README.md", "Quick Start", 11),
+            ),
+            (
+                "caption breaks image blocks",
+                base + "\n![](first.png)\n\n*Caption for first image.*\n\n![](second.png)\n",
+                base,
+                set(),
+                None,
+            ),
+            (
+                "comments are inert",
+                base + "\n<!--\n### skipped heading\n![badge](https://img.shields.io/comment)\n![](first.png)\n\n![](second.png)\n",
+                base,
+                set(),
+                None,
+            ),
+        )
+        for name, english, chinese, expected, location in rows:
+            with self.subTest(name=name):
+                findings = self.evaluate(english, chinese).findings
+                codes = {item.code for item in findings}
+                relevant = {"W_EDITORIAL_LOCALE_STRUCTURE", "W_EDITORIAL_ADJACENT_IMAGES", "W_EDITORIAL_HEADING_HIERARCHY", "W_EDITORIAL_BADGES"}
+                self.assertEqual(codes & relevant, expected)
+                if location is not None:
+                    finding = next(item for item in findings if item.code in expected)
+                    self.assertEqual((finding.path, finding.heading, finding.line), location)
 
     def test_paths_are_never_opened_and_fixtures_remain_immutable_under_concurrency(self) -> None:
         fixture_paths = sorted(FIXTURES.glob("*.md"))

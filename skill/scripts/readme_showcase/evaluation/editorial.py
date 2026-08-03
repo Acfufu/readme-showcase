@@ -18,8 +18,16 @@ _BADGE = re.compile(r"(?:badge|badgen|shields\.io)", re.IGNORECASE)
 _LINK = re.compile(r"\[([^]]+)\]\([^)]*\)")
 _FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
 _SCRIPT = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE)
+_COMMENT = re.compile(r"<!--.*?(?:-->|$)", re.DOTALL)
 _ACTION = re.compile(r"\b(quick\s*start|get\s*started|install|usage)\b|快速开始|开始使用|安装|使用")
 _QUICK_START = re.compile(r"^quick\s*start$|^getting\s*started$|^快速开始$|^开始使用$", re.IGNORECASE)
+_SECTION_ALIASES = {
+    "quick start": "quick-start", "getting started": "quick-start", "快速开始": "quick-start", "开始使用": "quick-start",
+    "install": "install", "installation": "install", "安装": "install",
+    "usage": "usage", "use": "usage", "使用": "usage", "用法": "usage",
+    "plan": "plan", "roadmap": "plan", "计划": "plan", "路线图": "plan",
+    "architecture": "architecture", "架构": "architecture",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,10 +92,15 @@ def _clean_text(value: str) -> str:
     return _normalized(re.sub(r"[`*_>#]", "", _LINK.sub(r"\1", value)))
 
 
+def _mask_comments(text: str) -> str:
+    return _COMMENT.sub(lambda match: re.sub(r"[^\r\n]", " ", match.group()), text)
+
+
 def _visible_lines(text: str) -> tuple[tuple[str, ...], tuple[tuple[int, str], ...]]:
-    lines = tuple(text.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
+    masked = _mask_comments(text)
+    lines = tuple(masked.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
     # Keep segmentation behavior as the common safety boundary; line metadata is added below.
-    segment_markdown_blocks(text)
+    segment_markdown_blocks(masked)
     visible: list[tuple[int, str]] = []
     fence: str | None = None
     script = False
@@ -176,6 +189,26 @@ def _heading_at(document: _Document, line: int) -> str | None:
     return next((heading.text for heading in reversed(document.headings) if heading.line <= line), None)
 
 
+def _adjacent_image_line(document: _Document) -> int | None:
+    blocks: list[list[tuple[int, str]]] = []
+    block: list[tuple[int, str]] = []
+    for line, value in (*document.visible, (0, "")):
+        if value.strip():
+            block.append((line, value))
+        elif block:
+            blocks.append(block)
+            block = []
+    images_in_run = 0
+    for block in blocks:
+        if all(_IMAGE.match(value) for _line, value in block):
+            if images_in_run + len(block) >= 2:
+                return block[0][0] if images_in_run else block[1][0]
+            images_in_run += len(block)
+        else:
+            images_in_run = 0
+    return None
+
+
 def _review_document(document: _Document, planned_sections: set[str], diff_lines: int | None) -> tuple[list[EditorialDiagnostic], list[EditorialDiagnostic]]:
     findings = _first_screen(document)
     not_applicable: list[EditorialDiagnostic] = []
@@ -199,12 +232,9 @@ def _review_document(document: _Document, planned_sections: set[str], diff_lines
     if len(badges) > 8:
         line, _ = badges[8]
         findings.append(_diagnostic("W_EDITORIAL_BADGES", "README contains more than 8 badges", document.path, line, _heading_at(document, line), "Keep only the most useful eight badges.", ("badges",)))
-    images = [(line, value) for line, value in document.visible if _IMAGE.match(value)]
-    for first, second in zip(images, images[1:]):
-        between = [value for line, value in document.visible if first[0] < line < second[0] and value.strip()]
-        if second[0] == first[0] + 1 and not between and not _IMAGE.match(first[1]).group(1).strip() and not _IMAGE.match(second[1]).group(1).strip():
-            findings.append(_diagnostic("W_EDITORIAL_ADJACENT_IMAGES", "adjacent images have no caption", document.path, second[0], _heading_at(document, second[0]), "Add captions or explanatory text between related images.", ("adjacent-images",)))
-            break
+    image_line = _adjacent_image_line(document)
+    if image_line is not None:
+        findings.append(_diagnostic("W_EDITORIAL_ADJACENT_IMAGES", "adjacent images have no caption", document.path, image_line, _heading_at(document, image_line), "Add captions or explanatory text between related images.", ("adjacent-images",)))
     quick = next((heading for heading in document.headings if _QUICK_START.match(_normalized(heading.text))), None)
     if quick is None:
         not_applicable.append(_not_applicable("quick-start-distance"))
@@ -228,6 +258,13 @@ def _review_document(document: _Document, planned_sections: set[str], diff_lines
 
 def _locale(path: str) -> str:
     return "zh" if re.search(r"(?:^|[_-])zh(?:[_-]|\.)", path.casefold()) else "en"
+
+
+def _locale_structure(document: _Document) -> tuple[tuple[int, str], ...]:
+    return tuple(
+        (heading.level, "title" if index == 0 and heading.level == 1 else _SECTION_ALIASES.get(_normalized(heading.text), _normalized(heading.text)))
+        for index, heading in enumerate(document.headings)
+    )
 
 
 def evaluate_editorial(
@@ -256,11 +293,12 @@ def evaluate_editorial(
     locales = {locale: document for locale, document in ((_locale(document.path), document) for document in documents) if locale in {"en", "zh"}}
     if set(locales) == {"en", "zh"}:
         en, zh = locales["en"], locales["zh"]
-        en_structure = tuple(heading.level for heading in en.headings)
-        zh_structure = tuple(heading.level for heading in zh.headings)
+        en_structure = _locale_structure(en)
+        zh_structure = _locale_structure(zh)
         if en_structure != zh_structure:
-            anchor = zh.headings[min(len(zh.headings), len(en.headings)) - 1] if zh.headings else _Heading(1, "", 1)
-            findings.append(_diagnostic("W_EDITORIAL_LOCALE_STRUCTURE", "English and Chinese README heading structures differ", zh.path, anchor.line, anchor.text or None, "Align bilingual heading levels and section order.", ("locale-structure",)))
+            mismatch = next((index for index, pair in enumerate(zip(en_structure, zh_structure)) if pair[0] != pair[1]), min(len(en_structure), len(zh_structure)))
+            document, anchor = (zh, zh.headings[mismatch]) if mismatch < len(zh.headings) else (en, en.headings[mismatch])
+            findings.append(_diagnostic("W_EDITORIAL_LOCALE_STRUCTURE", "English and Chinese README heading structures differ", document.path, anchor.line, anchor.text, "Align bilingual section identities, levels, and order.", ("locale-structure",)))
     else:
         not_applicable.append(_not_applicable("locale-structure"))
     return EditorialReport(tuple(sorted(set(findings), key=EditorialDiagnostic.sort_key)), tuple(sorted(set(not_applicable), key=EditorialDiagnostic.sort_key)))
