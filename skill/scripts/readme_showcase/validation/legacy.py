@@ -1,0 +1,1362 @@
+from __future__ import annotations
+
+import importlib
+import hashlib
+import json
+import os
+import re
+import stat
+import subprocess
+import tempfile
+import time
+from pathlib import Path, PurePosixPath
+from typing import Any, NoReturn, cast
+from urllib.parse import urlparse
+
+_PREFIX = "skill.scripts." if __package__ and __package__.startswith("skill.") else ""
+_DOMAIN_PREFIX = "skill.scripts." if _PREFIX else "scripts."
+_CONTRACTS = importlib.import_module(f"{_PREFIX}pipeline_contracts")
+_AUDIT = importlib.import_module(f"{_PREFIX}audit_readme")
+_SCANNER_SERVICE = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.scanner.service")
+_RETRIEVAL_SERVICE = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.retrieval.service")
+_VALIDATION_BUNDLE = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.validation.bundle")
+_EVALUATION = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.evaluation")
+_BEHAVIOR = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.evaluation.behavior")
+_EVALUATION_REPORT = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.evaluation.report")
+ContractError = _CONTRACTS.ContractError
+canonical_sha256 = _CONTRACTS.canonical_sha256
+read_regular_bytes = _CONTRACTS.read_regular_bytes
+validate_contract = _CONTRACTS.validate_contract
+audit_readme = _AUDIT.audit_readme
+audit_svg_bytes = _AUDIT.audit_svg_bytes
+image_references = _AUDIT.image_references
+visible_svg_text = _AUDIT.visible_svg_text
+
+
+_SLUG = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
+_COMMIT = re.compile(r"[0-9a-f]{40}\Z")
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_EMBEDDED_MARKERS = ("\n", "\r", "```", "<img", "<svg", "![")
+MAX_FILES = _SCANNER_SERVICE.MAX_FILES
+MAX_DIRECTORIES = _SCANNER_SERVICE.MAX_DIRECTORIES
+MAX_FILE_BYTES = _SCANNER_SERVICE.MAX_FILE_BYTES
+MAX_TOTAL_BYTES = _SCANNER_SERVICE.MAX_TOTAL_BYTES
+MAX_ARTIFACT_BYTES = 16 * 1024 * 1024
+MAX_GIT_OUTPUT_BYTES = 1024 * 1024
+MAX_DEPTH = _SCANNER_SERVICE.MAX_DEPTH
+MAX_SECONDS = _SCANNER_SERVICE.MAX_SECONDS
+# Compatibility inventory: error-code consumers still inspect this public module.
+_SCANNER_ERROR_CODES = frozenset(
+    {
+        "E_SCAN_DEPTH",
+        "E_SCAN_DIRECTORY_COUNT",
+        "E_SCAN_FILE_COUNT",
+        "E_SCAN_FILE_SIZE",
+        "E_SCAN_IO",
+        "E_SCAN_RACE",
+        "E_SCAN_ROOT",
+        "E_SCAN_TIME",
+        "E_SCAN_TOTAL_SIZE",
+    }
+)
+# Compatibility inventory: legacy callers pin these public v1 diagnostics here.
+_RETRIEVAL_ERROR_CODES = frozenset(
+    {
+        "E_DATASET_COMMIT",
+        "E_DATASET_DUPLICATE_ID",
+        "E_DATASET_ID",
+        "E_DATASET_LICENSE",
+        "E_DATASET_LICENSE_CONFLICT",
+        "E_DATASET_LICENSE_EVIDENCE",
+        "E_DATASET_LICENSE_REVIEW",
+        "E_DATASET_PURPOSE",
+        "E_DATASET_RECORD_ID",
+        "E_DATASET_RECORDS",
+        "E_DATASET_REPOSITORY",
+        "E_DATASET_REVISION",
+        "E_DATASET_SHA256",
+        "E_DATASET_SLUG_LIST",
+        "E_DATASET_SOURCE_DUPLICATE",
+        "E_DATASET_SPLIT",
+        "E_DATASET_SPLIT_LEAK",
+        "E_RETRIEVAL_EVIDENCE",
+        "E_RETRIEVAL_MANIFEST",
+        "E_RETRIEVAL_MODE",
+        "E_RETRIEVAL_QUERY",
+    }
+)
+_REF_FIELDS = {"path", "sha256"}
+_BUNDLE_FIELDS = {"schema_version", "mode", "target", "candidate", "artifacts"}
+_TARGET_FIELDS = {"repository", "base_sha"}
+_CANDIDATE_FIELDS = {"readme", "assets"}
+_ARTIFACT_FIELDS = {"plan", "retrieval", "claim_map", "asset_manifest"}
+_PLAN_FIELDS = {
+    "schema_version",
+    "mode",
+    "languages",
+    "sections",
+    "visual_intent",
+    "diagram_route",
+    "commands",
+    "evidence_ids",
+}
+_CLAIM_MAP_FIELDS = {"schema_version", "markdown_blocks", "diagram_labels"}
+_CLAIM_FIELDS = {
+    "claim_id",
+    "content_sha256",
+    "claim_kind",
+    "evidence_sha256",
+    "truth_id",
+    "language_pair_id",
+}
+_ASSET_MANIFEST_FIELDS = {"schema_version", "assets"}
+_ASSET_FIELDS = {
+    "path",
+    "sha256",
+    "type",
+    "engine_kind",
+    "production_kind",
+    "alt",
+    "caption",
+    "truth_ids",
+}
+_ELK_ASSET_FIELDS = _ASSET_FIELDS | {"semantic", "engine_metadata", "fallback"}
+_HYBRID_ASSET_FIELDS = _ASSET_FIELDS | {"layout", "subject", "prompt", "fallback"}
+_MOTION_ASSET_FIELDS = _ASSET_FIELDS | {
+    "source",
+    "motion_spec",
+    "fallback",
+    "motion_approved",
+}
+_ENGINE_METADATA_FIELDS = {
+    "schema_version",
+    "engine_kind",
+    "package_name",
+    "package_version",
+    "package_integrity",
+    "package_sha256",
+    "module_sha256",
+    "license_spdx",
+    "license_sha256",
+    "node_version",
+    "platform",
+    "architecture",
+    "input_sha256",
+    "renderer_sha256",
+    "output_sha256",
+    "run_hashes",
+    "validation",
+    "fallback_state",
+}
+_ELK_SEMANTIC_FIELDS = {
+    "schema_version",
+    "diagram_type",
+    "accessibility_title",
+    "accessibility_claim_id",
+    "direction",
+    "palette",
+    "groups",
+    "nodes",
+    "edges",
+    "claim_ids",
+}
+_ELK_PALETTE_FIELDS = {
+    "background",
+    "node_background",
+    "node_border",
+    "node_text",
+    "edge_color",
+    "edge_label_color",
+}
+_ELK_GROUP_FIELDS = {"id", "label", "parent_id", "claim_id"}
+_ELK_NODE_FIELDS = {"id", "label", "group_id", "kind", "claim_id"}
+_ELK_EDGE_FIELDS = {"source", "target", "label", "claim_id"}
+_ELK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
+_HEX_COLOR = re.compile(r"#[0-9A-Fa-f]{6}\Z")
+_ELK_VERSION = "0.9.3"
+_ELK_LICENSE = "EPL-2.0"
+_ELK_INTEGRITY = (
+    "sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxf"
+    "Omt8KjswHmI5EwCQcPMpOYhQ=="
+)
+_ELK_PACKAGE_SHA256 = "fb9bb80b980c72022fb4540b38aa0545242b4eb67b82250aeae2f0beb67eea25"
+_ELK_MODULE_SHA256 = "b0745abd7f23cd91690a1587e377edbe19fd7233c783300290936720546216d4"
+_ELK_LICENSE_SHA256 = "89591d4578fb1ebd91501312a3d25f021bd865a2e436641c1cf7b1bc7e3c1617"
+_RETRIEVAL_EVIDENCE_FIELDS = {
+    "schema_version",
+    "status",
+    "target",
+    "scan_limits",
+    "files",
+    "facts",
+    "warnings",
+}
+_EVIDENCE_TARGET_FIELDS = {"name", "base_sha"}
+_EVIDENCE_FILE_FIELDS = {"path", "bytes", "lines", "sha256", "content"}
+_EVIDENCE_FACT_FIELDS = {"fact_id", "kind", "path", "evidence_sha256"}
+_ADVISORY_METRICS = (
+    "claim_coverage",
+    "diagram_label_coverage",
+    "evidence_sources",
+    "language_truth_pairs",
+    "observable_commands",
+    "section_intents",
+    "visual_provenance",
+)
+_EVALUATION_REPORT_FIELDS = {
+    "schema_version",
+    "status",
+    "decision_basis",
+    "bundle_sha256",
+    "hard_gate",
+    "advisory",
+}
+_PR_EXCLUDED_PARTS = {
+    ".git",
+    ".omo",
+    "evaluation-only",
+    "node_modules",
+    "previews",
+    "run-artifacts",
+}
+_PR_EXCLUDED_NAMES = {
+    "approval-envelope.json",
+    "asset-manifest.json",
+    "claim-map.json",
+    "evaluation-report.json",
+    "generated-readme-bundle.json",
+    "pr-bundle.json",
+    "readme-plan.json",
+    "remote-state.json",
+    "repository-evidence.json",
+    "retrieval-packet.json",
+}
+_GITHUB_REPOSITORY = re.compile(
+    r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})/"
+    r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})\Z"
+)
+_PR_BUNDLE_FIELDS = {
+    "schema_version",
+    "mode",
+    "target",
+    "candidate_files",
+    "semantic_sources",
+    "evaluation",
+    "metadata",
+    "exclusions",
+    "status",
+    "fingerprint",
+}
+_PR_TARGET_FIELDS = {"repository", "base_sha", "branch"}
+_PR_CANDIDATE_FIELDS = {
+    "path",
+    "before_sha256",
+    "after_sha256",
+    "change",
+}
+_PR_EVALUATION_FIELDS = {"status", "bundle_sha256", "report_sha256"}
+_PR_METADATA_FIELDS = {
+    "commit_message",
+    "pull_request_title",
+    "pull_request_body",
+}
+_REMOTE_STATE_FIELDS = {
+    "schema_version",
+    "repository",
+    "base_sha",
+    "default_branch",
+    "proposed_branch",
+    "branch_exists",
+    "branch_head_sha",
+    "permissions",
+}
+_REMOTE_PERMISSION_FIELDS = {"contents_write", "pull_requests_write"}
+_APPROVAL_FIELDS = {
+    "schema_version",
+    "decision",
+    "repository",
+    "base_sha",
+    "branch",
+    "fingerprint",
+    "evaluation_sha256",
+    "candidate_hashes",
+}
+_APPROVAL_CANDIDATE_FIELDS = {"path", "sha256"}
+_PR_EXCLUSIONS = [
+    ".omo/**",
+    "evaluation-only/**",
+    "node_modules/**",
+    "previews/**",
+    "run-artifacts/**",
+]
+def _fail(code: str, message: str) -> NoReturn:
+    raise ContractError(code, message)
+
+
+def _object(value: Any, fields: set[str], context: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        _fail("E_SCHEMA_TYPE", f"{context} must be a JSON object")
+    missing = sorted(fields - set(value))
+    if missing:
+        _fail("E_SCHEMA_MISSING_FIELD", f"{context} is missing required field: {missing[0]}")
+    unknown = sorted(set(value) - fields)
+    if unknown:
+        _fail("E_SCHEMA_UNKNOWN_FIELD", f"{context} contains unknown field: {unknown[0]}")
+    return value
+
+
+def _text(value: Any, field: str, *, limit: int = 240) -> str:
+    if not isinstance(value, str) or not value or len(value) > limit:
+        _fail("E_DATASET_TEXT", f"{field} must be nonempty text within {limit} characters")
+    if any(marker in value.lower() for marker in _EMBEDDED_MARKERS):
+        _fail("E_DATASET_EMBEDDED_CONTENT", f"{field} contains embedded content")
+    return value
+
+
+def _relative_path(value: Any, context: str) -> PurePosixPath:
+    if not isinstance(value, str) or not value or "\\" in value:
+        _fail("E_PATH", f"{context} must be a nonempty POSIX path")
+    path = PurePosixPath(value)
+    if path.is_absolute() or "." in path.parts or ".." in path.parts or path.as_posix() != value:
+        _fail("E_PATH", f"{context} must be a normalized relative path")
+    return path
+
+
+def _reference(value: Any, context: str) -> dict[str, str]:
+    reference = _object(value, _REF_FIELDS, context)
+    path = _relative_path(reference["path"], f"{context}.path")
+    digest = reference["sha256"]
+    if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+        _fail("E_BUNDLE_HASH", f"{context}.sha256 must be a lowercase SHA-256")
+    return {"path": path.as_posix(), "sha256": digest}
+
+
+def _artifact_bytes(root: Path, reference: dict[str, str], context: str) -> bytes:
+    try:
+        root_info = root.lstat()
+    except FileNotFoundError as exc:
+        raise ContractError("E_BUNDLE_MISSING", f"{context} root is missing") from exc
+    if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+        _fail("E_PATH", f"{context} root must be a real directory")
+    root = root.resolve(strict=True)
+    destination = root.joinpath(*PurePosixPath(reference["path"]).parts)
+    try:
+        raw = read_regular_bytes(
+            destination,
+            maximum=MAX_ARTIFACT_BYTES,
+            path_code="E_PATH",
+            size_code="E_BUNDLE_SIZE",
+        )
+    except ContractError as exc:
+        if exc.code == "E_INPUT_NOT_FOUND":
+            raise ContractError(
+                "E_BUNDLE_MISSING",
+                f"{context} not found: {reference['path']}",
+            ) from exc
+        raise
+    if hashlib.sha256(raw).hexdigest() != reference["sha256"]:
+        _fail("E_BUNDLE_HASH", f"{context} hash does not match {reference['path']}")
+    return raw
+
+
+def _artifact_json(root: Path, value: Any, context: str) -> tuple[dict[str, Any], dict[str, str]]:
+    reference = _reference(value, context)
+    raw = _artifact_bytes(root, reference, context)
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractError("E_INPUT_JSON", f"{context} must be valid UTF-8 JSON") from exc
+    if not isinstance(payload, dict):
+        _fail("E_SCHEMA_TYPE", f"{context} must contain a JSON object")
+    return payload, reference
+
+
+def _string_list(value: Any, context: str, *, allow_empty: bool = True) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or (not allow_empty and not value)
+        or any(not isinstance(item, str) or not item for item in value)
+        or value != sorted(set(value))
+    ):
+        _fail("E_SCHEMA_TYPE", f"{context} must be a sorted unique string list")
+    return value
+
+
+def _validate_plan(payload: Any, mode: str) -> dict[str, Any]:
+    plan = validate_contract(
+        payload,
+        required=_PLAN_FIELDS,
+        optional=set(),
+        context="README plan",
+    )
+    if plan["mode"] != mode:
+        _fail("E_BUNDLE_MODE", "README plan mode differs from bundle mode")
+    languages = _string_list(plan["languages"], "README plan.languages", allow_empty=False)
+    if not set(languages).issubset({"en", "zh"}):
+        _fail("E_README_LANGUAGE", "README plan.languages must contain en and/or zh")
+    _string_list(plan["sections"], "README plan.sections")
+    commands = _string_list(plan["commands"], "README plan.commands")
+    for index, command in enumerate(commands):
+        _text(command, f"README plan.commands[{index}]")
+    _string_list(plan["evidence_ids"], "README plan.evidence_ids")
+    _text(plan["visual_intent"], "README plan.visual_intent")
+    if plan["diagram_route"] not in {"none", "static", "elk"}:
+        _fail("E_BUNDLE_PLAN", "README plan.diagram_route is unsupported")
+    return plan
+
+
+def _validate_svg(
+    raw: bytes,
+    context: str,
+    *,
+    expected_title: str | None = None,
+    expected_labels: list[str] | None = None,
+) -> None:
+    issues = audit_svg_bytes(
+        raw,
+        expected_title=expected_title,
+        expected_labels=expected_labels,
+    )
+    if issues:
+        code, message = issues[0]
+        _fail(code, f"{context}: {message}")
+
+
+def _validate_asset_bytes(raw: bytes, asset_type: str, path: str, context: str) -> None:
+    suffixes = {
+        "svg": {".svg"},
+        "png": {".png"},
+        "webp": {".webp"},
+        "gif": {".gif"},
+    }
+    suffix = PurePosixPath(path).suffix.lower()
+    if suffix not in suffixes.get(asset_type, set()):
+        _fail("E_BUNDLE_ASSET", f"{context}.type does not match path suffix")
+    if asset_type == "svg":
+        _validate_svg(raw, context)
+    elif asset_type == "png" and not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        _fail("E_BUNDLE_ASSET", f"{context} is not PNG bytes")
+    elif asset_type == "gif" and not raw.startswith((b"GIF87a", b"GIF89a")):
+        _fail("E_BUNDLE_ASSET", f"{context} is not GIF bytes")
+    elif asset_type == "webp" and not (
+        len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"
+    ):
+        _fail("E_BUNDLE_ASSET", f"{context} is not WebP bytes")
+
+
+def segment_markdown_blocks(text: str) -> list[str]:
+    blocks: list[str] = []
+    current: list[str] = []
+    fence: str | None = None
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        marker = re.match(r"^[ \t]{0,3}(`{3,}|~{3,})", line)
+        if marker and fence is None:
+            fence = marker.group(1)[0]
+        elif marker and fence == marker.group(1)[0]:
+            fence = None
+        if not line.strip() and fence is None:
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+        else:
+            current.append(line)
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+def _content_sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _load_evidence_facts(
+    root: Path,
+    *,
+    base_sha: str,
+    evidence_ids: list[str],
+) -> tuple[dict[str, str], str]:
+    path = root / "repository-evidence.json"
+    try:
+        path.lstat()
+    except FileNotFoundError as exc:
+        raise ContractError(
+            "E_CLAIM_EVIDENCE",
+            "repository-evidence.json is required for claim validation",
+        ) from exc
+    try:
+        raw = read_regular_bytes(
+            path,
+            maximum=MAX_TOTAL_BYTES,
+            path_code="E_CLAIM_EVIDENCE",
+            size_code="E_CLAIM_EVIDENCE",
+        )
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractError(
+            "E_CLAIM_EVIDENCE",
+            "repository evidence must be UTF-8 JSON",
+        ) from exc
+    evidence = _object(payload, _RETRIEVAL_EVIDENCE_FIELDS, "repository evidence")
+    if evidence["schema_version"] != 1 or evidence["status"] != "complete":
+        _fail("E_CLAIM_EVIDENCE", "claims require complete schema-v1 repository evidence")
+    target = _object(
+        evidence["target"],
+        _EVIDENCE_TARGET_FIELDS,
+        "repository evidence.target",
+    )
+    if target["base_sha"] != base_sha:
+        _fail("E_CLAIM_EVIDENCE", "repository evidence base SHA differs from bundle")
+
+    files = evidence["files"]
+    if not isinstance(files, list):
+        _fail("E_CLAIM_EVIDENCE", "repository evidence.files must be a list")
+    file_hashes: dict[str, str] = {}
+    for index, value in enumerate(files):
+        item = _object(
+            value,
+            _EVIDENCE_FILE_FIELDS,
+            f"repository evidence.files[{index}]",
+        )
+        path_value = _relative_path(item["path"], f"repository evidence.files[{index}].path")
+        content = item["content"]
+        digest = item["sha256"]
+        if (
+            not isinstance(content, str)
+            or not isinstance(digest, str)
+            or not _SHA256.fullmatch(digest)
+            or _content_sha256(content) != digest
+            or item["bytes"] != len(content.encode("utf-8"))
+            or item["lines"] != len(content.splitlines())
+        ):
+            _fail("E_CLAIM_EVIDENCE", "repository evidence file hash/counts are inconsistent")
+        if path_value.as_posix() in file_hashes:
+            _fail("E_CLAIM_EVIDENCE", "repository evidence contains duplicate file path")
+        file_hashes[path_value.as_posix()] = digest
+
+    facts = evidence["facts"]
+    if not isinstance(facts, list):
+        _fail("E_CLAIM_EVIDENCE", "repository evidence.facts must be a list")
+    fact_hashes: dict[str, str] = {}
+    for index, value in enumerate(facts):
+        item = _object(
+            value,
+            _EVIDENCE_FACT_FIELDS,
+            f"repository evidence.facts[{index}]",
+        )
+        fact_id = item["fact_id"]
+        path_value = item["path"]
+        digest = item["evidence_sha256"]
+        if (
+            not isinstance(fact_id, str)
+            or not fact_id
+            or fact_id.startswith(("gold:", "retrieval:"))
+            or item["kind"] != "repository-file"
+            or not isinstance(path_value, str)
+            or file_hashes.get(path_value) != digest
+        ):
+            _fail("E_CLAIM_EVIDENCE", "repository evidence fact is not target-file evidence")
+        if fact_id in fact_hashes:
+            _fail("E_CLAIM_EVIDENCE", f"duplicate repository fact: {fact_id}")
+        fact_hashes[fact_id] = digest
+    if not set(evidence_ids).issubset(fact_hashes):
+        _fail("E_CLAIM_EVIDENCE", "README plan references unknown target evidence")
+    return fact_hashes, hashlib.sha256(raw).hexdigest()
+
+
+def _validate_evidence_checkout(
+    artifact_root: Path,
+    target_root: Path,
+    expected_sha256: str,
+    *,
+    bundle: dict[str, Any],
+) -> None:
+    try:
+        if bundle.get("schema_version") == 2:
+            artifacts = cast(dict[str, Any], bundle["artifacts"])
+            reference = _reference(
+                artifacts["evidence"],
+                "bundle artifacts.evidence",
+            )
+            raw = _artifact_bytes(
+                artifact_root,
+                reference,
+                "bundle artifacts.evidence",
+            )
+            evidence = json.loads(raw.decode("utf-8"))
+            if evidence.get("evidence_sha256") != expected_sha256:
+                _fail("E_PR_EVIDENCE", "repository evidence changed after validation")
+            source_hashes: dict[str, str] = {}
+            for index, fact in enumerate(cast(list[dict[str, Any]], evidence["facts"])):
+                source = cast(dict[str, Any], fact["source"])
+                relative = _relative_path(
+                    source["path"],
+                    f"repository evidence.facts[{index}].source.path",
+                )
+                digest = fact["source_sha256"]
+                previous = source_hashes.setdefault(relative.as_posix(), digest)
+                if previous != digest:
+                    _fail("E_PR_EVIDENCE", "repository evidence source hashes conflict")
+            for path, digest in sorted(source_hashes.items()):
+                current = read_regular_bytes(
+                    target_root.joinpath(*PurePosixPath(path).parts),
+                    maximum=MAX_FILE_BYTES,
+                    path_code="E_PR_EVIDENCE",
+                    size_code="E_PR_EVIDENCE",
+                )
+                if hashlib.sha256(current).hexdigest() != digest:
+                    _fail(
+                        "E_PR_EVIDENCE",
+                        f"repository evidence differs from target: {path}",
+                    )
+            return
+        raw = read_regular_bytes(
+            artifact_root / "repository-evidence.json",
+            maximum=MAX_TOTAL_BYTES,
+            path_code="E_PR_EVIDENCE",
+            size_code="E_PR_EVIDENCE",
+        )
+        if hashlib.sha256(raw).hexdigest() != expected_sha256:
+            _fail("E_PR_EVIDENCE", "repository evidence changed after validation")
+        evidence = json.loads(raw.decode("utf-8"))
+        files = cast(list[dict[str, Any]], evidence["files"])
+        for index, item in enumerate(files):
+            relative = _relative_path(
+                item["path"],
+                f"repository evidence.files[{index}].path",
+            )
+            current = read_regular_bytes(
+                target_root.joinpath(*relative.parts),
+                maximum=MAX_FILE_BYTES,
+                path_code="E_PR_EVIDENCE",
+                size_code="E_PR_EVIDENCE",
+            )
+            if (
+                hashlib.sha256(current).hexdigest() != item["sha256"]
+                or current.decode("utf-8") != item["content"]
+            ):
+                _fail(
+                    "E_PR_EVIDENCE",
+                    f"repository evidence differs from target: {relative.as_posix()}",
+                )
+    except ContractError as exc:
+        if exc.code == "E_PR_EVIDENCE":
+            raise
+        raise ContractError(
+            "E_PR_EVIDENCE",
+            "repository evidence cannot be bound to target checkout",
+        ) from exc
+    except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractError(
+            "E_PR_EVIDENCE",
+            "repository evidence cannot be bound to target checkout",
+        ) from exc
+
+
+def _readme_claim_inputs(
+    root: Path,
+    *,
+    readme_path: str | None,
+    readme_text: str | None,
+    languages: list[str],
+) -> list[dict[str, str]]:
+    if readme_path is None or readme_text is None:
+        return []
+    if len(languages) == 1:
+        return [
+            {
+                "content": block,
+                "content_sha256": _content_sha256(block),
+                "language": languages[0],
+            }
+            for block in segment_markdown_blocks(readme_text)
+        ]
+    if languages != ["en", "zh"]:
+        _fail("E_CLAIM_LANGUAGE", "bilingual claim coverage requires en and zh")
+    primary = PurePosixPath(readme_path)
+    if primary.name == "README.md":
+        primary_language, companion_name = "en", "README_zh.md"
+    elif primary.name == "README_zh.md":
+        primary_language, companion_name = "zh", "README.md"
+    else:
+        _fail("E_CLAIM_LANGUAGE", "bilingual bundle README must use README.md or README_zh.md")
+    companion_path = root.joinpath(*primary.parent.parts, companion_name)
+    try:
+        info = companion_path.lstat()
+    except FileNotFoundError as exc:
+        raise ContractError("E_CLAIM_LANGUAGE", "bilingual companion README is missing") from exc
+    if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+        _fail("E_CLAIM_LANGUAGE", "bilingual companion README must be a regular file")
+    try:
+        companion_text = companion_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ContractError("E_CLAIM_LANGUAGE", "bilingual companion README must be UTF-8") from exc
+    issues, _, _ = audit_readme(companion_path, root=root)
+    if issues:
+        _fail("E_README_AUDIT", issues[0])
+    sources = {
+        primary_language: readme_text,
+        "zh" if primary_language == "en" else "en": companion_text,
+    }
+    return [
+        {
+            "content": block,
+            "content_sha256": _content_sha256(block),
+            "language": language,
+        }
+        for language in languages
+        for block in segment_markdown_blocks(sources[language])
+    ]
+
+
+def _diagram_claim_inputs(
+    payload: Any,
+    *,
+    root: Path,
+    default_language: str,
+) -> list[dict[str, str | None]]:
+    manifest = validate_contract(
+        payload,
+        required=_ASSET_MANIFEST_FIELDS,
+        optional=set(),
+        context="asset manifest",
+    )
+    assets = manifest["assets"]
+    if not isinstance(assets, list):
+        _fail("E_SCHEMA_TYPE", "asset manifest.assets must be a list")
+    expected: list[dict[str, str | None]] = []
+    for index, value in enumerate(assets):
+        if not isinstance(value, dict):
+            _fail("E_SCHEMA_TYPE", f"asset manifest.assets[{index}] must be an object")
+        path_value = value.get("path")
+        language = (
+            "zh"
+            if isinstance(path_value, str)
+            and (
+                "/zh/" in f"/{path_value.lower()}/"
+                or "-zh." in path_value.lower()
+                or "_zh." in path_value.lower()
+            )
+            else default_language
+        )
+        if value.get("engine_kind") == "elk":
+            semantic, _ = _artifact_json(
+                root,
+                value.get("semantic"),
+                f"asset manifest.assets[{index}].semantic",
+            )
+            _validate_elk_semantic(semantic)
+            labels = [
+                (semantic["accessibility_claim_id"], semantic["accessibility_title"]),
+                *[(item["claim_id"], item["label"]) for item in semantic["groups"]],
+                *[(item["claim_id"], item["label"]) for item in semantic["nodes"]],
+                *[
+                    (item["claim_id"], item["label"])
+                    for item in semantic["edges"]
+                    if item["label"] is not None
+                ],
+            ]
+            expected.extend(
+                {
+                    "claim_id": claim_id,
+                    "content": text,
+                    "content_sha256": _content_sha256(text),
+                    "language": language,
+                }
+                for claim_id, text in labels
+            )
+        elif value.get("type") == "svg":
+            reference = _reference(
+                {"path": value.get("path"), "sha256": value.get("sha256")},
+                f"asset manifest.assets[{index}]",
+            )
+            raw = _artifact_bytes(root, reference, f"asset manifest.assets[{index}]")
+            expected.extend(
+                {
+                    "claim_id": None,
+                    "content": text,
+                    "content_sha256": _content_sha256(text),
+                    "language": language,
+                }
+                for text in visible_svg_text(raw)
+            )
+    return expected
+
+
+def _validate_claim_map(
+    payload: Any,
+    *,
+    markdown_expected: list[dict[str, str]],
+    diagram_expected: list[dict[str, str | None]],
+    fact_hashes: dict[str, str],
+    evidence_ids: list[str],
+    languages: list[str],
+) -> set[str]:
+    claim_map = validate_contract(
+        payload,
+        required=_CLAIM_MAP_FIELDS,
+        optional=set(),
+        context="claim map",
+    )
+    if claim_map["schema_version"] != 1:
+        _fail("E_SCHEMA_VERSION", "claim map requires schema_version 1")
+    truth_ids: set[str] = set()
+    claim_ids: set[str] = set()
+    content_hashes: set[str] = set()
+    expected_all = [*markdown_expected, *diagram_expected]
+    expected_hashes = [str(item["content_sha256"]) for item in expected_all]
+    if len(expected_hashes) != len(set(expected_hashes)):
+        _fail("E_CLAIM_DUPLICATE", "generated content contains duplicate block or label hash")
+    expected_by_collection = {
+        "markdown_blocks": {
+            str(item["content_sha256"]): item for item in markdown_expected
+        },
+        "diagram_labels": {
+            str(item["content_sha256"]): item for item in diagram_expected
+        },
+    }
+    paired: dict[tuple[str, str], list[tuple[dict[str, Any], str]]] = {}
+    for collection_name in ("markdown_blocks", "diagram_labels"):
+        collection = claim_map[collection_name]
+        if not isinstance(collection, list):
+            _fail("E_SCHEMA_TYPE", f"claim map.{collection_name} must be a list")
+        ordered_ids: list[str] = []
+        for index, value in enumerate(collection):
+            context = f"claim map.{collection_name}[{index}]"
+            claim = _object(value, _CLAIM_FIELDS, context)
+            claim_id = _text(claim["claim_id"], f"{context}.claim_id")
+            truth_id = _text(claim["truth_id"], f"{context}.truth_id")
+            for field in ("content_sha256", "evidence_sha256"):
+                digest = claim[field]
+                if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+                    _fail("E_BUNDLE_CLAIM", f"{context}.{field} must be a SHA-256")
+            content_hash = cast(str, claim["content_sha256"])
+            if claim_id in claim_ids or content_hash in content_hashes:
+                _fail("E_CLAIM_DUPLICATE", f"{context} duplicates claim id or content hash")
+            claim_ids.add(claim_id)
+            content_hashes.add(content_hash)
+            ordered_ids.append(claim_id)
+            if claim["claim_kind"] not in {"factual", "instruction", "decorative"}:
+                _fail("E_BUNDLE_CLAIM", f"{context}.claim_kind is unsupported")
+            language_pair = claim["language_pair_id"]
+            if language_pair is not None and (not isinstance(language_pair, str) or not language_pair):
+                _fail("E_BUNDLE_CLAIM", f"{context}.language_pair_id is invalid")
+            truth_ids.add(truth_id)
+            if (
+                truth_id.startswith(("gold:", "retrieval:"))
+                or truth_id not in evidence_ids
+                or fact_hashes.get(truth_id) != claim["evidence_sha256"]
+            ):
+                _fail("E_CLAIM_EVIDENCE", f"{context} lacks matching target evidence")
+            expected = expected_by_collection[collection_name].get(content_hash)
+            if expected is None:
+                _fail("E_CLAIM_COVERAGE", f"{context} is orphan or stale")
+            expected_claim_id = expected.get("claim_id")
+            if expected_claim_id is not None and claim_id != expected_claim_id:
+                _fail("E_CLAIM_LABEL", f"{context}.claim_id differs from semantic source")
+            language = str(expected["language"])
+            if collection_name == "markdown_blocks" and not claim_id.startswith(
+                f"markdown:{language}:"
+            ):
+                _fail("E_CLAIM_LANGUAGE", f"{context}.claim_id has wrong language")
+            if len(languages) == 1:
+                if language_pair is not None:
+                    _fail("E_CLAIM_LANGUAGE", f"{context} has stale language pair")
+            else:
+                if language_pair is None:
+                    _fail("E_CLAIM_LANGUAGE", f"{context} is missing bilingual pair")
+                paired.setdefault((collection_name, language_pair), []).append(
+                    (claim, language)
+                )
+        if ordered_ids != sorted(ordered_ids):
+            _fail("E_CLAIM_COVERAGE", f"claim map.{collection_name} must be claim-id sorted")
+        if set(expected_by_collection[collection_name]) != {
+            claim["content_sha256"] for claim in collection
+        }:
+            _fail("E_CLAIM_COVERAGE", f"claim map.{collection_name} is incomplete")
+    if len(languages) > 1:
+        for (collection_name, pair_id), entries in paired.items():
+            if (
+                len(entries) != 2
+                or {language for _, language in entries} != set(languages)
+                or len({claim["truth_id"] for claim, _ in entries}) != 1
+                or len({claim["evidence_sha256"] for claim, _ in entries}) != 1
+                or len({claim["claim_kind"] for claim, _ in entries}) != 1
+            ):
+                _fail(
+                    "E_CLAIM_LANGUAGE",
+                    f"{collection_name} language pair {pair_id} is incomplete or inconsistent",
+                )
+    return truth_ids
+
+
+def _validate_elk_semantic(payload: Any) -> None:
+    semantic = _object(payload, _ELK_SEMANTIC_FIELDS, "ELK semantic source")
+    if semantic["schema_version"] != 1:
+        _fail("E_ELK_SEMANTIC", "ELK semantic schema_version must be 1")
+    if semantic["diagram_type"] not in {"architecture", "flowchart", "c4"}:
+        _fail("E_ELK_SEMANTIC", "ELK diagram type is unsupported")
+    if semantic["direction"] not in {"TB", "BT", "LR", "RL"}:
+        _fail("E_ELK_SEMANTIC", "ELK direction is unsupported")
+
+    def elk_id(value: Any, context: str, *, nullable: bool = False) -> str | None:
+        if nullable and value is None:
+            return None
+        if not isinstance(value, str) or not _ELK_ID.fullmatch(value):
+            _fail("E_ELK_SEMANTIC", f"{context} must be a bounded identifier")
+        return value
+
+    def elk_text(value: Any, context: str, *, nullable: bool = False) -> str | None:
+        if nullable and value is None:
+            return None
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value) > 120
+            or "\n" in value
+            or "\r" in value
+        ):
+            _fail("E_ELK_SEMANTIC", f"{context} must be single-line text within 120 characters")
+        return value
+
+    elk_text(semantic["accessibility_title"], "ELK accessibility_title")
+    elk_id(semantic["accessibility_claim_id"], "ELK accessibility_claim_id")
+    palette = _object(semantic["palette"], _ELK_PALETTE_FIELDS, "ELK palette")
+    for field in sorted(_ELK_PALETTE_FIELDS):
+        if not isinstance(palette[field], str) or not _HEX_COLOR.fullmatch(palette[field]):
+            _fail("E_ELK_SEMANTIC", f"ELK palette.{field} must be a six-digit hex color")
+
+    groups_raw = semantic["groups"]
+    nodes_raw = semantic["nodes"]
+    edges_raw = semantic["edges"]
+    if not isinstance(groups_raw, list) or len(groups_raw) > 50:
+        _fail("E_ELK_SEMANTIC", "ELK groups must contain at most 50 entries")
+    if not isinstance(nodes_raw, list) or not nodes_raw or len(nodes_raw) > 100:
+        _fail("E_ELK_SEMANTIC", "ELK nodes must contain 1-100 entries")
+    if not isinstance(edges_raw, list) or len(edges_raw) > 200:
+        _fail("E_ELK_SEMANTIC", "ELK edges must contain at most 200 entries")
+
+    groups: list[dict[str, Any]] = []
+    for index, raw in enumerate(groups_raw):
+        context = f"ELK groups[{index}]"
+        item = _object(raw, _ELK_GROUP_FIELDS, context)
+        elk_id(item["id"], f"{context}.id")
+        elk_text(item["label"], f"{context}.label")
+        elk_id(item["parent_id"], f"{context}.parent_id", nullable=True)
+        elk_id(item["claim_id"], f"{context}.claim_id")
+        groups.append(item)
+
+    nodes: list[dict[str, Any]] = []
+    for index, raw in enumerate(nodes_raw):
+        context = f"ELK nodes[{index}]"
+        item = _object(raw, _ELK_NODE_FIELDS, context)
+        elk_id(item["id"], f"{context}.id")
+        elk_text(item["label"], f"{context}.label")
+        elk_id(item["group_id"], f"{context}.group_id", nullable=True)
+        elk_id(item["claim_id"], f"{context}.claim_id")
+        if item["kind"] not in {
+            "component",
+            "service",
+            "database",
+            "person",
+            "system",
+            "external",
+            "container",
+        }:
+            _fail("E_ELK_SEMANTIC", f"{context}.kind is unsupported")
+        nodes.append(item)
+
+    edges: list[dict[str, Any]] = []
+    for index, raw in enumerate(edges_raw):
+        context = f"ELK edges[{index}]"
+        item = _object(raw, _ELK_EDGE_FIELDS, context)
+        elk_id(item["source"], f"{context}.source")
+        elk_id(item["target"], f"{context}.target")
+        elk_text(item["label"], f"{context}.label", nullable=True)
+        elk_id(item["claim_id"], f"{context}.claim_id", nullable=True)
+        if (item["label"] is None) != (item["claim_id"] is None):
+            _fail("E_ELK_SEMANTIC", f"{context} label and claim_id must both be null or text")
+        edges.append(item)
+
+    group_ids = {item["id"] for item in groups}
+    node_ids = {item["id"] for item in nodes}
+    all_ids = [item["id"] for item in groups] + [item["id"] for item in nodes]
+    if len(set(all_ids)) != len(all_ids):
+        _fail("E_ELK_SEMANTIC", "ELK group and node ids must be unique")
+    parent_by_group = {item["id"]: item["parent_id"] for item in groups}
+    for group in groups:
+        parent_id = group["parent_id"]
+        if parent_id is not None and parent_id not in group_ids:
+            _fail("E_ELK_SEMANTIC", f"ELK group {group['id']} references unknown parent")
+        seen = {group["id"]}
+        while parent_id is not None:
+            if parent_id in seen:
+                _fail("E_ELK_SEMANTIC", "ELK group hierarchy contains a cycle")
+            seen.add(parent_id)
+            parent_id = parent_by_group[parent_id]
+    for node in nodes:
+        if node["group_id"] is not None and node["group_id"] not in group_ids:
+            _fail("E_ELK_SEMANTIC", f"ELK node {node['id']} references unknown group")
+    for edge in edges:
+        if edge["source"] not in node_ids or edge["target"] not in node_ids:
+            _fail("E_ELK_SEMANTIC", "ELK edge references unknown node")
+
+    claim_ids = semantic["claim_ids"]
+    if (
+        not isinstance(claim_ids, list)
+        or any(not isinstance(item, str) or not _ELK_ID.fullmatch(item) for item in claim_ids)
+        or claim_ids != sorted(set(claim_ids))
+    ):
+        _fail("E_ELK_SEMANTIC", "ELK claim_ids must be a sorted unique identifier list")
+    used_claim_ids = sorted(
+        [semantic["accessibility_claim_id"]]
+        + [item["claim_id"] for item in groups]
+        + [item["claim_id"] for item in nodes]
+        + [item["claim_id"] for item in edges if item["claim_id"] is not None]
+    )
+    if claim_ids != used_claim_ids:
+        _fail("E_ELK_SEMANTIC", "ELK claim_ids must exactly match semantic claims")
+
+
+def _validate_engine_metadata(
+    payload: Any,
+    *,
+    asset_sha256: str,
+    semantic_sha256: str,
+) -> None:
+    metadata = validate_contract(
+        payload,
+        required=_ENGINE_METADATA_FIELDS,
+        optional=set(),
+        context="ELK engine metadata",
+    )
+    if metadata["engine_kind"] != "elk":
+        _fail("E_ENGINE_METADATA", "engine metadata must declare elk")
+    for field in (
+        "package_sha256",
+        "module_sha256",
+        "license_sha256",
+        "input_sha256",
+        "renderer_sha256",
+        "output_sha256",
+    ):
+        value = metadata[field]
+        if not isinstance(value, str) or not _SHA256.fullmatch(value):
+            _fail("E_ENGINE_METADATA", f"engine metadata {field} must be a SHA-256")
+    if metadata["input_sha256"] != semantic_sha256 or metadata["output_sha256"] != asset_sha256:
+        _fail("E_ENGINE_METADATA", "engine input/output hashes do not bind asset")
+    if metadata["run_hashes"] != [asset_sha256, asset_sha256]:
+        _fail("E_ENGINE_METADATA", "engine run hashes must prove equal raw bytes")
+    if metadata["validation"] != "pass" or metadata["fallback_state"] != "preserved":
+        _fail("E_ENGINE_METADATA", "engine validation and fallback state must pass")
+    if (
+        metadata["schema_version"] != 1
+        or metadata["package_name"] != "elkjs"
+        or metadata["package_version"] != _ELK_VERSION
+        or metadata["package_integrity"] != _ELK_INTEGRITY
+        or metadata["package_sha256"] != _ELK_PACKAGE_SHA256
+        or metadata["module_sha256"] != _ELK_MODULE_SHA256
+        or metadata["license_spdx"] != _ELK_LICENSE
+        or metadata["license_sha256"] != _ELK_LICENSE_SHA256
+        or metadata["node_version"] != "22.22.3"
+    ):
+        _fail("E_ENGINE_METADATA", "engine package, runtime, or license is not pinned")
+    for field in (
+        "package_name",
+        "package_version",
+        "package_integrity",
+        "license_spdx",
+        "node_version",
+        "platform",
+        "architecture",
+    ):
+        _text(metadata[field], f"engine metadata.{field}")
+
+
+def _validate_asset_manifest(
+    payload: Any,
+    *,
+    root: Path,
+    candidate_assets: list[dict[str, str]],
+    truth_ids: set[str],
+    readme_text: str | None,
+) -> None:
+    manifest = validate_contract(
+        payload,
+        required=_ASSET_MANIFEST_FIELDS,
+        optional=set(),
+        context="asset manifest",
+    )
+    assets = manifest["assets"]
+    if not isinstance(assets, list):
+        _fail("E_SCHEMA_TYPE", "asset manifest.assets must be a list")
+    manifest_refs: list[dict[str, str]] = []
+    for index, value in enumerate(assets):
+        context = f"asset manifest.assets[{index}]"
+        if not isinstance(value, dict):
+            _fail("E_SCHEMA_TYPE", f"{context} must be an object")
+        engine_kind = value.get("engine_kind")
+        production_kind = value.get("production_kind")
+        if engine_kind == "elk":
+            fields = _ELK_ASSET_FIELDS
+        elif production_kind == "hybrid":
+            fields = _HYBRID_ASSET_FIELDS
+        elif production_kind == "motion":
+            fields = _MOTION_ASSET_FIELDS
+        else:
+            fields = _ASSET_FIELDS
+        asset = _object(value, fields, context)
+        reference = _reference(
+            {"path": asset["path"], "sha256": asset["sha256"]},
+            context,
+        )
+        raw_asset = _artifact_bytes(root, reference, context)
+        manifest_refs.append(reference)
+        if asset["type"] not in {"svg", "png", "webp", "gif"}:
+            _fail("E_BUNDLE_ASSET", f"{context}.type is unsupported")
+        if engine_kind not in {"hand-authored", "elk"}:
+            _fail("E_BUNDLE_ASSET", f"{context}.engine_kind is unsupported")
+        if production_kind not in {"static", "hybrid", "motion"}:
+            _fail("E_BUNDLE_ASSET", f"{context}.production_kind is unsupported")
+        if not isinstance(asset["alt"], str) or not asset["alt"].strip():
+            _fail("E_README_ACCESSIBILITY", f"{context}.alt must be useful text")
+        if not isinstance(asset["caption"], str) or not asset["caption"].strip():
+            _fail("E_README_ACCESSIBILITY", f"{context}.caption must be useful text")
+        _validate_asset_bytes(raw_asset, asset["type"], reference["path"], context)
+        bound_truth_ids = _string_list(asset["truth_ids"], f"{context}.truth_ids", allow_empty=False)
+        if not set(bound_truth_ids).issubset(truth_ids):
+            _fail("E_BUNDLE_CLAIM", f"{context} references unknown truth_id")
+        if engine_kind == "elk":
+            if production_kind != "static":
+                _fail("E_BUNDLE_ASSET", "ELK output must use static production")
+            if asset["type"] != "svg" or not reference["path"].endswith(".svg"):
+                _fail("E_BUNDLE_ASSET", "ELK output must be standalone SVG")
+            semantic_payload, semantic_ref = _artifact_json(root, asset["semantic"], f"{context}.semantic")
+            _validate_elk_semantic(semantic_payload)
+            metadata_payload, _ = _artifact_json(
+                root,
+                asset["engine_metadata"],
+                f"{context}.engine_metadata",
+            )
+            fallback_ref = _reference(asset["fallback"], f"{context}.fallback")
+            fallback_raw = _artifact_bytes(root, fallback_ref, f"{context}.fallback")
+            if not fallback_ref["path"].endswith(".svg"):
+                _fail("E_BUNDLE_ASSET", "ELK fallback must be static SVG")
+            if not semantic_ref["path"].endswith(".diagram.json"):
+                _fail("E_BUNDLE_ASSET", "ELK semantic source must use .diagram.json")
+            metadata_ref = _reference(asset["engine_metadata"], f"{context}.engine_metadata")
+            if not metadata_ref["path"].endswith(".engine.json"):
+                _fail("E_BUNDLE_ASSET", "ELK metadata must use .engine.json")
+            _validate_svg(fallback_raw, f"{context}.fallback")
+            _validate_engine_metadata(
+                metadata_payload,
+                asset_sha256=reference["sha256"],
+                semantic_sha256=semantic_ref["sha256"],
+            )
+            labels = (
+                [item["label"] for item in semantic_payload["groups"]]
+                + [item["label"] for item in semantic_payload["nodes"]]
+                + [
+                    item["label"]
+                    for item in semantic_payload["edges"]
+                    if item["label"] is not None
+                ]
+            )
+            _validate_svg(
+                raw_asset,
+                context,
+                expected_title=semantic_payload["accessibility_title"],
+                expected_labels=labels,
+            )
+        elif production_kind == "hybrid":
+            if asset["type"] not in {"png", "webp"}:
+                _fail("E_BUNDLE_ASSET", "hybrid output must publish PNG or WebP")
+            hybrid_refs = {
+                name: _reference(asset[name], f"{context}.{name}")
+                for name in ("layout", "subject", "prompt", "fallback")
+            }
+            expected_suffixes = {
+                "layout": {".svg"},
+                "subject": {".png", ".webp"},
+                "prompt": {".txt"},
+                "fallback": {".svg"},
+            }
+            for name, source_ref in hybrid_refs.items():
+                source_raw = _artifact_bytes(root, source_ref, f"{context}.{name}")
+                if PurePosixPath(source_ref["path"]).suffix not in expected_suffixes[name]:
+                    _fail("E_BUNDLE_ASSET", f"{context}.{name} has unsupported file type")
+                if source_ref["path"].endswith(".svg"):
+                    _validate_svg(source_raw, f"{context}.{name}")
+            if len({item["path"] for item in hybrid_refs.values()}) != 4:
+                _fail("E_BUNDLE_ASSET", "hybrid editable sources and fallback must be distinct")
+        elif production_kind == "motion":
+            if asset["type"] != "gif":
+                _fail("E_BUNDLE_ASSET", "motion output must publish GIF")
+            if asset["motion_approved"] is not True:
+                _fail("E_VISUAL_MOTION_APPROVAL", "motion requires explicit approval")
+            for name in ("source", "fallback"):
+                source_ref = _reference(asset[name], f"{context}.{name}")
+                source_raw = _artifact_bytes(root, source_ref, f"{context}.{name}")
+                if not source_ref["path"].endswith(".svg"):
+                    _fail("E_BUNDLE_ASSET", f"{context}.{name} must be static SVG")
+                _validate_svg(source_raw, f"{context}.{name}")
+            motion_spec, _ = _artifact_json(
+                root,
+                asset["motion_spec"],
+                f"{context}.motion_spec",
+            )
+            if motion_spec.get("schema_version") != 1:
+                _fail("E_SCHEMA_VERSION", "motion spec requires schema_version 1")
+        if readme_text is not None:
+            matching = [
+                (alt, line)
+                for source, alt, line in image_references(readme_text)
+                if source.removeprefix("./").split("#", 1)[0].split("?", 1)[0]
+                == reference["path"]
+            ]
+            if [alt for alt, _ in matching] != [asset["alt"]]:
+                _fail(
+                    "E_README_ACCESSIBILITY",
+                    f"{context} requires one README image with matching alt",
+                )
+            lines = readme_text.splitlines()
+            image_line = matching[0][1]
+            if not any(
+                asset["caption"] in line
+                for line in lines[image_line : image_line + 3]
+            ):
+                _fail(
+                    "E_README_ACCESSIBILITY",
+                    f"{context}.caption must immediately follow README image",
+                )
+    if manifest_refs != candidate_assets:
+        _fail("E_BUNDLE_ASSET", "candidate assets and asset manifest differ")
+
+
+def _validate_generated_bundle_v1(payload: Any, artifact_root: Path) -> dict[str, object]:
+    bundle = validate_contract(
+        payload,
+        required=_BUNDLE_FIELDS,
+        optional=set(),
+        context="generated README bundle",
+    )
+    mode = bundle["mode"]
+    if mode not in {"readme", "asset-only", "audit-only"}:
+        _fail("E_BUNDLE_MODE", "bundle mode is unsupported")
+    target = _object(bundle["target"], _TARGET_FIELDS, "bundle target")
+    _text(target["repository"], "bundle target.repository")
+    if not isinstance(target["base_sha"], str) or not _COMMIT.fullmatch(target["base_sha"]):
+        _fail("E_BUNDLE_TARGET", "bundle target.base_sha must be immutable")
+
+    candidate = _object(bundle["candidate"], _CANDIDATE_FIELDS, "bundle candidate")
+    readme = candidate["readme"]
+    assets = candidate["assets"]
+    if not isinstance(assets, list):
+        _fail("E_SCHEMA_TYPE", "bundle candidate.assets must be a list")
+    candidate_assets = [
+        _reference(value, f"bundle candidate.assets[{index}]")
+        for index, value in enumerate(assets)
+    ]
+    if candidate_assets != sorted(candidate_assets, key=lambda item: item["path"]):
+        _fail("E_BUNDLE_ASSET", "bundle candidate.assets must be path-sorted")
+    for index, reference in enumerate(candidate_assets):
+        _artifact_bytes(artifact_root, reference, f"bundle candidate.assets[{index}]")
+    readme_path_value: str | None = None
+    readme_text: str | None = None
+    if mode == "readme":
+        readme_ref = _reference(readme, "bundle candidate.readme")
+        readme_path_value = readme_ref["path"]
+        readme_raw = _artifact_bytes(artifact_root, readme_ref, "bundle candidate.readme")
+        try:
+            readme_text = readme_raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ContractError("E_INPUT_ENCODING", "candidate README must be UTF-8") from exc
+        readme_path = artifact_root.joinpath(*PurePosixPath(readme_ref["path"]).parts)
+        readme_issues, _, _ = audit_readme(readme_path, root=artifact_root)
+        if readme_issues:
+            _fail("E_README_AUDIT", readme_issues[0])
+    elif readme is not None:
+        _fail("E_BUNDLE_MODE", f"{mode} mode cannot contain candidate README")
+    if mode == "asset-only" and not candidate_assets:
+        _fail("E_BUNDLE_MODE", "asset-only mode requires at least one asset")
+    if mode == "audit-only" and candidate_assets:
+        _fail("E_BUNDLE_MODE", "audit-only mode cannot contain candidate assets")
+
+    artifacts = _object(bundle["artifacts"], _ARTIFACT_FIELDS, "bundle artifacts")
+    plan, _ = _artifact_json(artifact_root, artifacts["plan"], "bundle artifacts.plan")
+    retrieval, _ = _artifact_json(
+        artifact_root,
+        artifacts["retrieval"],
+        "bundle artifacts.retrieval",
+    )
+    claims, _ = _artifact_json(
+        artifact_root,
+        artifacts["claim_map"],
+        "bundle artifacts.claim_map",
+    )
+    asset_manifest, _ = _artifact_json(
+        artifact_root,
+        artifacts["asset_manifest"],
+        "bundle artifacts.asset_manifest",
+    )
+    validated_plan = _validate_plan(plan, mode)
+    if readme_text is not None:
+        for command in validated_plan["commands"]:
+            if command not in readme_text:
+                _fail("E_README_COMMAND", f"README omits planned command: {command}")
+        if set(validated_plan["languages"]) == {"en", "zh"}:
+            links = re.findall(
+                r"(?:href=[\"']|\]\()(\.?/?README(?:_zh)?\.md)(?:[\"')])",
+                readme_text,
+            )
+            if not links:
+                _fail("E_README_LANGUAGE", "bilingual README must link its language pair")
+    if retrieval.get("schema_version") != 1:
+        _fail("E_SCHEMA_VERSION", "retrieval packet requires schema_version 1")
+    fact_hashes, evidence_sha256 = _load_evidence_facts(
+        artifact_root,
+        base_sha=target["base_sha"],
+        evidence_ids=validated_plan["evidence_ids"],
+    )
+    _validate_asset_manifest(
+        asset_manifest,
+        root=artifact_root,
+        candidate_assets=candidate_assets,
+        truth_ids=set(fact_hashes),
+        readme_text=readme_text,
+    )
+    _validate_claim_map(
+        claims,
+        markdown_expected=_readme_claim_inputs(
+            artifact_root,
+            readme_path=readme_path_value,
+            readme_text=readme_text,
+            languages=validated_plan["languages"],
+        ),
+        diagram_expected=_diagram_claim_inputs(
+            asset_manifest,
+            root=artifact_root,
+            default_language=validated_plan["languages"][0],
+        ),
+        fact_hashes=fact_hashes,
+        evidence_ids=validated_plan["evidence_ids"],
+        languages=validated_plan["languages"],
+    )
+    return {
+        "schema_version": 1,
+        "status": "pass",
+        "mode": mode,
+        "bundle_sha256": canonical_sha256(bundle),
+        "evidence_sha256": evidence_sha256,
+        "candidate_count": (1 if readme is not None else 0) + len(candidate_assets),
+    }
+
+
+def validate_generated_bundle(payload: Any, artifact_root: Path) -> dict[str, object]:
+    return cast(
+        dict[str, object],
+        _VALIDATION_BUNDLE.validate_generated_bundle(
+            payload,
+            artifact_root,
+            validate_v1=_validate_generated_bundle_v1,
+        ),
+    )

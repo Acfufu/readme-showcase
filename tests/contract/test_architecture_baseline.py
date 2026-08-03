@@ -10,7 +10,7 @@ from skill.scripts.pipeline_contracts import canonical_json_bytes
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PIPELINE_CORE_BASELINE_LINES = 2694
+PIPELINE_CORE_BASELINE_LINES = 700
 PUBLIC_SYMBOLS = {
     "build_pr_bundle",
     "check_publish_gate",
