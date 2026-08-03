@@ -22,6 +22,8 @@ _RUN_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts
 _SCANNER = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.scanner.service")
 _EVALUATION_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.evaluation")
 _APPROVAL = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.delivery.approval")
+_GITHUB = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.delivery.github")
+_PUBLISHING = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.publishing")
 ContractError = _CONTRACTS.ContractError
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
 canonical_sha256 = _CONTRACTS.canonical_sha256
@@ -207,6 +209,36 @@ def _create_approval_template(arguments: argparse.Namespace) -> dict[str, object
     )
 
 
+def _deliver(arguments: argparse.Namespace) -> dict[str, object]:
+    if arguments.transport != "gh" or not arguments.dry_run:
+        raise ContractError(
+            _GITHUB.LIVE_DISABLED_CODE,
+            "this command permits only the local --transport gh --dry-run flow",
+        )
+    target_root = Path.cwd().resolve()
+    if any(_within(path, target_root) for path in (arguments.bundle, arguments.approval, arguments.workspace)):
+        raise ContractError(
+            "E_PUBLISH_PATH",
+            "delivery inputs and workspace must stay outside target repository",
+        )
+    bundle = _read_canonical_input(arguments.bundle, "E_PUBLISH_INPUT")
+    approval = _read_canonical_input(arguments.approval, "E_PUBLISH_INPUT")
+    gate = _PUBLISHING.check_approval_envelope(approval, bundle, arguments.workspace)
+    if gate["status"] != "authorized":
+        findings = ",".join(gate["findings"])
+        raise ContractError(_GITHUB.AUTHORITY_CODE, f"delivery approval is not current: {findings}")
+    metadata = bundle.get("metadata")
+    if not isinstance(metadata, dict):
+        raise ContractError(_GITHUB.PLAN_CODE, "delivery bundle metadata is missing")
+    plan = _GITHUB.build_delivery_plan(
+        approval,
+        title=metadata.get("pull_request_title"),
+        body=metadata.get("pull_request_body"),
+        commit_message=metadata.get("commit_message"),
+    )
+    return _GITHUB.dry_run_result(plan)
+
+
 def _stage_logger(arguments: argparse.Namespace) -> object:
     return StageLogger(format=arguments.log_format, verbosity=arguments.verbosity)
 
@@ -377,10 +409,27 @@ def _build_approval_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_delivery_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="readme_pipeline.py deliver",
+        description="Plan a bound GitHub delivery without network or remote writes.",
+    )
+    parser.add_argument("--transport", choices=("gh",), required=True)
+    parser.add_argument("--dry-run", action="store_true")
+    _path_argument(parser, "--bundle")
+    _path_argument(parser, "--approval")
+    _path_argument(parser, "--workspace")
+    parser.set_defaults(handler=_deliver)
+    return parser
+
+
 def main(arguments: list[str] | None = None) -> int:
     raw_arguments = list(sys.argv[1:] if arguments is None else arguments)
     if raw_arguments[:1] == ["create-approval-template"]:
         parser = _build_approval_parser()
+        parsed = parser.parse_args(raw_arguments[1:])
+    elif raw_arguments[:1] == ["deliver"]:
+        parser = _build_delivery_parser()
         parsed = parser.parse_args(raw_arguments[1:])
     else:
         parser = build_parser()

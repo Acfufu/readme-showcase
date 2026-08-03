@@ -51,6 +51,30 @@ _PREVIEW_FIELDS = {
     "report_path",
     "report_sha256",
 }
+_REMOTE_V2_FIELDS = {"schema_version", "operation_id", "actions"}
+_REMOTE_ACTION_FIELDS = {
+    "action",
+    "permission",
+    "checked_repository",
+    "checked_base_sha",
+    "checked_branch",
+    "checked_candidate_sha256",
+    "checked_evaluation_sha256",
+    "checked_approval_sha256",
+    "observed",
+}
+_DELIVERY_RESULT_FIELDS = {
+    "schema_version",
+    "status",
+    "operation_id",
+    "branch",
+    "commit_sha",
+    "pr_url",
+    "pr_number",
+    "reason",
+    "attempts",
+    "idempotent",
+}
 
 
 def _fail(code: str, message: str) -> None:
@@ -139,6 +163,83 @@ def validate_approval_envelope_v2(payload: Any) -> dict[str, Any]:
         _fail("E_APPROVAL_ACTIONS", "approval actions differ from the fixed ordered allowlist")
     canonical_json_bytes(envelope)
     return envelope
+
+
+def validate_remote_state_v2(payload: Any) -> dict[str, Any]:
+    state = _closed_object(payload, _REMOTE_V2_FIELDS, "remote state v2")
+    if type(state["schema_version"]) is not int or state["schema_version"] != 2:
+        _fail("E_SCHEMA_VERSION", "remote state requires schema_version 2")
+    operation_id = _hash(
+        state["operation_id"],
+        "E_REMOTE_BINDING",
+        "remote state operation_id",
+    )
+    raw_actions = state["actions"]
+    if not isinstance(raw_actions, list) or len(raw_actions) != len(ALLOWED_ACTIONS):
+        _fail("E_REMOTE_ACTIONS", "remote state requires one entry per fixed action")
+    normalized: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_actions):
+        entry = _closed_object(raw, _REMOTE_ACTION_FIELDS, f"remote state actions[{index}]")
+        action = entry["action"]
+        if action != ALLOWED_ACTIONS[index]:
+            _fail("E_REMOTE_ACTIONS", "remote state actions differ from the fixed order")
+        if type(entry["permission"]) is not bool:
+            _fail("E_REMOTE_PERMISSION", f"{action} permission must be boolean")
+        if not isinstance(entry["checked_repository"], str) or not _REPOSITORY.fullmatch(
+            entry["checked_repository"]
+        ):
+            _fail("E_REMOTE_BINDING", f"{action} repository binding is invalid")
+        if not isinstance(entry["checked_base_sha"], str) or not _COMMIT.fullmatch(
+            entry["checked_base_sha"]
+        ):
+            _fail("E_REMOTE_BINDING", f"{action} base binding is invalid")
+        _branch(entry["checked_branch"])
+        for field in (
+            "checked_candidate_sha256",
+            "checked_evaluation_sha256",
+            "checked_approval_sha256",
+        ):
+            _hash(entry[field], "E_REMOTE_BINDING", f"{action} {field}")
+        if entry["checked_approval_sha256"] != operation_id:
+            _fail("E_REMOTE_BINDING", f"{action} approval binding differs from operation ID")
+        if entry["observed"] is not None and not isinstance(entry["observed"], dict):
+            _fail("E_REMOTE_OBSERVATION", f"{action} observed state must be object or null")
+        normalized.append(entry)
+    canonical_json_bytes(state)
+    return state
+
+
+def validate_delivery_result_v1(payload: Any) -> dict[str, Any]:
+    result = _closed_object(payload, _DELIVERY_RESULT_FIELDS, "delivery result v1")
+    if type(result["schema_version"]) is not int or result["schema_version"] != 1:
+        _fail("E_SCHEMA_VERSION", "delivery result requires schema_version 1")
+    if result["status"] not in {"delivered", "failed"}:
+        _fail("E_DELIVERY_RESULT", "delivery result status is unsupported")
+    _hash(result["operation_id"], "E_DELIVERY_RESULT", "delivery result operation_id")
+    _branch(result["branch"])
+    if type(result["attempts"]) is not int or result["attempts"] < 0:
+        _fail("E_DELIVERY_RESULT", "delivery result attempts must be nonnegative integer")
+    if type(result["idempotent"]) is not bool:
+        _fail("E_DELIVERY_RESULT", "delivery result idempotent must be boolean")
+    if result["status"] == "delivered":
+        if result["reason"] is not None:
+            _fail("E_DELIVERY_RESULT", "delivered result cannot claim a failure reason")
+        if not isinstance(result["commit_sha"], str) or not _COMMIT.fullmatch(result["commit_sha"]):
+            _fail("E_DELIVERY_RESULT", "delivered result requires observed commit SHA")
+        if (
+            not isinstance(result["pr_url"], str)
+            or not result["pr_url"].startswith("https://github.com/")
+            or type(result["pr_number"]) is not int
+            or result["pr_number"] < 1
+        ):
+            _fail("E_DELIVERY_RESULT", "delivered result requires observed pull request")
+    else:
+        if any(result[field] is not None for field in ("commit_sha", "pr_url", "pr_number")):
+            _fail("E_DELIVERY_RESULT", "failed result cannot claim remote identifiers")
+        if not isinstance(result["reason"], str) or not re.fullmatch(r"E_[A-Z0-9_]+", result["reason"]):
+            _fail("E_DELIVERY_RESULT", "failed result requires a stable reason code")
+    canonical_json_bytes(result)
+    return result
 
 
 def _root(root: Path) -> Path:
@@ -274,4 +375,6 @@ __all__ = [
     "check_approval_envelope",
     "current_approval_bindings",
     "validate_approval_envelope_v2",
+    "validate_delivery_result_v1",
+    "validate_remote_state_v2",
 ]
