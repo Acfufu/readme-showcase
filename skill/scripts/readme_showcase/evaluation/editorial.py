@@ -17,17 +17,9 @@ _IMAGE = re.compile(r"^\s*!\[([^]]*)\]\([^)]*\)\s*$")
 _BADGE = re.compile(r"(?:badge|badgen|shields\.io)", re.IGNORECASE)
 _LINK = re.compile(r"\[([^]]+)\]\([^)]*\)")
 _FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
-_SCRIPT = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE)
-_COMMENT = re.compile(r"<!--.*?(?:-->|$)", re.DOTALL)
 _ACTION = re.compile(r"\b(quick\s*start|get\s*started|install|usage)\b|快速开始|开始使用|安装|使用")
 _QUICK_START = re.compile(r"^quick\s*start$|^getting\s*started$|^快速开始$|^开始使用$", re.IGNORECASE)
-_SECTION_ALIASES = {
-    "quick start": "quick-start", "getting started": "quick-start", "快速开始": "quick-start", "开始使用": "quick-start",
-    "install": "install", "installation": "install", "安装": "install",
-    "usage": "usage", "use": "usage", "使用": "usage", "用法": "usage",
-    "plan": "plan", "roadmap": "plan", "计划": "plan", "路线图": "plan",
-    "architecture": "architecture", "架构": "architecture",
-}
+_SECTION_ALIASES = {"quick start": "quick-start", "getting started": "quick-start", "快速开始": "quick-start", "开始使用": "quick-start", "install": "install", "installation": "install", "安装": "install", "usage": "usage", "use": "usage", "使用": "usage", "用法": "usage", "plan": "plan", "roadmap": "plan", "计划": "plan", "路线图": "plan", "architecture": "architecture", "架构": "architecture"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,11 +50,7 @@ class EditorialReport:
         return (*self.findings, *self.not_applicable)
 
     def as_dict(self) -> dict[str, object]:
-        return {
-            "findings": [item.as_dict() for item in self.findings],
-            "not_applicable": [item.as_dict() for item in self.not_applicable],
-            "status": self.status,
-        }
+        return {"findings": [item.as_dict() for item in self.findings], "not_applicable": [item.as_dict() for item in self.not_applicable], "status": self.status}
 
     def canonical_bytes(self) -> bytes:
         return canonical_json_bytes(self.as_dict())
@@ -78,7 +66,6 @@ class _Heading:
 @dataclass(frozen=True, slots=True)
 class _Document:
     path: str
-    lines: tuple[str, ...]
     visible: tuple[tuple[int, str], ...]
     headings: tuple[_Heading, ...]
     paragraphs: tuple[tuple[int, str, str | None], ...]
@@ -92,15 +79,53 @@ def _clean_text(value: str) -> str:
     return _normalized(re.sub(r"[`*_>#]", "", _LINK.sub(r"\1", value)))
 
 
-def _mask_comments(text: str) -> str:
-    return _COMMENT.sub(lambda match: re.sub(r"[^\r\n]", " ", match.group()), text)
+def _mask_prose(line: str, comment: bool, inline: int | None) -> tuple[str, bool, int | None]:
+    masked, index = list(line), 0
+    while index < len(line):
+        if comment:
+            end = line.find("-->", index)
+            stop = len(line) if end < 0 else end + 3
+            masked[index:stop] = " " * (stop - index)
+            if end < 0:
+                return "".join(masked), True, inline
+            comment, index = False, stop
+        elif line[index] == "`":
+            stop = index + 1
+            while stop < len(line) and line[stop] == "`":
+                stop += 1
+            ticks = stop - index
+            inline = ticks if inline is None else (None if inline == ticks else inline)
+            index = stop
+        elif inline is None and line.startswith("<!--", index):
+            comment = True
+        else:
+            index += 1
+    return "".join(masked), comment, inline
+
+
+def _masked_lines(text: str) -> tuple[str, ...]:
+    source = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    output: list[str] = []; comment = False
+    fence: str | None = None
+    inline: int | None = None
+    for line in source:
+        marker = _FENCE.match(line) if not comment else None
+        if marker:
+            character = marker.group(1)[0]
+            fence = character if fence is None else (None if fence == character else fence)
+            output.append(line)
+        elif fence is not None:
+            output.append(line)
+        else:
+            line, comment, inline = _mask_prose(line, comment, inline)
+            output.append(line)
+    return tuple(output)
 
 
 def _visible_lines(text: str) -> tuple[tuple[str, ...], tuple[tuple[int, str], ...]]:
-    masked = _mask_comments(text)
-    lines = tuple(masked.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
+    lines = _masked_lines(text)
     # Keep segmentation behavior as the common safety boundary; line metadata is added below.
-    segment_markdown_blocks(masked)
+    segment_markdown_blocks("\n".join(lines))
     visible: list[tuple[int, str]] = []
     fence: str | None = None
     script = False
@@ -122,8 +147,6 @@ def _visible_lines(text: str) -> tuple[tuple[str, ...], tuple[tuple[int, str], .
         if script:
             if "</script" in lowered:
                 script = False
-            continue
-        if _SCRIPT.search(raw):
             continue
         visible.append((line_number, raw))
     return lines, tuple(visible)
@@ -147,34 +170,23 @@ def _document(path: str, text: str) -> _Document:
             continue
         if not _IMAGE.match(line):
             current.append((line_number, line))
-    return _Document(path, lines, visible, tuple(headings), tuple(paragraphs))
+    return _Document(path, visible, tuple(headings), tuple(paragraphs))
 
 
 def _diagnostic(
-    code: str, message: str, path: str | None, line: int | None, heading: str | None,
-    suggested_action: str, related_ids: Iterable[str] = (),
+    code: str, message: str, path: str | None, line: int | None, heading: str | None, suggested_action: str, related_ids: Iterable[str] = (),
 ) -> EditorialDiagnostic:
     return EditorialDiagnostic(code, "warning", "editorial", message, path, line, tuple(sorted(set(related_ids))), suggested_action, heading)
 
 
 def _not_applicable(rule: str) -> EditorialDiagnostic:
-    return EditorialDiagnostic(
-        "I_EDITORIAL_NOT_APPLICABLE", "info", "editorial", f"{rule} has no applicable input",
-        related_ids=(rule,), suggested_action="Provide the relevant editorial input to review this rule.",
-    )
+    return EditorialDiagnostic("I_EDITORIAL_NOT_APPLICABLE", "info", "editorial", f"{rule} has no applicable input", related_ids=(rule,), suggested_action="Provide the relevant editorial input to review this rule.")
 
 
 def _first_screen(document: _Document) -> list[EditorialDiagnostic]:
     screen = [item for item in document.visible if item[1].strip()][:20]
     definition = next((item for item in screen if len(_clean_text(item[1])) >= 20 and not _HEADING.match(item[1])), None)
-    action = next(
-        (
-            item
-            for item in screen
-            if (match := _HEADING.match(item[1])) is not None and _QUICK_START.match(_normalized(match.group(2)))
-        ),
-        None,
-    )
+    action = next((item for item in screen if (match := _HEADING.match(item[1])) is not None and _QUICK_START.match(_normalized(match.group(2)))), None)
     if action is None:
         action = next((item for item in screen if any(_ACTION.search(label) for label in _LINK.findall(item[1]))), None)
     if definition is not None and action is not None:
@@ -190,22 +202,19 @@ def _heading_at(document: _Document, line: int) -> str | None:
 
 
 def _adjacent_image_line(document: _Document) -> int | None:
-    blocks: list[list[tuple[int, str]]] = []
     block: list[tuple[int, str]] = []
+    images_in_run = 0
     for line, value in (*document.visible, (0, "")):
         if value.strip():
             block.append((line, value))
         elif block:
-            blocks.append(block)
+            if all(_IMAGE.match(value) for _line, value in block):
+                if images_in_run + len(block) >= 2:
+                    return block[0][0] if images_in_run else block[1][0]
+                images_in_run += len(block)
+            else:
+                images_in_run = 0
             block = []
-    images_in_run = 0
-    for block in blocks:
-        if all(_IMAGE.match(value) for _line, value in block):
-            if images_in_run + len(block) >= 2:
-                return block[0][0] if images_in_run else block[1][0]
-            images_in_run += len(block)
-        else:
-            images_in_run = 0
     return None
 
 
@@ -261,10 +270,7 @@ def _locale(path: str) -> str:
 
 
 def _locale_structure(document: _Document) -> tuple[tuple[int, str], ...]:
-    return tuple(
-        (heading.level, "title" if index == 0 and heading.level == 1 else _SECTION_ALIASES.get(_normalized(heading.text), _normalized(heading.text)))
-        for index, heading in enumerate(document.headings)
-    )
+    return tuple((heading.level, "title" if index == 0 and heading.level == 1 else _SECTION_ALIASES.get(_normalized(heading.text), _normalized(heading.text))) for index, heading in enumerate(document.headings))
 
 
 def evaluate_editorial(
@@ -283,11 +289,7 @@ def evaluate_editorial(
     findings: list[EditorialDiagnostic] = []
     not_applicable: list[EditorialDiagnostic] = []
     for document in documents:
-        document_findings, document_na = _review_document(
-            document,
-            planned if _locale(document.path) == primary_locale else set(),
-            None if diff_lines is None else diff_lines.get(document.path),
-        )
+        document_findings, document_na = _review_document(document, planned if _locale(document.path) == primary_locale else set(), None if diff_lines is None else diff_lines.get(document.path))
         findings.extend(document_findings)
         not_applicable.extend(document_na)
     locales = {locale: document for locale, document in ((_locale(document.path), document) for document in documents) if locale in {"en", "zh"}}

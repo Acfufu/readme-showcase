@@ -160,6 +160,23 @@ e\u0301
                     finding = next(item for item in findings if item.code in expected)
                     self.assertEqual((finding.path, finding.heading, finding.line), location)
 
+    def test_comments_ignore_fenced_and_inline_code_but_mask_visible_prose(self) -> None:
+        prefix = "# Demo\n\nProject definition is clear enough for readers.\n\n[Quick Start](#quick-start)\n\n"
+        rows = (
+            ("triple fence", prefix + "```markdown\n<!-- unclosed\n## decoy\n```\n\n## Quick Start\n", True),
+            ("four backticks", prefix + "````markdown\n<!-- unclosed\n## decoy\n````\n\n## Quick Start\n", True),
+            ("inline code", prefix + "Use `<!-- unclosed` as literal syntax.\n\n## Quick Start\n", True),
+            ("double inline code", prefix + "Use ``<!-- unclosed`` as literal syntax.\n\n## Quick Start\n", True),
+            ("closed prose comment", prefix + "<!-- ## decoy -->\n\n## Quick Start\n", True),
+            ("unclosed prose comment", prefix + "<!-- real comment\n## Quick Start\n", False),
+        )
+        for name, text, quick_start_present in rows:
+            with self.subTest(name=name):
+                report = evaluate_editorial({"README.md": text})
+                not_applicable = {item.related_ids[0] for item in report.not_applicable}
+                self.assertEqual("quick-start-distance" not in not_applicable, quick_start_present)
+                self.assertNotIn("W_EDITORIAL_HEADING_HIERARCHY", {item.code for item in report.findings})
+
     def test_paths_are_never_opened_and_fixtures_remain_immutable_under_concurrency(self) -> None:
         fixture_paths = sorted(FIXTURES.glob("*.md"))
         before = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in fixture_paths}
