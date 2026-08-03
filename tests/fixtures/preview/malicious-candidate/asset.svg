@@ -1,0 +1,3 @@
+<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)">
+  <a href="https://attacker.invalid/"><text>unsafe</text></a>
+</svg>

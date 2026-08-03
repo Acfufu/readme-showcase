@@ -228,6 +228,10 @@ def _explain(arguments: argparse.Namespace) -> dict[str, object]:
     return _RUNNER.explain_run(arguments.workspace)
 
 
+def _preview(arguments: argparse.Namespace) -> dict[str, object]:
+    return _RUNNER.preview_run(arguments.workspace)
+
+
 def _path_argument(
     parser: argparse.ArgumentParser,
     flag: str,
@@ -340,6 +344,10 @@ def build_parser() -> argparse.ArgumentParser:
     explain.add_argument("--format", choices=("text", "json"), default="text")
     _run_observability(explain)
     explain.set_defaults(handler=_explain)
+
+    preview = subcommands.add_parser("preview")
+    _path_argument(preview, "--workspace")
+    preview.set_defaults(handler=_preview)
 
     return parser
 

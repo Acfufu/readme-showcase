@@ -33,6 +33,7 @@ from ..generation.request import (
     canonical_revision_request,
     validate_revision_request,
 )
+from ..preview.renderer import render_preview
 from .logging import StageLogger
 from .stages import STAGES, CandidateImportStage, RunContext, candidate_files
 from .workspace import RunWorkspace
@@ -691,3 +692,19 @@ def run_status(workspace_path: Path) -> dict[str, object]:
 
 def explain_run(workspace_path: Path) -> dict[str, Any]:
     return deepcopy(_workspace(workspace_path).read_manifest())
+
+
+def preview_run(workspace_path: Path) -> dict[str, object]:
+    workspace = _workspace(workspace_path)
+    with _runner_lock(workspace):
+        manifest = workspace.read_manifest()
+        if manifest.get("current_revision") is not None:
+            root = workspace.root / "stages/04-generation-request/revisions"
+            try:
+                info = root.lstat()
+            except OSError as exc:
+                raise ContractError("E_REVISION_POINTER", "revision root is unavailable") from exc
+            if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+                raise ContractError("E_REVISION_POINTER", "revision root must be a real directory")
+            _assert_authoritative_revision_pointer(manifest, _revision_history(root))
+        return render_preview(workspace, manifest)
