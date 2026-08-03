@@ -9,10 +9,13 @@ from typing import Any, Mapping, Sequence
 from ...pipeline_contracts import ContractError, canonical_json_bytes, validate_contract
 from ..contracts.plan import normalize_generation_text, validate_readme_plan
 from ..contracts.run import canonical_repository
+from ..errors import AGGREGATABLE_CODES
 
 
 GENERATION_REQUEST_SCHEMA_VERSION = 1
 MAX_GENERATION_REQUEST_BYTES = 1024 * 1024
+MAX_REVISION_REQUEST_BYTES = 256 * 1024
+MAX_REVISION_ATTEMPTS = 3
 MAX_REQUEST_ITEMS = 10_000
 MAX_REQUEST_TEXT_BYTES = 4096
 PROJECT_CLASSIFICATIONS = frozenset({"developer-tool", "library", "runtime-toolchain", "web-framework"})
@@ -20,6 +23,183 @@ REQUEST_MODES = frozenset({"readme", "asset-only", "audit-only"})
 REQUEST_LOCALES = frozenset({"en", "zh-Hans"})
 _SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def _revision_reason(value: Any, index: int) -> dict[str, Any]:
+    path = f"revision request.reasons[{index}]"
+    reason = _object(
+        value,
+        {
+            "category", "code", "line", "message", "path", "related_ids",
+            "severity", "suggested_action",
+        },
+        path,
+    )
+    code = _text(reason["code"], f"{path}.code")
+    if code not in AGGREGATABLE_CODES:
+        raise ContractError("E_REVISION_DIAGNOSTIC", "revision reason must be an aggregatable content diagnostic")
+    if reason["category"] != "content" or reason["severity"] != "error":
+        raise ContractError("E_REVISION_DIAGNOSTIC", "revision reason must preserve content/error policy")
+    line = reason["line"]
+    if line is not None and (type(line) is not int or line < 1):
+        raise ContractError("E_SCHEMA_TYPE", f"{path}.line must be null or a positive integer")
+    reason_path = reason["path"]
+    if reason_path is not None:
+        reason_path = _path(reason_path, f"{path}.path")
+    related = reason["related_ids"]
+    if not isinstance(related, list) or len(related) > MAX_REQUEST_ITEMS:
+        raise ContractError("E_SCHEMA_TYPE", f"{path}.related_ids must be a bounded array")
+    related_ids = [_text(item, f"{path}.related_ids[]") for item in related]
+    if related_ids != sorted(set(related_ids)):
+        raise ContractError("E_SCHEMA_VALUE", f"{path}.related_ids must be sorted and unique")
+    suggested = reason["suggested_action"]
+    if suggested is not None:
+        suggested = _text(suggested, f"{path}.suggested_action")
+    return {
+        "category": "content",
+        "code": code,
+        "line": line,
+        "message": _text(reason["message"], f"{path}.message"),
+        "path": reason_path,
+        "related_ids": related_ids,
+        "severity": "error",
+        "suggested_action": suggested,
+    }
+
+
+def _revision_reasons(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or not value or len(value) > MAX_REQUEST_ITEMS:
+        raise ContractError("E_SCHEMA_TYPE", "revision request.reasons must be a non-empty bounded array")
+    reasons = [_revision_reason(item, index) for index, item in enumerate(value)]
+    expected = sorted(
+        reasons,
+        key=lambda item: (
+            item["code"], item["path"] or "", item["line"] or 0, item["message"],
+            item["related_ids"], item["suggested_action"] or "",
+        ),
+    )
+    if reasons != expected:
+        raise ContractError("E_SCHEMA_VALUE", "revision reasons must use canonical diagnostic order")
+    if len({canonical_json_bytes(item) for item in reasons}) != len(reasons):
+        raise ContractError("E_SCHEMA_VALUE", "revision reasons must be unique")
+    return reasons
+
+
+def _revision_paths(value: Any, path: str, *, nonempty: bool = True) -> list[str]:
+    if not isinstance(value, list) or (nonempty and not value) or len(value) > MAX_REQUEST_ITEMS:
+        raise ContractError("E_SCHEMA_TYPE", f"{path} must be a bounded path array")
+    paths = [_path(item, f"{path}[]") for item in value]
+    if paths != sorted(set(paths)):
+        raise ContractError("E_SCHEMA_VALUE", f"{path} must be sorted and unique")
+    return paths
+
+
+def validate_revision_request(payload: Any) -> dict[str, Any]:
+    _reject_float(payload)
+    request = validate_contract(
+        payload,
+        required={
+            "schema_version", "attempt", "original_request_sha256",
+            "before_candidate_sha256", "after_candidate_sha256", "diagnostics_sha256",
+            "reasons", "allowed_files", "forbidden_paths",
+        },
+        optional=set(),
+        context="revision request",
+    )
+    if request["schema_version"] != 1:
+        raise ContractError("E_SCHEMA_VERSION", "revision request requires schema_version 1")
+    attempt = request["attempt"]
+    if type(attempt) is not int or not 1 <= attempt <= MAX_REVISION_ATTEMPTS:
+        raise ContractError("E_SCHEMA_VALUE", f"revision request.attempt must be between 1 and {MAX_REVISION_ATTEMPTS}")
+    reasons = _revision_reasons(request["reasons"])
+    diagnostics = {"diagnostics": reasons, "schema_version": 1, "status": "fail"}
+    diagnostics_sha256 = _sha(request["diagnostics_sha256"], "revision request.diagnostics_sha256")
+    if diagnostics_sha256 != hashlib.sha256(canonical_json_bytes(diagnostics)).hexdigest():
+        raise ContractError("E_REVISION_DIAGNOSTIC", "revision request diagnostics hash is stale")
+    allowed = _revision_paths(request["allowed_files"], "revision request.allowed_files")
+    forbidden = _revision_paths(request["forbidden_paths"], "revision request.forbidden_paths")
+    if set(allowed) & set(forbidden):
+        raise ContractError("E_REVISION_PATH", "revision allowed and forbidden paths overlap")
+    normalized = {
+        "schema_version": 1,
+        "attempt": attempt,
+        "original_request_sha256": _sha(
+            request["original_request_sha256"],
+            "revision request.original_request_sha256",
+        ),
+        "before_candidate_sha256": _sha(
+            request["before_candidate_sha256"], "revision request.before_candidate_sha256"
+        ),
+        "after_candidate_sha256": _sha(
+            request["after_candidate_sha256"], "revision request.after_candidate_sha256"
+        ),
+        "diagnostics_sha256": diagnostics_sha256,
+        "reasons": reasons,
+        "allowed_files": allowed,
+        "forbidden_paths": forbidden,
+    }
+    if len(canonical_json_bytes(normalized)) > MAX_REVISION_REQUEST_BYTES:
+        raise ContractError("E_REVISION_SIZE", f"revision request exceeds {MAX_REVISION_REQUEST_BYTES} bytes")
+    return copy.deepcopy(normalized)
+
+
+def build_revision_request(
+    *,
+    attempt: int,
+    original_request_sha256: str,
+    before_candidate_sha256: str,
+    after_candidate_sha256: str,
+    diagnostic_report: Mapping[str, Any],
+    allowed_files: Sequence[str],
+    forbidden_paths: Sequence[str],
+) -> dict[str, Any]:
+    if not isinstance(diagnostic_report, Mapping) or diagnostic_report.get("status") != "fail":
+        raise ContractError("E_REVISION_DIAGNOSTIC", "revision requires a failed diagnostic report")
+    raw_reasons = diagnostic_report.get("diagnostics")
+    if not isinstance(raw_reasons, list):
+        raise ContractError("E_REVISION_DIAGNOSTIC", "revision diagnostic report is malformed")
+    reasons: list[dict[str, Any]] = []
+    for raw in raw_reasons:
+        if not isinstance(raw, Mapping) or not isinstance(raw.get("code"), str):
+            raise ContractError("E_REVISION_DIAGNOSTIC", "revision diagnostic is malformed")
+        if set(raw) == {"code"}:
+            raw = {
+                "category": "content",
+                "code": raw["code"],
+                "line": None,
+                "message": f"content validation failed: {raw['code']}",
+                "path": None,
+                "related_ids": [],
+                "severity": "error",
+                "suggested_action": None,
+            }
+        reasons.append(dict(raw))
+    reasons = sorted(
+        reasons,
+        key=lambda item: (
+            item.get("code", ""), item.get("path") or "", item.get("line") or 0,
+            item.get("message", ""), item.get("related_ids", []),
+            item.get("suggested_action") or "",
+        ),
+    )
+    normalized_reasons = _revision_reasons(reasons)
+    canonical_report = {"diagnostics": normalized_reasons, "schema_version": 1, "status": "fail"}
+    request = {
+        "schema_version": 1,
+        "attempt": attempt,
+        "original_request_sha256": original_request_sha256,
+        "before_candidate_sha256": before_candidate_sha256,
+        "after_candidate_sha256": after_candidate_sha256,
+        "diagnostics_sha256": hashlib.sha256(canonical_json_bytes(canonical_report)).hexdigest(),
+        "reasons": normalized_reasons,
+        "allowed_files": sorted(set(allowed_files)),
+        "forbidden_paths": sorted(set(forbidden_paths)),
+    }
+    return validate_revision_request(request)
+
+
+def canonical_revision_request(payload: Any) -> bytes:
+    return canonical_json_bytes(validate_revision_request(payload))
 
 
 def _reject_float(value: Any, path: str = "$") -> None:

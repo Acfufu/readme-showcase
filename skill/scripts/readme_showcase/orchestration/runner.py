@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import fcntl
 import hashlib
+import json
 import os
+import re
+import secrets
 import stat
 import subprocess
 import time
@@ -17,12 +20,21 @@ from ...pipeline_contracts import (
     canonical_json_bytes,
     canonical_sha256,
     read_json_object_bytes,
+    read_regular_bytes,
     write_canonical_json_atomic,
 )
 from ..contracts.run import STAGE_NAMES, canonical_repository
-from ..generation.request import MAX_GENERATION_REQUEST_BYTES
+from ..errors import AGGREGATABLE_CODES
+from ..generation.request import (
+    MAX_GENERATION_REQUEST_BYTES,
+    MAX_REVISION_ATTEMPTS,
+    build_revision_request,
+    canonical_generation_request,
+    canonical_revision_request,
+    validate_revision_request,
+)
 from .logging import StageLogger
-from .stages import STAGES, CandidateImportStage, RunContext
+from .stages import STAGES, CandidateImportStage, RunContext, candidate_files
 from .workspace import RunWorkspace
 
 
@@ -147,6 +159,285 @@ def _stale_from(manifest: dict[str, Any], index: int) -> None:
         stage["status"] = "stale"
 
 
+_REVISION_POINTER = "revision-manifest.json"
+_REVISION_CURRENT = re.compile(r"([1-9][0-9]*)/revision-request\.json\Z")
+_REVISION_TEMPORARY = re.compile(r"\.[1-9][0-9]*\.[0-9a-f]{16}\.tmp\Z")
+
+
+def _cleanup_revision_temporaries(root: Path) -> None:
+    for path in root.iterdir():
+        if not _REVISION_TEMPORARY.fullmatch(path.name):
+            continue
+        info = path.lstat()
+        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            raise ContractError("E_RUN_PATH", "revision temporary must be a real directory")
+        entries = list(path.iterdir())
+        if any(
+            entry.name != "revision-request.json"
+            or entry.is_symlink()
+            or not entry.is_file()
+            for entry in entries
+        ):
+            raise ContractError("E_RUN_PATH", "revision temporary contains unexpected data")
+        for entry in entries:
+            entry.unlink()
+        path.rmdir()
+
+
+def _revision_root(workspace: RunWorkspace) -> Path:
+    stage_root = workspace.root / "stages/04-generation-request"
+    try:
+        info = stage_root.lstat()
+    except OSError as exc:
+        raise ContractError("E_RUN_PATH", "generation request stage is unavailable") from exc
+    if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+        raise ContractError("E_RUN_PATH", "generation request stage must be a real directory")
+    revisions = stage_root / "revisions"
+    try:
+        info = revisions.lstat()
+    except FileNotFoundError:
+        try:
+            revisions.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        except OSError as exc:
+            raise ContractError("E_RUN_PATH", "cannot create revision root") from exc
+        info = revisions.lstat()
+    except OSError as exc:
+        raise ContractError("E_RUN_PATH", "cannot inspect revision root") from exc
+    if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+        raise ContractError("E_RUN_PATH", "revision root must be a real directory")
+    _cleanup_revision_temporaries(revisions)
+    return revisions
+
+
+def _revision_history(root: Path) -> list[dict[str, Any]]:
+    pointer = root / _REVISION_POINTER
+    try:
+        pointer_info = pointer.lstat()
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        raise ContractError("E_RUN_PATH", "cannot inspect revision pointer") from exc
+    if not stat.S_ISREG(pointer_info.st_mode) or stat.S_ISLNK(pointer_info.st_mode):
+        raise ContractError("E_RUN_PATH", "revision pointer must be a regular file")
+    raw, value = read_json_object_bytes(pointer)
+    if raw != canonical_json_bytes(value) or set(value) != {"current"} or not isinstance(value["current"], str):
+        raise ContractError("E_REVISION_POINTER", "revision pointer must contain canonical relative current path")
+    match = _REVISION_CURRENT.fullmatch(value["current"])
+    if match is None:
+        raise ContractError("E_REVISION_POINTER", "revision pointer must contain canonical relative current path")
+    current = int(match.group(1))
+    history: list[dict[str, Any]] = []
+    for attempt in range(1, current + 1):
+        directory = root / str(attempt)
+        try:
+            info = directory.lstat()
+        except OSError as exc:
+            raise ContractError("E_REVISION_POINTER", "revision history is not contiguous") from exc
+        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            raise ContractError("E_RUN_PATH", "revision attempt must be a real directory")
+        request_path = directory / "revision-request.json"
+        request_raw, request = read_json_object_bytes(request_path)
+        normalized = validate_revision_request(request)
+        if request_raw != canonical_revision_request(normalized) or normalized["attempt"] != attempt:
+            raise ContractError("E_REVISION_MUTATED", "revision history bytes or attempt identity changed")
+        if attempt == 1 and normalized["before_candidate_sha256"] != normalized["after_candidate_sha256"]:
+            raise ContractError("E_REVISION_MUTATED", "initial revision candidate hash changed")
+        if history:
+            previous = history[-1]
+            if (
+                normalized["original_request_sha256"]
+                != previous["original_request_sha256"]
+                or normalized["before_candidate_sha256"] != previous["after_candidate_sha256"]
+            ):
+                raise ContractError("E_REVISION_MUTATED", "revision history hash chain changed")
+        history.append(normalized)
+    return history
+
+
+def _append_revision(
+    root: Path,
+    request: dict[str, Any],
+    previous_pointer: bytes | None,
+) -> None:
+    attempt = request["attempt"]
+    destination = root / str(attempt)
+    try:
+        destination.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise ContractError("E_RUN_PATH", "cannot inspect revision attempt") from exc
+    else:
+        raise ContractError("E_REVISION_EXISTS", f"revision attempt {attempt} already exists")
+
+    temporary = root / f".{attempt}.{secrets.token_hex(8)}.tmp"
+    committed = False
+    reserved = False
+    try:
+        temporary.mkdir(mode=0o700)
+        temporary_descriptor = os.open(
+            temporary, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        )
+        try:
+            descriptor = os.open(
+                "revision-request.json",
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=temporary_descriptor,
+            )
+            try:
+                data = canonical_revision_request(request)
+                view = memoryview(data)
+                written = 0
+                while written < len(view):
+                    written += os.write(descriptor, view[written:])
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            os.fsync(temporary_descriptor)
+        finally:
+            os.close(temporary_descriptor)
+        try:
+            destination.mkdir(mode=0o700)
+        except FileExistsError as exc:
+            raise ContractError("E_REVISION_EXISTS", f"revision attempt {attempt} already exists") from exc
+        reserved = True
+        os.rename(
+            temporary / "revision-request.json",
+            destination / "revision-request.json",
+        )
+        temporary.rmdir()
+        root_descriptor = os.open(
+            root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        )
+        try:
+            os.fsync(root_descriptor)
+        finally:
+            os.close(root_descriptor)
+        committed = True
+        write_canonical_json_atomic(
+            root / _REVISION_POINTER,
+            {"current": f"{attempt}/revision-request.json"},
+        )
+    except Exception:
+        if committed:
+            try:
+                (destination / "revision-request.json").unlink()
+                destination.rmdir()
+            except FileNotFoundError:
+                pass
+            if previous_pointer is not None:
+                previous_value = read_json_object_bytes_from_bytes(previous_pointer)
+                write_canonical_json_atomic(root / _REVISION_POINTER, previous_value)
+            else:
+                try:
+                    (root / _REVISION_POINTER).unlink()
+                except FileNotFoundError:
+                    pass
+        else:
+            try:
+                (temporary / "revision-request.json").unlink()
+            except FileNotFoundError:
+                pass
+            try:
+                temporary.rmdir()
+            except FileNotFoundError:
+                pass
+            if reserved:
+                try:
+                    (destination / "revision-request.json").unlink()
+                except FileNotFoundError:
+                    pass
+                try:
+                    destination.rmdir()
+                except FileNotFoundError:
+                    pass
+        raise
+
+
+def read_json_object_bytes_from_bytes(raw: bytes) -> dict[str, Any]:
+    try:
+        value = json.loads(raw)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ContractError("E_REVISION_POINTER", "revision pointer backup is invalid") from exc
+    if not isinstance(value, dict) or raw != canonical_json_bytes(value):
+        raise ContractError("E_REVISION_POINTER", "revision pointer backup is invalid")
+    return value
+
+
+def _record_revision_if_content_failure(workspace: RunWorkspace, manifest: dict[str, Any]) -> bool:
+    validation_attempt = manifest["stages"][6]["attempt"]
+    report_path = (
+        workspace.root / "stages/07-validation/attempts" / str(validation_attempt)
+        / "validation-report.json"
+    )
+    report_raw, report = read_json_object_bytes(report_path)
+    if report_raw != canonical_json_bytes(report) or report.get("status") != "fail":
+        return False
+    diagnostics = report.get("diagnostics")
+    if (
+        not isinstance(diagnostics, list)
+        or not diagnostics
+        or any(not isinstance(item, dict) or item.get("code") not in AGGREGATABLE_CODES for item in diagnostics)
+    ):
+        return False
+
+    generation_path = (
+        workspace.root / "stages/04-generation-request/attempts"
+        / str(manifest["stages"][3]["attempt"]) / "generation-request.json"
+    )
+    generation_raw, generation_request = read_json_object_bytes(generation_path)
+    if generation_raw != canonical_generation_request(generation_request):
+        raise ContractError("E_REVISION_MUTATED", "generation request bytes changed")
+    original_sha256 = hashlib.sha256(generation_raw).hexdigest()
+    candidate_sha256 = manifest["stages"][4]["output_sha256"]
+    if not isinstance(candidate_sha256, str):
+        raise ContractError("E_REVISION_CANDIDATE", "revision requires a candidate hash")
+
+    root = _revision_root(workspace)
+    pointer_path = root / _REVISION_POINTER
+    try:
+        previous_pointer = read_regular_bytes(pointer_path, maximum=4096)
+    except ContractError as exc:
+        if exc.code == "E_INPUT_NOT_FOUND":
+            previous_pointer = None
+        else:
+            raise
+    history = _revision_history(root)
+    if history and history[0]["original_request_sha256"] != original_sha256:
+        return False
+    if history and history[-1]["after_candidate_sha256"] == candidate_sha256:
+        return False
+    if len(history) >= MAX_REVISION_ATTEMPTS:
+        return False
+
+    files = candidate_files(RunContext(workspace, manifest))
+    if files is None:
+        raise ContractError("E_REVISION_CANDIDATE", "revision candidate files are unavailable")
+    allowed_files = sorted(name for name, _ in files)
+    request_forbidden = generation_request["output_contract"]["forbidden_paths"]
+    forbidden_paths = sorted(set(request_forbidden) | {
+        ".omo/**",
+        "inputs/readme-plan.json",
+        f"stages/01-scan/attempts/{manifest['stages'][0]['attempt']}/repository-evidence.json",
+        f"stages/03-plan-import/attempts/{manifest['stages'][2]['attempt']}/readme-plan.json",
+    })
+    previous_candidate = history[-1]["after_candidate_sha256"] if history else candidate_sha256
+    request = build_revision_request(
+        attempt=len(history) + 1,
+        original_request_sha256=original_sha256,
+        before_candidate_sha256=previous_candidate,
+        after_candidate_sha256=candidate_sha256,
+        diagnostic_report=report,
+        allowed_files=allowed_files,
+        forbidden_paths=forbidden_paths,
+    )
+    _append_revision(root, request, previous_pointer)
+    return True
+
+
 def _drive(workspace: RunWorkspace, logger: StageLogger, stop_after: str | None) -> dict[str, object]:
     manifest = workspace.read_manifest()
     context = RunContext(workspace, manifest)
@@ -190,6 +481,8 @@ def _drive(workspace: RunWorkspace, logger: StageLogger, stop_after: str | None)
             if result.files:
                 workspace.append_attempt(index + 1, adapter.name, result.files)
                 manifest = workspace.read_manifest()
+            if index == 6 and result.status != "pass":
+                _record_revision_if_content_failure(workspace, manifest)
             stage = manifest["stages"][index]
             stage.update(
                 {
