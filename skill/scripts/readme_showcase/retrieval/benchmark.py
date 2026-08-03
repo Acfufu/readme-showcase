@@ -1,4 +1,5 @@
 """Deterministic, offline, read-only retrieval benchmark machinery."""
+# noqa: SIZE_OK - task ownership keeps benchmark validation and scoring in one module.
 
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ METRIC_NAMES = (
 )
 NDCG_DISCOUNTS_BASIS_POINTS = (10_000, 6_309, 5_000, 4_307, 3_869)
 THRESHOLD_MARGIN_BASIS_POINTS = 200
+MAX_METRIC_COMPONENT = (1 << 63) - 1
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SLUG = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\Z")
@@ -38,6 +40,8 @@ _REVIEW_FIELDS = {"human_reviewed", "review_method", "reviewer_id", "reviewed_at
 _METRIC_FIELDS = {"numerator", "denominator", "value_basis_points"}
 _BASELINE_METRIC_FIELDS = _METRIC_FIELDS | {"threshold_basis_points"}
 _BASELINE_FIELDS = {"schema_version", "status", "dataset", "gold_set_sha256", "review_receipt_sha256", "metrics"}
+# Approval receipts enter only through reviewed source changes; callers cannot extend trust.
+_REVIEW_RECEIPT_ALLOWLIST: frozenset[str] = frozenset()
 
 
 def _fail(code: str, message: str) -> NoReturn:
@@ -50,7 +54,8 @@ def _reject_floats(value: Any, path: str = "$") -> None:
     if isinstance(value, list):
         for index, child in enumerate(value):
             _reject_floats(child, f"{path}[{index}]")
-    elif isinstance(value, dict):
+        return
+    if isinstance(value, dict):
         for key, child in value.items():
             if not isinstance(key, str):
                 _fail("E_SCHEMA_KEY_TYPE", f"{path} contains a non-string key")
@@ -191,8 +196,6 @@ def _expected_receipt(query_set: Mapping[str, Any], review: Mapping[str, Any]) -
 def validate_reviewed_query_set(
     manifest: Any,
     payload: Any,
-    *,
-    trusted_receipt_sha256: str | None = None,
 ) -> dict[str, Any]:
     query_set, items = _validated_query_items(manifest, payload)
     if query_set["status"] != "reviewed" or query_set["proposal_origin"] != "human-reviewed":
@@ -219,29 +222,71 @@ def validate_reviewed_query_set(
         if review["receipt_sha256"] != _expected_receipt(query_set, review):
             _fail("E_BENCHMARK_REVIEW_RECEIPT", "review receipt does not bind dataset/query/gold hashes")
         receipts.add(review["receipt_sha256"])
-    if len(receipts) != 1 or trusted_receipt_sha256 not in receipts:
+    if len(receipts) != 1 or receipts.isdisjoint(_REVIEW_RECEIPT_ALLOWLIST):
         _fail("E_BENCHMARK_REVIEW_RECEIPT", "review receipt lacks an independent trust anchor")
     approved = copy.deepcopy(query_set)
     approved["queries"] = items
     return approved
 
 
-def validate_production_rankings(rankings: Mapping[str, Sequence[Mapping[str, Any]]]) -> None:
+def validate_production_rankings(
+    manifest: Any,
+    rankings: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    validate_dataset_manifest(manifest)
     if not isinstance(rankings, Mapping):
         _fail("E_BENCHMARK_RANKING", "rankings must be an object")
+    manifest_records = {record["record_id"]: record for record in manifest["records"]}
+    manifest_sources = {
+        (record["source"]["repository_url"], record["source"]["commit"], record["source"]["material_sha256"]): record
+        for record in manifest["records"]
+    }
+    authoritative: dict[str, list[dict[str, Any]]] = {}
     for query_id, records in rankings.items():
         if not isinstance(query_id, str) or not isinstance(records, Sequence) or isinstance(records, (str, bytes)):
             _fail("E_BENCHMARK_RANKING", "ranking entry is malformed")
         seen: set[str] = set()
+        authoritative_records: list[dict[str, Any]] = []
         for record in records:
             if not isinstance(record, Mapping):
                 _fail("E_BENCHMARK_RANKING", f"ranking {query_id} contains a malformed result")
-            if record.get("source_split") != "train":
-                _fail("E_DATASET_SPLIT_LEAK", f"production ranking {query_id} contains held-out/test identity")
             record_id = record.get("record_id")
             if not isinstance(record_id, str) or record_id in seen:
                 _fail("E_DATASET_DUPLICATE_ID", f"ranking {query_id} contains duplicate/invalid record_id")
             seen.add(record_id)
+            manifest_record = manifest_records.get(record_id)
+            if manifest_record is None:
+                _fail("E_BENCHMARK_UNKNOWN_RECORD", f"ranking {query_id} contains unknown record_id: {record_id}")
+            if manifest_record["split"] != "train" or record.get("source_split") != "train":
+                _fail("E_DATASET_SPLIT_LEAK", f"production ranking {query_id} contains held-out/test identity")
+            provided_source = record.get("source")
+            if provided_source is not None:
+                if not isinstance(provided_source, Mapping):
+                    _fail("E_BENCHMARK_SOURCE_IDENTITY", f"ranking {query_id} contains malformed source identity")
+                source_identity = (
+                    provided_source.get("repository_url"),
+                    provided_source.get("commit"),
+                    provided_source.get("material_sha256"),
+                )
+                if any(not isinstance(value, str) for value in source_identity):
+                    _fail("E_BENCHMARK_SOURCE_IDENTITY", f"ranking {query_id} contains malformed source identity")
+                expected_source = manifest_record["source"]
+                expected_identity = (
+                    expected_source["repository_url"],
+                    expected_source["commit"],
+                    expected_source["material_sha256"],
+                )
+                if source_identity != expected_identity:
+                    source_record = manifest_sources.get(source_identity)
+                    code = "E_DATASET_SPLIT_LEAK" if source_record is not None and source_record["split"] != "train" else "E_BENCHMARK_SOURCE_IDENTITY"
+                    _fail(code, f"ranking {query_id} source identity does not match record_id")
+            ranked = copy.deepcopy(dict(record))
+            for field in ("project_types", "section_intents", "tags", "pattern", "source"):
+                ranked[field] = copy.deepcopy(manifest_record[field])
+            ranked["source_split"] = manifest_record["split"]
+            authoritative_records.append(ranked)
+        authoritative[query_id] = authoritative_records
+    return authoritative
 
 
 def rank_queries(manifest: Any, query_items: Sequence[Mapping[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -257,8 +302,7 @@ def rank_queries(manifest: Any, query_items: Sequence[Mapping[str, Any]]) -> dic
             _fail("E_BENCHMARK_QUERY", "query item is malformed")
         packet = retrieve_patterns_v2(manifest, item["query"], mode="production")
         rankings[query_id] = copy.deepcopy(packet["records"])
-    validate_production_rankings(rankings)
-    return rankings
+    return validate_production_rankings(manifest, rankings)
 
 
 def _metric(numerator: int, denominator: int) -> dict[str, int]:
@@ -271,13 +315,67 @@ def _fraction_metric(value: Fraction) -> dict[str, int]:
     return _metric(value.numerator, value.denominator)
 
 
+def _validated_metric(
+    value: Any,
+    fields: set[str],
+    context: str,
+    code: str,
+    *,
+    threshold_code: str | None = None,
+) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        _fail(code, f"{context} must be an object")
+    metric = dict(value)
+    if set(metric) != fields:
+        _fail(code, f"{context} fields are incomplete or unknown")
+    raw_numerator = metric["numerator"]
+    raw_denominator = metric["denominator"]
+    raw_value_basis_points = metric["value_basis_points"]
+    if (
+        type(raw_numerator) is not int
+        or type(raw_denominator) is not int
+        or type(raw_value_basis_points) is not int
+    ):
+        _fail(code, f"{context} must contain integers")
+    numerator = raw_numerator
+    denominator = raw_denominator
+    value_basis_points = raw_value_basis_points
+    if (
+        numerator < 0
+        or denominator <= 0
+        or numerator > denominator
+        or numerator > MAX_METRIC_COMPONENT
+        or denominator > MAX_METRIC_COMPONENT
+        or not 0 <= value_basis_points <= 10_000
+    ):
+        _fail(code, f"{context} is out of bounds")
+    parsed = {
+        "numerator": numerator,
+        "denominator": denominator,
+        "value_basis_points": value_basis_points,
+    }
+    if value_basis_points != basis_points(numerator, denominator):
+        _fail(code, f"{context} is equation-inconsistent")
+    if "threshold_basis_points" in fields:
+        raw_threshold = metric["threshold_basis_points"]
+        if type(raw_threshold) is not int:
+            _fail(code, f"{context} must contain integers")
+        if not 0 <= raw_threshold <= 10_000:
+            _fail(code, f"{context} threshold is out of bounds")
+        if threshold_code is not None and value_basis_points < raw_threshold:
+            _fail(threshold_code, f"metric below fixed threshold: {context.removeprefix('metric ')}")
+        parsed["threshold_basis_points"] = raw_threshold
+    return parsed
+
+
 def score_rankings(
+    manifest: Any,
     query_items: Sequence[Mapping[str, Any]],
     rankings: Mapping[str, Sequence[Mapping[str, Any]]],
 ) -> dict[str, dict[str, int]]:
     if not query_items:
         _fail("E_BENCHMARK_DENOMINATOR", "benchmark requires at least one query")
-    validate_production_rankings(rankings)
+    authoritative_rankings = validate_production_rankings(manifest, rankings)
     ordered = sorted(query_items, key=lambda item: item.get("query_id", ""))
     if len({item.get("query_id") for item in ordered}) != len(ordered):
         _fail("E_BENCHMARK_QUERY", "query IDs must be unique")
@@ -298,7 +396,7 @@ def score_rankings(
         project_type = item.get("project_type")
         if not isinstance(project_type, str) or not _SLUG.fullmatch(project_type):
             _fail("E_BENCHMARK_QUERY", f"{query_id}.project_type is invalid")
-        records = list(rankings[query_id])
+        records = authoritative_rankings[query_id]
         if len(records) > 5:
             _fail("E_BENCHMARK_RANKING", f"{query_id} exceeds Recall@5 boundary")
         identifiers = [record["record_id"] for record in records]
@@ -340,31 +438,40 @@ def score_rankings(
 
 
 def apply_thresholds(metrics: Mapping[str, Mapping[str, Any]], baseline: Any) -> dict[str, dict[str, int]]:
-    if set(metrics) != set(METRIC_NAMES) or not isinstance(baseline, Mapping) or baseline.get("status") != "verified":
+    if not isinstance(metrics, Mapping) or set(metrics) != set(METRIC_NAMES):
+        _fail("E_BENCHMARK_METRIC", "six current metrics are required")
+    if not isinstance(baseline, Mapping) or baseline.get("status") != "verified":
         _fail("E_BENCHMARK_BASELINE", "verified six-metric baseline is required")
     baseline_metrics = baseline.get("metrics")
     if not isinstance(baseline_metrics, Mapping) or set(baseline_metrics) != set(METRIC_NAMES):
         _fail("E_BENCHMARK_BASELINE", "baseline metrics are incomplete")
     output: dict[str, dict[str, int]] = {}
     for name in METRIC_NAMES:
-        current = _object(dict(metrics[name]), _METRIC_FIELDS, f"metric {name}")
-        frozen = _object(dict(baseline_metrics[name]), _BASELINE_METRIC_FIELDS, f"baseline metric {name}")
+        current = _validated_metric(metrics[name], _METRIC_FIELDS, f"metric {name}", "E_BENCHMARK_METRIC")
+        frozen = _validated_metric(
+            baseline_metrics[name],
+            _BASELINE_METRIC_FIELDS,
+            f"baseline metric {name}",
+            "E_BENCHMARK_BASELINE",
+        )
         threshold = frozen["threshold_basis_points"]
-        if (
-            any(type(current[field]) is not int for field in _METRIC_FIELDS)
-            or any(type(frozen[field]) is not int for field in _BASELINE_METRIC_FIELDS)
-            or threshold != max(0, frozen["value_basis_points"] - THRESHOLD_MARGIN_BASIS_POINTS)
-        ):
+        if threshold != max(0, frozen["value_basis_points"] - THRESHOLD_MARGIN_BASIS_POINTS):
             _fail("E_BENCHMARK_BASELINE", f"baseline metric {name} has invalid integer threshold")
         output[name] = {**current, "threshold_basis_points": threshold}
     return output
 
 
 def assert_thresholds(metrics: Mapping[str, Mapping[str, Any]]) -> None:
+    if not isinstance(metrics, Mapping) or set(metrics) != set(METRIC_NAMES):
+        _fail("E_BENCHMARK_METRIC", "thresholded metrics are incomplete")
     for name in METRIC_NAMES:
-        metric = metrics.get(name)
-        if not isinstance(metric, Mapping) or metric.get("value_basis_points", -1) < metric.get("threshold_basis_points", 10_001):
-            _fail("E_BENCHMARK_THRESHOLD", f"metric below fixed threshold: {name}")
+        _validated_metric(
+            metrics[name],
+            _BASELINE_METRIC_FIELDS,
+            f"metric {name}",
+            "E_BENCHMARK_METRIC",
+            threshold_code="E_BENCHMARK_THRESHOLD",
+        )
 
 
 def _validate_baseline(baseline: Any, approved: Mapping[str, Any], receipt: str) -> dict[str, Any]:
@@ -378,7 +485,19 @@ def _validate_baseline(baseline: Any, approved: Mapping[str, Any], receipt: str)
         or frozen["review_receipt_sha256"] != receipt
     ):
         _fail("E_BENCHMARK_BASELINE", "baseline is pending or not bound to reviewed gold")
-    apply_thresholds({name: {key: frozen["metrics"][name][key] for key in _METRIC_FIELDS} for name in METRIC_NAMES}, frozen)
+    baseline_metrics = frozen["metrics"]
+    if not isinstance(baseline_metrics, Mapping) or set(baseline_metrics) != set(METRIC_NAMES):
+        _fail("E_BENCHMARK_BASELINE", "baseline metrics are incomplete")
+    current_metrics: dict[str, dict[str, int]] = {}
+    for name in METRIC_NAMES:
+        metric = _validated_metric(
+            baseline_metrics[name],
+            _BASELINE_METRIC_FIELDS,
+            f"baseline metric {name}",
+            "E_BENCHMARK_BASELINE",
+        )
+        current_metrics[name] = {key: metric[key] for key in _METRIC_FIELDS}
+    apply_thresholds(current_metrics, frozen)
     return copy.deepcopy(frozen)
 
 
@@ -386,25 +505,19 @@ def run_benchmark(
     manifest: Any,
     query_set: Any,
     baseline: Any,
-    *,
-    trusted_receipt_sha256: str | None = None,
 ) -> dict[str, Any]:
-    approved = validate_reviewed_query_set(
-        manifest,
-        query_set,
-        trusted_receipt_sha256=trusted_receipt_sha256,
-    )
-    assert trusted_receipt_sha256 is not None
-    frozen = _validate_baseline(baseline, approved, trusted_receipt_sha256)
+    approved = validate_reviewed_query_set(manifest, query_set)
+    receipt_sha256 = approved["queries"][0]["review"]["receipt_sha256"]
+    frozen = _validate_baseline(baseline, approved, receipt_sha256)
     rankings = rank_queries(manifest, approved["queries"])
-    metrics = apply_thresholds(score_rankings(approved["queries"], rankings), frozen)
+    metrics = apply_thresholds(score_rankings(manifest, approved["queries"], rankings), frozen)
     assert_thresholds(metrics)
     return {
         "schema_version": 1,
         "status": "pass",
         "dataset": copy.deepcopy(approved["dataset"]),
         "gold_set_sha256": approved["gold_set_sha256"],
-        "review_receipt_sha256": trusted_receipt_sha256,
+        "review_receipt_sha256": receipt_sha256,
         "ranking_sha256": canonical_sha256(rankings),
         "rankings": rankings,
         "metrics": metrics,
