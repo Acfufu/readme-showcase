@@ -6,7 +6,7 @@ import copy
 import importlib
 import re
 import unicodedata
-from typing import Any, Mapping, NoReturn
+from typing import Any, Mapping, NoReturn, Sequence
 from urllib.parse import urlparse
 
 from ..contracts.retrieval import validate_retrieval_packet_v2, validate_retrieval_query
@@ -169,7 +169,15 @@ def _normalized_query(query: Mapping[str, Any]) -> dict[str, Any]:
     return validate_retrieval_query(normalized)
 
 
-def retrieve_patterns_v2(manifest: Any | None, query: Mapping[str, Any], *, mode: str = "production", benchmark: bool = False) -> dict[str, Any]:
+def retrieve_patterns_v2(
+    manifest: Any | None,
+    query: Mapping[str, Any],
+    *,
+    mode: str = "production",
+    benchmark: bool = False,
+    feedback_events: Sequence[Mapping[str, Any]] | None = None,
+    feedback_bindings: Mapping[tuple[str, str], Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
     normalized_query = _normalized_query(query)
     if mode not in {"production", "benchmark"}:
         _fail("E_RETRIEVAL_MODE", "mode must be production or benchmark")
@@ -185,13 +193,25 @@ def retrieve_patterns_v2(manifest: Any | None, query: Mapping[str, Any], *, mode
     validate_dataset_manifest(manifest)
     ordered = sorted(copy.deepcopy(manifest["records"]), key=lambda item: item["record_id"])
     eligible = ordered if mode == "benchmark" else [record for record in ordered if record["split"] == "train"]
+    ranked = rank_records(eligible, normalized_query)
+    if mode == "production" and feedback_events is not None and feedback_bindings is not None:
+        from ..evaluation.feedback_metrics import aggregate_feedback
+        from .feedback_ranker import apply_feedback_signal
+
+        metrics = aggregate_feedback(feedback_events, bindings=feedback_bindings)
+        adjusted = apply_feedback_signal(ranked, metrics)
+        # Retrieval-packet v2 is closed: feedback may reorder existing evidence
+        # records but must never add advisory fields or alter record values.
+        ranked = [{key: value for key, value in item.items() if key not in {
+            "feedback_advisory_basis_points", "adjusted_score_basis_points",
+        }} for item in adjusted]
     packet = {
         "schema_version": 2, "status": "available", "mode": mode, "query": normalized_query,
         "dataset": {
             "dataset_id": manifest["dataset_id"], "dataset_revision": manifest["dataset_revision"],
             "manifest_sha256": canonical_sha256({**manifest, "records": ordered}),
         },
-        "records": rank_records(eligible, normalized_query), "reason": None,
+        "records": ranked, "reason": None,
     }
     return validate_retrieval_packet_v2(packet)
 
