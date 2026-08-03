@@ -25,6 +25,16 @@ class CiContractTests(unittest.TestCase):
         self.assertIn("validate-dataset", self.workflow)
         self.assertIn("audit_readme.py README.md", self.workflow)
         self.assertIn("audit_readme.py README_zh.md", self.workflow)
+        self.assertIn("-r requirements-dev.txt", self.workflow)
+        self.assertIn(
+            "python -m unittest tests.test_schema_parity tests.test_installer tests.test_ci_contract -v",
+            self.workflow,
+        )
+        self.assertEqual(
+            (REPO_ROOT / "requirements-dev.txt").read_text(encoding="utf-8"),
+            "jsonschema==4.26.0\n",
+        )
+        self.assertNotIn("jsonschema>=", self.workflow)
 
     def test_elk_lanes_are_pinned_read_only_and_network_isolated(self) -> None:
         self.assertIn("permissions:\n  contents: read", self.workflow)

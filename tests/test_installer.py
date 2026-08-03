@@ -71,6 +71,13 @@ def expected_files() -> dict[str, bytes]:
     return result
 
 
+def schema_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.name: path.read_bytes()
+        for path in sorted((root / "schemas").glob("*.schema.json"))
+    }
+
+
 class InstallerTests(unittest.TestCase):
     def run_cli(
         self,
@@ -148,6 +155,7 @@ class InstallerTests(unittest.TestCase):
             post_run_check = self.run_cli(codex_home, "--check")
             self.assertEqual(post_run_check.returncode, 0, post_run_check.stderr)
             self.assertEqual(json.loads(post_run_check.stdout)["status"], "current")
+            self.assertEqual(schema_bytes(target), schema_bytes(REPO_ROOT / "skill"))
 
     @unittest.skipIf(
         os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
@@ -210,6 +218,25 @@ class InstallerTests(unittest.TestCase):
                 [json.loads(result.stdout)["status"] for result in results],
                 ["installed", "unchanged", "current"],
             )
+            target = codex_home / "skills" / "readme-showcase"
+            self.assertEqual(schema_bytes(target), schema_bytes(REPO_ROOT / "skill"))
+
+            dry_run = subprocess.run(
+                ["npm", "pack", "--dry-run", "--json"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(dry_run.returncode, 0, dry_run.stderr)
+            packed = json.loads(dry_run.stdout)
+            package_record = next(iter(packed.values())) if isinstance(packed, dict) else packed[0]
+            listed = {item["path"] for item in package_record["files"]}
+            expected = {
+                f"skill/schemas/{path.name}"
+                for path in (REPO_ROOT / "skill" / "schemas").glob("*.schema.json")
+            }
+            self.assertEqual(listed & expected, expected)
 
     def test_stage_hash_mismatch_and_backup_failure_restore_old_target(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
