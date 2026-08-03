@@ -6,7 +6,7 @@ from __future__ import annotations
 import copy
 import re
 from fractions import Fraction
-from typing import Any, Mapping, NoReturn, Sequence
+from typing import Any, Final, Mapping, NoReturn, Sequence
 
 from ..contracts.common import ContractError, canonical_sha256
 from ..contracts.retrieval import validate_retrieval_query
@@ -27,6 +27,7 @@ THRESHOLD_MARGIN_BASIS_POINTS = 200
 MAX_METRIC_COMPONENT = (1 << 63) - 1
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_GIT_SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SLUG = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}\Z")
 _REVIEWED_AT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
 _QUERY_SET_FIELDS = {"schema_version", "status", "proposal_origin", "dataset", "gold_set_sha256", "queries"}
@@ -36,12 +37,25 @@ _QUERY_ITEM_FIELDS = {
     "expected_relevant_ids", "expected_relevant_source_identities", "gold_sha256", "review",
 }
 _IDENTITY_FIELDS = {"record_id", "repository_url", "commit", "material_sha256", "split"}
-_REVIEW_FIELDS = {"human_reviewed", "review_method", "reviewer_id", "reviewed_at", "receipt_sha256"}
+_REVIEW_FIELDS = {
+    "approval_artifact_sha256", "human_reviewed", "receipt_sha256", "review_method",
+    "review_packet_sha256", "reviewed_at", "reviewer_id", "source_commit",
+}
 _METRIC_FIELDS = {"numerator", "denominator", "value_basis_points"}
 _BASELINE_METRIC_FIELDS = _METRIC_FIELDS | {"threshold_basis_points"}
 _BASELINE_FIELDS = {"schema_version", "status", "dataset", "gold_set_sha256", "review_receipt_sha256", "metrics"}
-# Approval receipts enter only through reviewed source changes; callers cannot extend trust.
-_REVIEW_RECEIPT_ALLOWLIST: frozenset[str] = frozenset()
+# Exact user-approved receipt and artifact bindings; callers cannot extend trust.
+_REVIEW_RECEIPT_ALLOWLIST: Final[frozenset[str]] = frozenset({
+    "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+})
+_APPROVED_REVIEW_BINDING: Final[tuple[str, str, str, str, str, str]] = (
+    "acfufu",
+    "2026-08-03T07:20:56Z",
+    "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+    "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+    "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+    "8b1fbe257e25ceafd6541b8f23341fbbe6253180",
+)
 
 
 def _fail(code: str, message: str) -> NoReturn:
@@ -73,10 +87,10 @@ def _object(value: Any, fields: set[str], context: str) -> dict[str, Any]:
     return value
 
 
-def _slug_list(value: Any, context: str, *, allow_empty: bool = False) -> list[str]:
+def _slug_list(value: Any, context: str) -> list[str]:
     if (
         not isinstance(value, list)
-        or (not allow_empty and not value)
+        or not value
         or any(not isinstance(item, str) or not _SLUG.fullmatch(item) for item in value)
         or value != sorted(set(value))
     ):
@@ -98,7 +112,11 @@ def _identity(record: Mapping[str, Any]) -> dict[str, str]:
 def _validate_identity(value: Any, expected: Mapping[str, Any], context: str) -> dict[str, Any]:
     identity = _object(value, _IDENTITY_FIELDS, context)
     if identity != _identity(expected):
-        code = "E_DATASET_SPLIT_LEAK" if identity.get("split") != "train" else "E_BENCHMARK_SOURCE_IDENTITY"
+        code = (
+            "E_DATASET_SPLIT_LEAK"
+            if expected["split"] != "train" or identity.get("split") != "train"
+            else "E_BENCHMARK_SOURCE_IDENTITY"
+        )
         _fail(code, f"{context} does not match immutable manifest source identity")
     if identity["split"] != "train":
         _fail("E_DATASET_SPLIT_LEAK", f"{context} is not train split")
@@ -217,10 +235,26 @@ def validate_reviewed_query_set(
             or not _REVIEWED_AT.fullmatch(review["reviewed_at"])
             or not isinstance(review["receipt_sha256"], str)
             or not _SHA256.fullmatch(review["receipt_sha256"])
+            or not isinstance(review["review_packet_sha256"], str)
+            or not _SHA256.fullmatch(review["review_packet_sha256"])
+            or not isinstance(review["approval_artifact_sha256"], str)
+            or not _SHA256.fullmatch(review["approval_artifact_sha256"])
+            or not isinstance(review["source_commit"], str)
+            or not _GIT_SHA1.fullmatch(review["source_commit"])
         ):
             _fail("E_BENCHMARK_REVIEW_REQUIRED", "independent human review receipt is missing or self-attested")
         if review["receipt_sha256"] != _expected_receipt(query_set, review):
             _fail("E_BENCHMARK_REVIEW_RECEIPT", "review receipt does not bind dataset/query/gold hashes")
+        binding = (
+            reviewer,
+            review["reviewed_at"],
+            review["receipt_sha256"],
+            review["review_packet_sha256"],
+            review["approval_artifact_sha256"],
+            review["source_commit"],
+        )
+        if binding != _APPROVED_REVIEW_BINDING:
+            _fail("E_BENCHMARK_REVIEW_RECEIPT", "review receipt is not bound to the approved source artifact")
         receipts.add(review["receipt_sha256"])
     if len(receipts) != 1 or receipts.isdisjoint(_REVIEW_RECEIPT_ALLOWLIST):
         _fail("E_BENCHMARK_REVIEW_RECEIPT", "review receipt lacks an independent trust anchor")
@@ -309,10 +343,6 @@ def _metric(numerator: int, denominator: int) -> dict[str, int]:
     if type(numerator) is not int or type(denominator) is not int or numerator < 0 or denominator <= 0 or numerator > denominator:
         _fail("E_BENCHMARK_DENOMINATOR", "metric numerator/denominator is invalid or zero")
     return {"numerator": numerator, "denominator": denominator, "value_basis_points": basis_points(numerator, denominator)}
-
-
-def _fraction_metric(value: Fraction) -> dict[str, int]:
-    return _metric(value.numerator, value.denominator)
 
 
 def _validated_metric(
@@ -426,10 +456,11 @@ def score_rankings(
         diversity_unique += len({canonical_sha256(record.get("pattern")) for record in records})
         diversity_total += len(records)
 
+    average_reciprocal = reciprocal_sum / len(ordered)
     metrics = {
         "project_type_accuracy": _metric(project_hits, len(ordered)),
         "recall_at_5": _metric(recall_hits, recall_total),
-        "mrr": _fraction_metric(reciprocal_sum / len(ordered)),
+        "mrr": _metric(average_reciprocal.numerator, average_reciprocal.denominator),
         "ndcg_at_5": _metric(dcg_total, ideal_dcg_total),
         "section_intent_coverage": _metric(section_hits, section_total),
         "pattern_diversity": _metric(diversity_unique, diversity_total),

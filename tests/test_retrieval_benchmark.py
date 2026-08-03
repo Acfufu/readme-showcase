@@ -26,6 +26,10 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "dataset/retrieval/manifest.json"
 QUERIES = ROOT / "dataset/retrieval/queries.json"
 BASELINE = ROOT / "tests/fixtures/retrieval/benchmark-baseline.json"
+APPROVAL_ARTIFACT_SHA256 = "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b"
+APPROVAL_RECEIPT_SHA256 = "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd"
+REVIEW_PACKET_SHA256 = "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310"
+SOURCE_COMMIT = "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
 
 
 def _result(
@@ -45,9 +49,37 @@ def _result(
     }
 
 
+def _perfect_metrics() -> dict[str, dict[str, int]]:
+    return {
+        name: {"numerator": 1, "denominator": 1, "value_basis_points": 10_000}
+        for name in METRIC_NAMES
+    }
+
+
+def _verified_metric_baseline() -> dict[str, Any]:
+    return {
+        "status": "verified",
+        "metrics": {
+            name: {
+                "numerator": 1,
+                "denominator": 1,
+                "value_basis_points": 10_000,
+                "threshold_basis_points": 9_800,
+            }
+            for name in METRIC_NAMES
+        },
+    }
+
+
 class RetrievalBenchmarkTests(unittest.TestCase):
     def manifest(self) -> dict[str, Any]:
         return json.loads(MANIFEST.read_text(encoding="utf-8"))
+
+    def query_set(self) -> dict[str, Any]:
+        return json.loads(QUERIES.read_text(encoding="utf-8"))
+
+    def baseline(self) -> dict[str, Any]:
+        return json.loads(BASELINE.read_text(encoding="utf-8"))
 
     def test_exact_integer_metrics_cover_reciprocal_and_discounted_ranks(self) -> None:
         queries = [
@@ -104,17 +136,8 @@ class RetrievalBenchmarkTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, "E_BENCHMARK_DENOMINATOR")
 
     def test_fixed_threshold_edges_and_named_regression(self) -> None:
-        metrics = {
-            name: {"numerator": 1, "denominator": 1, "value_basis_points": 10_000}
-            for name in METRIC_NAMES
-        }
-        baseline = {
-            "status": "verified",
-            "metrics": {
-                name: {"numerator": 1, "denominator": 1, "value_basis_points": 10_000, "threshold_basis_points": 9_800}
-                for name in METRIC_NAMES
-            },
-        }
+        metrics = _perfect_metrics()
+        baseline = _verified_metric_baseline()
         thresholded = apply_thresholds(metrics, baseline)
         self.assertTrue(all(metric["threshold_basis_points"] == 9_800 for metric in thresholded.values()))
         at_threshold = copy.deepcopy(thresholded)
@@ -128,18 +151,8 @@ class RetrievalBenchmarkTests(unittest.TestCase):
         self.assertIn("mrr", str(raised.exception))
 
     def test_apply_thresholds_rejects_malformed_current_metric_entries(self) -> None:
-        metrics = {
-            name: {"numerator": 1, "denominator": 1, "value_basis_points": 10_000}
-            for name in METRIC_NAMES
-        }
-        baseline_metrics = {
-            name: {"numerator": 1, "denominator": 1, "value_basis_points": 10_000, "threshold_basis_points": 9_800}
-            for name in METRIC_NAMES
-        }
-        baseline = {
-            "status": "verified",
-            "metrics": baseline_metrics,
-        }
+        metrics = _perfect_metrics()
+        baseline = _verified_metric_baseline()
         current_mutations = (
             ("zero-denominator", "denominator", 0),
             ("float-denominator", "denominator", 1.0),
@@ -166,14 +179,8 @@ class RetrievalBenchmarkTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, "E_BENCHMARK_METRIC")
 
     def test_apply_thresholds_rejects_malformed_baseline_metric_entries(self) -> None:
-        metrics = {
-            name: {"numerator": 1, "denominator": 1, "value_basis_points": 10_000}
-            for name in METRIC_NAMES
-        }
-        baseline_metrics = {
-            name: {"numerator": 1, "denominator": 1, "value_basis_points": 10_000, "threshold_basis_points": 9_800}
-            for name in METRIC_NAMES
-        }
+        metrics = _perfect_metrics()
+        baseline_metrics = _verified_metric_baseline()["metrics"]
         baseline_mutations = (
             ("zero-denominator", "denominator", 0),
             ("float-denominator", "denominator", 1.0),
@@ -208,19 +215,7 @@ class RetrievalBenchmarkTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, "E_BENCHMARK_BASELINE")
 
     def test_assert_thresholds_rejects_malformed_metric_entries(self) -> None:
-        metrics = {
-            name: {"numerator": 1, "denominator": 1, "value_basis_points": 10_000}
-            for name in METRIC_NAMES
-        }
-        baseline_metrics = {
-            name: {"numerator": 1, "denominator": 1, "value_basis_points": 10_000, "threshold_basis_points": 9_800}
-            for name in METRIC_NAMES
-        }
-        baseline = {
-            "status": "verified",
-            "metrics": baseline_metrics,
-        }
-        thresholded = apply_thresholds(metrics, baseline)
+        thresholded = apply_thresholds(_perfect_metrics(), _verified_metric_baseline())
         mutations = (
             ("zero-denominator", "denominator", 0),
             ("boolean-numerator", "numerator", True),
@@ -244,22 +239,8 @@ class RetrievalBenchmarkTests(unittest.TestCase):
 
     def test_metric_entrypoints_reject_equation_consistent_unbounded_integers(self) -> None:
         huge = 10**1000
-        current: dict[str, dict[str, int]] = {
-            name: {"numerator": 1, "denominator": 1, "value_basis_points": 10_000}
-            for name in METRIC_NAMES
-        }
-        baseline: dict[str, Any] = {
-            "status": "verified",
-            "metrics": {
-                name: {
-                    "numerator": 1,
-                    "denominator": 1,
-                    "value_basis_points": 10_000,
-                    "threshold_basis_points": 9_800,
-                }
-                for name in METRIC_NAMES
-            },
-        }
+        current = _perfect_metrics()
+        baseline = _verified_metric_baseline()
         huge_current = copy.deepcopy(current)
         huge_current["mrr"].update({"numerator": huge, "denominator": huge})
         huge_baseline = copy.deepcopy(baseline)
@@ -299,6 +280,72 @@ class RetrievalBenchmarkTests(unittest.TestCase):
         self.assertEqual(manifest, before)
         self.assertTrue(all(item["source_split"] == "train" for item in first["fastapi-proof-first-overview"]))
 
+    def test_approved_fixture_runs_frozen_baseline_and_reversed_order_is_byte_identical(self) -> None:
+        manifest = self.manifest()
+        query_set = self.query_set()
+        baseline = self.baseline()
+        reversed_query_set = copy.deepcopy(query_set)
+        reversed_query_set["queries"].reverse()
+
+        with mock.patch.object(socket, "create_connection", side_effect=AssertionError("network call")):
+            first = run_benchmark(manifest, query_set, baseline)
+            second = run_benchmark(manifest, reversed_query_set, baseline)
+
+        self.assertEqual(canonical_json_bytes(first), canonical_json_bytes(second))
+        self.assertEqual(first["metrics"], baseline["metrics"])
+        self.assertEqual(first["ranking_sha256"], "654c2b81d8b01bf99e1bcd7dab46064a96eae5670f9de6fe120bf292cb9f1ecf")
+        self.assertEqual(first["review_receipt_sha256"], APPROVAL_RECEIPT_SHA256)
+
+    def test_real_relevant_rank_regression_fails_named_mrr_threshold(self) -> None:
+        manifest = self.manifest()
+        query_set = self.query_set()
+        rankings = rank_queries(manifest, query_set["queries"])
+        query_id = query_set["queries"][0]["query_id"]
+        rankings[query_id][0], rankings[query_id][1] = rankings[query_id][1], rankings[query_id][0]
+        thresholded = apply_thresholds(
+            score_rankings(manifest, query_set["queries"], rankings),
+            self.baseline(),
+        )
+
+        with self.assertRaises(ContractError) as raised:
+            assert_thresholds(thresholded)
+
+        self.assertEqual(raised.exception.code, "E_BENCHMARK_THRESHOLD")
+        self.assertIn("mrr", str(raised.exception))
+
+    def test_approval_binding_drift_and_untrusted_receipts_fail_closed(self) -> None:
+        manifest = self.manifest()
+        query_set = self.query_set()
+        query_drift = copy.deepcopy(query_set)
+        query_drift["queries"][0]["query"]["manifest_features"] = ["drift"]
+        gold_drift = copy.deepcopy(query_set)
+        gold_drift["gold_set_sha256"] = "0" * 64
+        dataset_drift = copy.deepcopy(query_set)
+        dataset_drift["dataset"]["dataset_revision"] += 1
+        review_drifts: list[tuple[str, str, str]] = [
+            ("reviewer", "reviewer_id", "other-human"),
+            ("review-time", "reviewed_at", "2026-08-03T07:20:57Z"),
+            ("receipt", "receipt_sha256", "0" * 64),
+            ("review-packet", "review_packet_sha256", "0" * 64),
+            ("approval-artifact", "approval_artifact_sha256", "0" * 64),
+            ("source-commit", "source_commit", "0" * 40),
+        ]
+        cases: list[tuple[str, dict[str, Any], str]] = [
+            ("query", query_drift, "E_BENCHMARK_GOLD_HASH"),
+            ("gold", gold_drift, "E_BENCHMARK_GOLD_HASH"),
+            ("dataset", dataset_drift, "E_BENCHMARK_MANIFEST_HASH"),
+        ]
+        for name, field, value in review_drifts:
+            drifted = copy.deepcopy(query_set)
+            for item in drifted["queries"]:
+                item["review"][field] = value
+            cases.append((name, drifted, "E_BENCHMARK_REVIEW_RECEIPT"))
+
+        for name, payload, expected_code in cases:
+            with self.subTest(name=name), self.assertRaises(ContractError) as raised:
+                validate_reviewed_query_set(manifest, payload)
+            self.assertEqual(raised.exception.code, expected_code)
+
     def test_split_leak_uses_stable_error(self) -> None:
         manifest = self.manifest()
         with self.assertRaises(ContractError) as raised:
@@ -308,9 +355,29 @@ class RetrievalBenchmarkTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.code, "E_DATASET_SPLIT_LEAK")
 
+    def test_reviewed_gold_cannot_spoof_heldout_manifest_identity_as_train(self) -> None:
+        manifest = self.manifest()
+        heldout = next(record for record in manifest["records"] if record["record_id"] == "nextjs-route-map")
+        query_set = self.query_set()
+        query_set["queries"][0]["expected_relevant_ids"] = [heldout["record_id"]]
+        query_set["queries"][0]["expected_relevant_source_identities"] = [{
+            "record_id": heldout["record_id"],
+            "repository_url": heldout["source"]["repository_url"],
+            "commit": heldout["source"]["commit"],
+            "material_sha256": heldout["source"]["material_sha256"],
+            "split": "train",
+        }]
+
+        with self.assertRaises(ContractError) as raised:
+            validate_reviewed_query_set(manifest, query_set)
+
+        self.assertEqual(raised.exception.code, "E_DATASET_SPLIT_LEAK")
+
     def test_pending_generated_and_self_attested_gold_are_rejected(self) -> None:
         manifest = self.manifest()
-        proposals = json.loads(QUERIES.read_text(encoding="utf-8"))
+        proposals = self.query_set()
+        proposals["status"] = "pending-human-review"
+        proposals["proposal_origin"] = "codex-unreviewed"
         with self.assertRaises(ContractError) as raised:
             validate_reviewed_query_set(manifest, proposals)
         self.assertEqual(raised.exception.code, "E_BENCHMARK_REVIEW_REQUIRED")
@@ -363,6 +430,9 @@ class RetrievalBenchmarkTests(unittest.TestCase):
             "reviewer_id": "fake-human",
             "reviewed_at": "2026-08-03T01:02:03Z",
             "receipt_sha256": None,
+            "review_packet_sha256": REVIEW_PACKET_SHA256,
+            "approval_artifact_sha256": APPROVAL_ARTIFACT_SHA256,
+            "source_commit": SOURCE_COMMIT,
         }
         receipt = canonical_sha256({
             "schema_version": 1,
@@ -389,12 +459,23 @@ class RetrievalBenchmarkTests(unittest.TestCase):
 
     def test_production_entrypoint_stops_before_unapproved_baseline(self) -> None:
         manifest = self.manifest()
-        proposals = json.loads(QUERIES.read_text(encoding="utf-8"))
-        baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
-        self.assertEqual(baseline["status"], "pending-human-review")
+        proposals = self.query_set()
+        proposals["status"] = "pending-human-review"
+        proposals["proposal_origin"] = "codex-unreviewed"
         with self.assertRaises(ContractError) as raised:
-            run_benchmark(manifest, proposals, baseline)
+            run_benchmark(manifest, proposals, self.baseline())
         self.assertEqual(raised.exception.code, "E_BENCHMARK_REVIEW_REQUIRED")
+
+    def test_approved_query_set_stops_before_pending_baseline(self) -> None:
+        pending_baseline = self.baseline()
+        pending_baseline["status"] = "pending-human-review"
+        pending_baseline["review_receipt_sha256"] = None
+        pending_baseline["metrics"] = None
+
+        with self.assertRaises(ContractError) as raised:
+            run_benchmark(self.manifest(), self.query_set(), pending_baseline)
+
+        self.assertEqual(raised.exception.code, "E_BENCHMARK_BASELINE")
 
 
 if __name__ == "__main__":

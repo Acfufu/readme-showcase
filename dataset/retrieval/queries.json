@@ -6,7 +6,7 @@
     "manifest_file_sha256": "96726edefe61d23ebb37ecc1212ab6ff722cc39fc3b70254cbf89825a074375f"
   },
   "gold_set_sha256": "cca3d831f5100b8469b5a235e1efb2cee0aebfeaa53bc4c6d046ed3ad5eb7aee",
-  "proposal_origin": "codex-unreviewed",
+  "proposal_origin": "human-reviewed",
   "queries": [
     {
       "expected_relevant_ids": [
@@ -41,11 +41,14 @@
       },
       "query_id": "cli-installation-matrix",
       "review": {
-        "human_reviewed": false,
-        "receipt_sha256": null,
-        "review_method": null,
-        "reviewed_at": null,
-        "reviewer_id": null
+        "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+        "human_reviewed": true,
+        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "review_method": "independent-human",
+        "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+        "reviewed_at": "2026-08-03T07:20:56Z",
+        "reviewer_id": "acfufu",
+        "source_commit": "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
       },
       "section_intents": [
         "compatibility",
@@ -92,11 +95,14 @@
       },
       "query_id": "deno-runtime-first-run",
       "review": {
-        "human_reviewed": false,
-        "receipt_sha256": null,
-        "review_method": null,
-        "reviewed_at": null,
-        "reviewer_id": null
+        "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+        "human_reviewed": true,
+        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "review_method": "independent-human",
+        "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+        "reviewed_at": "2026-08-03T07:20:56Z",
+        "reviewer_id": "acfufu",
+        "source_commit": "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
       },
       "section_intents": [
         "installation",
@@ -143,11 +149,14 @@
       },
       "query_id": "fastapi-proof-first-overview",
       "review": {
-        "human_reviewed": false,
-        "receipt_sha256": null,
-        "review_method": null,
-        "reviewed_at": null,
-        "reviewer_id": null
+        "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+        "human_reviewed": true,
+        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "review_method": "independent-human",
+        "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+        "reviewed_at": "2026-08-03T07:20:56Z",
+        "reviewer_id": "acfufu",
+        "source_commit": "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
       },
       "section_intents": [
         "overview",
@@ -194,11 +203,14 @@
       },
       "query_id": "flask-progressive-entry",
       "review": {
-        "human_reviewed": false,
-        "receipt_sha256": null,
-        "review_method": null,
-        "reviewed_at": null,
-        "reviewer_id": null
+        "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+        "human_reviewed": true,
+        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "review_method": "independent-human",
+        "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+        "reviewed_at": "2026-08-03T07:20:56Z",
+        "reviewer_id": "acfufu",
+        "source_commit": "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
       },
       "section_intents": [
         "overview",
@@ -245,11 +257,14 @@
       },
       "query_id": "httpx-dual-interface",
       "review": {
-        "human_reviewed": false,
-        "receipt_sha256": null,
-        "review_method": null,
-        "reviewed_at": null,
-        "reviewer_id": null
+        "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+        "human_reviewed": true,
+        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "review_method": "independent-human",
+        "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+        "reviewed_at": "2026-08-03T07:20:56Z",
+        "reviewer_id": "acfufu",
+        "source_commit": "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
       },
       "section_intents": [
         "compatibility",
@@ -296,11 +311,14 @@
       },
       "query_id": "pydantic-capability-to-proof",
       "review": {
-        "human_reviewed": false,
-        "receipt_sha256": null,
-        "review_method": null,
-        "reviewed_at": null,
-        "reviewer_id": null
+        "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+        "human_reviewed": true,
+        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "review_method": "independent-human",
+        "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+        "reviewed_at": "2026-08-03T07:20:56Z",
+        "reviewer_id": "acfufu",
+        "source_commit": "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
       },
       "section_intents": [
         "overview",
@@ -347,11 +365,14 @@
       },
       "query_id": "requests-minimal-session",
       "review": {
-        "human_reviewed": false,
-        "receipt_sha256": null,
-        "review_method": null,
-        "reviewed_at": null,
-        "reviewer_id": null
+        "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+        "human_reviewed": true,
+        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "review_method": "independent-human",
+        "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+        "reviewed_at": "2026-08-03T07:20:56Z",
+        "reviewer_id": "acfufu",
+        "source_commit": "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
       },
       "section_intents": [
         "installation",
@@ -399,11 +420,14 @@
       },
       "query_id": "ruff-command-and-editor-paths",
       "review": {
-        "human_reviewed": false,
-        "receipt_sha256": null,
-        "review_method": null,
-        "reviewed_at": null,
-        "reviewer_id": null
+        "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+        "human_reviewed": true,
+        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "review_method": "independent-human",
+        "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+        "reviewed_at": "2026-08-03T07:20:56Z",
+        "reviewer_id": "acfufu",
+        "source_commit": "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
       },
       "section_intents": [
         "installation",
@@ -452,11 +476,14 @@
       },
       "query_id": "tokio-feature-bounded-start",
       "review": {
-        "human_reviewed": false,
-        "receipt_sha256": null,
-        "review_method": null,
-        "reviewed_at": null,
-        "reviewer_id": null
+        "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+        "human_reviewed": true,
+        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "review_method": "independent-human",
+        "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+        "reviewed_at": "2026-08-03T07:20:56Z",
+        "reviewer_id": "acfufu",
+        "source_commit": "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
       },
       "section_intents": [
         "architecture",
@@ -505,11 +532,14 @@
       },
       "query_id": "vite-scaffold-to-build",
       "review": {
-        "human_reviewed": false,
-        "receipt_sha256": null,
-        "review_method": null,
-        "reviewed_at": null,
-        "reviewer_id": null
+        "approval_artifact_sha256": "96c16fa820e2ad4fa3e5f3b114f4c1d0dd596b6bee342df6f531b41145d7f37b",
+        "human_reviewed": true,
+        "receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
+        "review_method": "independent-human",
+        "review_packet_sha256": "fe92456c6dbde1b1a53d1541a8b4f9e12fa3fa513ffecffc6611fda3f69a8310",
+        "reviewed_at": "2026-08-03T07:20:56Z",
+        "reviewer_id": "acfufu",
+        "source_commit": "8b1fbe257e25ceafd6541b8f23341fbbe6253180"
       },
       "section_intents": [
         "compatibility",
@@ -526,5 +556,5 @@
     }
   ],
   "schema_version": 1,
-  "status": "pending-human-review"
+  "status": "reviewed"
 }

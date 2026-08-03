@@ -6,8 +6,45 @@
     "manifest_file_sha256": "96726edefe61d23ebb37ecc1212ab6ff722cc39fc3b70254cbf89825a074375f"
   },
   "gold_set_sha256": "cca3d831f5100b8469b5a235e1efb2cee0aebfeaa53bc4c6d046ed3ad5eb7aee",
-  "metrics": null,
-  "review_receipt_sha256": null,
+  "metrics": {
+    "mrr": {
+      "denominator": 1,
+      "numerator": 1,
+      "threshold_basis_points": 9800,
+      "value_basis_points": 10000
+    },
+    "ndcg_at_5": {
+      "denominator": 100000,
+      "numerator": 100000,
+      "threshold_basis_points": 9800,
+      "value_basis_points": 10000
+    },
+    "pattern_diversity": {
+      "denominator": 50,
+      "numerator": 50,
+      "threshold_basis_points": 9800,
+      "value_basis_points": 10000
+    },
+    "project_type_accuracy": {
+      "denominator": 10,
+      "numerator": 10,
+      "threshold_basis_points": 9800,
+      "value_basis_points": 10000
+    },
+    "recall_at_5": {
+      "denominator": 10,
+      "numerator": 10,
+      "threshold_basis_points": 9800,
+      "value_basis_points": 10000
+    },
+    "section_intent_coverage": {
+      "denominator": 23,
+      "numerator": 23,
+      "threshold_basis_points": 9800,
+      "value_basis_points": 10000
+    }
+  },
+  "review_receipt_sha256": "e414a807b2961b40199e8575697cb7f7c693cdce7459b353e9c53dca7e4a4cfd",
   "schema_version": 1,
-  "status": "pending-human-review"
+  "status": "verified"
 }
