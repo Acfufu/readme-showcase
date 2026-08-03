@@ -51,8 +51,39 @@ def _regular_bytes(path: Path, *, required: bool = True) -> bytes | None:
         raise ContractError("E_PREVIEW_PATH", f"cannot read preview input: {path.name}") from exc
 
 
-def _text(path: Path, *, required: bool = True, fallback: str = "") -> str:
-    raw = _regular_bytes(path, required=required)
+class PreviewInputSnapshot:
+    def __init__(self) -> None:
+        self._values: dict[Path, bytes | None] = {}
+
+    def read(self, path: Path, *, required: bool = True) -> bytes | None:
+        absolute = path.absolute()
+        if absolute not in self._values:
+            self._values[absolute] = _regular_bytes(absolute, required=required)
+        value = self._values[absolute]
+        if required and value is None:
+            raise ContractError("E_PREVIEW_PATH", f"preview input is missing: {absolute.name}")
+        return value
+
+    def assert_unchanged(self) -> None:
+        for path, expected in sorted(
+            self._values.items(), key=lambda item: os.fsencode(os.fspath(item[0]))
+        ):
+            observed = _regular_bytes(path, required=False)
+            if observed != expected:
+                raise ContractError(
+                    "E_PREVIEW_STALE",
+                    f"preview input changed during rendering: {path.name}",
+                )
+
+
+def _text(
+    snapshot: PreviewInputSnapshot,
+    path: Path,
+    *,
+    required: bool = True,
+    fallback: str = "",
+) -> str:
+    raw = snapshot.read(path, required=required)
     if raw is None:
         return fallback
     try:
@@ -61,8 +92,13 @@ def _text(path: Path, *, required: bool = True, fallback: str = "") -> str:
         raise ContractError("E_PREVIEW_PATH", f"preview input must be UTF-8: {path.name}") from exc
 
 
-def _canonical_object(path: Path, *, required: bool = True) -> dict[str, Any] | None:
-    raw = _regular_bytes(path, required=required)
+def _canonical_object(
+    snapshot: PreviewInputSnapshot,
+    path: Path,
+    *,
+    required: bool = True,
+) -> dict[str, Any] | None:
+    raw = snapshot.read(path, required=required)
     if raw is None:
         return None
     try:
@@ -82,7 +118,11 @@ def _attempt_path(workspace: RunWorkspace, manifest: dict[str, Any], index: int,
     return workspace.root / "stages" / f"{index + 1:02d}-{manifest['stages'][index]['name']}" / "attempts" / str(attempt) / name
 
 
-def _assert_stage_outputs_current(workspace: RunWorkspace, manifest: dict[str, Any]) -> None:
+def _assert_stage_outputs_current(
+    workspace: RunWorkspace,
+    manifest: dict[str, Any],
+    snapshot: PreviewInputSnapshot | None = None,
+) -> None:
     for index in (0, 1, 2, 3, 5, 6, 7):
         stage = manifest["stages"][index]
         if stage["attempt"] == 0:
@@ -94,10 +134,10 @@ def _assert_stage_outputs_current(workspace: RunWorkspace, manifest: dict[str, A
             raise ContractError("E_PREVIEW_STALE", f"preview stage output is unavailable: {stage['name']}") from exc
         if not entries or any(path.is_symlink() or not path.is_file() for path in entries):
             raise ContractError("E_PREVIEW_PATH", f"preview stage output is unsafe: {stage['name']}")
-        projection = [
-            {"path": path.name, "sha256": hashlib.sha256(_regular_bytes(path) or b"").hexdigest()}
-            for path in entries
-        ]
+        projection = []
+        for path in entries:
+            raw = snapshot.read(path) if snapshot is not None else _regular_bytes(path)
+            projection.append({"path": path.name, "sha256": hashlib.sha256(raw or b"").hexdigest()})
         if canonical_sha256(projection) != stage["output_sha256"]:
             raise ContractError("E_PREVIEW_STALE", f"preview stage output hash is stale: {stage['name']}")
 
@@ -112,7 +152,11 @@ def _diff(path: str, before: str, after: str) -> str:
     return "\n".join(lines) + ("\n" if lines else "(no changes)\n")
 
 
-def _evidence(workspace: RunWorkspace, manifest: dict[str, Any]) -> list[dict[str, str]]:
+def _evidence(
+    snapshot: PreviewInputSnapshot,
+    workspace: RunWorkspace,
+    manifest: dict[str, Any],
+) -> list[dict[str, str]]:
     references = (
         ("repository evidence", _attempt_path(workspace, manifest, 0, "repository-evidence.json")),
         ("retrieval packet", _attempt_path(workspace, manifest, 1, "retrieval-packet.json")),
@@ -124,7 +168,7 @@ def _evidence(workspace: RunWorkspace, manifest: dict[str, Any]) -> list[dict[st
     for label, path in references:
         if path is None:
             continue
-        raw = _regular_bytes(path, required=False)
+        raw = snapshot.read(path, required=False)
         if raw is None:
             continue
         output.append({
@@ -135,7 +179,11 @@ def _evidence(workspace: RunWorkspace, manifest: dict[str, Any]) -> list[dict[st
     return output or [{"label": "unavailable", "path": "none", "sha256": "0" * 64}]
 
 
-def build_preview_report(workspace: RunWorkspace, manifest: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+def build_preview_snapshot(
+    workspace: RunWorkspace,
+    manifest: dict[str, Any],
+    snapshot: PreviewInputSnapshot,
+) -> tuple[dict[str, Any], dict[str, str]]:
     candidate_root = workspace.root / "stages/05-candidate"
     try:
         candidate_info = candidate_root.lstat()
@@ -144,32 +192,41 @@ def build_preview_report(workspace: RunWorkspace, manifest: dict[str, Any]) -> t
     if not stat.S_ISDIR(candidate_info.st_mode) or stat.S_ISLNK(candidate_info.st_mode):
         raise ContractError("E_PREVIEW_PATH", "candidate root must be a real directory")
 
-    _assert_stage_outputs_current(workspace, manifest)
+    manifest_raw = snapshot.read(workspace.root / "run-manifest.json")
+    if manifest_raw != canonical_json_bytes(manifest):
+        raise ContractError("E_PREVIEW_STALE", "run manifest changed before preview rendering")
+    _assert_stage_outputs_current(workspace, manifest, snapshot)
 
     context = RunContext(workspace, manifest)
     candidate_stage = manifest["stages"][4]
     if candidate_stage["status"] != "pass" or not isinstance(candidate_stage["output_sha256"], str):
         raise ContractError("E_PREVIEW_STATE", "preview requires a committed candidate stage")
-    current_candidate_sha256 = CandidateImportStage().fingerprint(context)
-    if current_candidate_sha256 != candidate_stage["output_sha256"]:
-        raise ContractError("E_PREVIEW_STALE", "candidate bytes differ from committed candidate stage")
 
-    primary = _text(candidate_root / "README.md")
+    plan_path = _attempt_path(workspace, manifest, 2, "readme-plan.json")
+    plan = _canonical_object(snapshot, plan_path) if plan_path is not None else None
+    planned_sections = plan.get("sections", []) if isinstance(plan, dict) else []
+    languages = plan.get("languages", []) if isinstance(plan, dict) else []
+    localized_required = isinstance(languages, list) and "zh" in languages
+
+    primary = _text(snapshot, candidate_root / "README.md")
     localized = _text(
-        candidate_root / "README_zh.md", required=False,
-        fallback="Localized README was not provided for this run.\n",
+        snapshot,
+        candidate_root / "README_zh.md",
+        required=localized_required,
+        fallback="Localized README was not requested for this run.\n",
+    ) if localized_required else "Localized README was not requested for this run.\n"
+    before_primary = _text(
+        snapshot, workspace.target_root / "README.md", required=False
     )
-    before_primary = _text(workspace.target_root / "README.md", required=False)
-    before_localized = _text(workspace.target_root / "README_zh.md", required=False)
+    before_localized = (
+        _text(snapshot, workspace.target_root / "README_zh.md", required=False)
+        if localized_required else ""
+    )
     readmes = {"README.md": primary, "README_zh.md": localized}
     diffs = {
         "README.md": _diff("README.md", before_primary, primary),
         "README_zh.md": _diff("README_zh.md", before_localized, localized),
     }
-
-    plan_path = _attempt_path(workspace, manifest, 2, "readme-plan.json")
-    plan = _canonical_object(plan_path) if plan_path is not None else None
-    planned_sections = plan.get("sections", []) if isinstance(plan, dict) else []
     editorial = evaluate_editorial(
         readmes,
         planned_sections=planned_sections if isinstance(planned_sections, list) else [],
@@ -177,9 +234,9 @@ def build_preview_report(workspace: RunWorkspace, manifest: dict[str, Any]) -> t
     ).as_dict()
 
     validation_path = _attempt_path(workspace, manifest, 6, "validation-report.json")
-    validation = _canonical_object(validation_path, required=False) if validation_path else None
+    validation = _canonical_object(snapshot, validation_path, required=False) if validation_path else None
     evaluation_path = _attempt_path(workspace, manifest, 7, "evaluation-report.json")
-    evaluation = _canonical_object(evaluation_path, required=False) if evaluation_path else None
+    evaluation = _canonical_object(snapshot, evaluation_path, required=False) if evaluation_path else None
     diagnostics = (
         validation.get("diagnostics", [])
         if isinstance(validation, dict) and isinstance(validation.get("diagnostics"), list)
@@ -190,7 +247,11 @@ def build_preview_report(workspace: RunWorkspace, manifest: dict[str, Any]) -> t
     if evaluation is None:
         evaluation = {"status": "not-available", "reason": "Evaluation stage did not produce a report."}
 
-    claim_map = _canonical_object(candidate_root / "claim-map.json") or {}
+    claim_map = _canonical_object(snapshot, candidate_root / "claim-map.json") or {}
+    evidence = _evidence(snapshot, workspace, manifest)
+    current_candidate_sha256 = CandidateImportStage().fingerprint(context)
+    if current_candidate_sha256 != candidate_stage["output_sha256"]:
+        raise ContractError("E_PREVIEW_STALE", "candidate bytes differ from committed candidate stage")
     report = {
         "schema_version": 1,
         "generated_at": manifest["created_at"],
@@ -198,7 +259,7 @@ def build_preview_report(workspace: RunWorkspace, manifest: dict[str, Any]) -> t
         "run_status": manifest["status"],
         "candidate_sha256": current_candidate_sha256,
         "diff": diffs,
-        "evidence": _evidence(workspace, manifest),
+        "evidence": evidence,
         "claims": claim_map,
         "diagnostics": diagnostics,
         "evaluation": evaluation,
@@ -207,3 +268,25 @@ def build_preview_report(workspace: RunWorkspace, manifest: dict[str, Any]) -> t
         "revision": {"current": manifest.get("current_revision") or "none"},
     }
     return report, readmes
+
+
+def assert_preview_inputs_current(
+    workspace: RunWorkspace,
+    manifest: dict[str, Any],
+    snapshot: PreviewInputSnapshot,
+) -> None:
+    manifest_raw = _regular_bytes(workspace.root / "run-manifest.json")
+    if manifest_raw != canonical_json_bytes(manifest):
+        raise ContractError("E_PREVIEW_STALE", "run manifest changed during preview rendering")
+    _assert_stage_outputs_current(workspace, manifest)
+    expected = manifest["stages"][4]["output_sha256"]
+    if CandidateImportStage().fingerprint(RunContext(workspace, manifest)) != expected:
+        raise ContractError("E_PREVIEW_STALE", "candidate bytes changed during preview rendering")
+    snapshot.assert_unchanged()
+
+
+def build_preview_report(
+    workspace: RunWorkspace,
+    manifest: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, str]]:
+    return build_preview_snapshot(workspace, manifest, PreviewInputSnapshot())

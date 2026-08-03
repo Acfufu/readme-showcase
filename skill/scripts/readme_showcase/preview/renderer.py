@@ -12,7 +12,12 @@ from typing import Any
 
 from ...pipeline_contracts import ContractError, canonical_json_bytes, canonical_sha256
 from ..orchestration.workspace import RunWorkspace
-from .report import MAX_PREVIEW_INPUT_BYTES, build_preview_report
+from .report import (
+    MAX_PREVIEW_INPUT_BYTES,
+    PreviewInputSnapshot,
+    assert_preview_inputs_current,
+    build_preview_snapshot,
+)
 
 
 _ASSET_SUFFIXES = frozenset({".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"})
@@ -47,7 +52,10 @@ def _validate_svg(raw: bytes) -> None:
             raise ContractError("E_PREVIEW_PATH", "preview SVG contains an active style")
 
 
-def _collect_assets(workspace: RunWorkspace) -> dict[str, bytes]:
+def _collect_assets(
+    workspace: RunWorkspace,
+    snapshot: PreviewInputSnapshot,
+) -> dict[str, bytes]:
     root = workspace.root / "stages/05-candidate/assets"
     try:
         info = root.lstat()
@@ -78,7 +86,7 @@ def _collect_assets(workspace: RunWorkspace) -> dict[str, bytes]:
                 raise ContractError("E_PREVIEW_PATH", "candidate asset path or type is not allowlisted")
             if source_info.st_size > MAX_PREVIEW_INPUT_BYTES:
                 raise ContractError("E_PREVIEW_PATH", "candidate asset exceeds preview size limit")
-            raw = source.read_bytes()
+            raw = snapshot.read(source) or b""
             if pure.suffix.casefold() == ".svg":
                 _validate_svg(raw)
             output[f"assets/{relative}"] = raw
@@ -136,8 +144,9 @@ def _tree_bytes(root: Path) -> dict[str, bytes] | None:
 
 
 def render_preview(workspace: RunWorkspace, manifest: dict[str, Any]) -> dict[str, object]:
-    assets = _collect_assets(workspace)
-    report, readmes = build_preview_report(workspace, manifest)
+    snapshot = PreviewInputSnapshot()
+    assets = _collect_assets(workspace, snapshot)
+    report, readmes = build_preview_snapshot(workspace, manifest, snapshot)
     files = {
         "index.html": _index(report, readmes),
         "report.json": canonical_json_bytes(report),
@@ -157,6 +166,7 @@ def render_preview(workspace: RunWorkspace, manifest: dict[str, Any]) -> dict[st
             destination.write_bytes(raw)
         destination = output_root / "preview"
         existing = _tree_bytes(destination)
+        assert_preview_inputs_current(workspace, manifest, snapshot)
         if existing is not None:
             if existing != files:
                 raise ContractError("E_PREVIEW_EXISTS", "preview output already exists with different bytes")

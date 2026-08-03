@@ -12,8 +12,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from skill.scripts.pipeline_contracts import canonical_json_bytes
+from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes
+from skill.scripts.readme_showcase.orchestration import runner as runner_module
+from skill.scripts.readme_showcase.preview import report as report_module
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -184,6 +187,33 @@ class PreviewReportTests(unittest.TestCase):
         self.assertEqual(manifest_before, manifest_after)
         self.assertEqual(candidate_before, json.loads(manifest_after)["stages"][4]["output_sha256"])
         self.assertFalse(any("output/preview" in path for path in self.preview_bytes()))
+
+    def test_mid_render_candidate_mutation_fails_without_replacing_preview(self) -> None:
+        self.assertEqual(self.prepare().returncode, 0)
+        self.assertEqual(self.cli("preview", "--workspace", str(self.workspace)).returncode, 0)
+        preview_before = self.preview_bytes()
+        readme = self.workspace / "stages/05-candidate/README.md"
+        original_fingerprint = report_module.CandidateImportStage.fingerprint
+        mutated = False
+
+        def mutate_after_fingerprint(stage: object, context: object) -> str:
+            nonlocal mutated
+            fingerprint = original_fingerprint(stage, context)
+            if not mutated:
+                readme.write_bytes(readme.read_bytes() + b"mid-render mutation\n")
+                mutated = True
+            return fingerprint
+
+        with mock.patch.object(
+            report_module.CandidateImportStage,
+            "fingerprint",
+            new=mutate_after_fingerprint,
+        ):
+            with self.assertRaises(ContractError) as raised:
+                runner_module.preview_run(self.workspace)
+        self.assertEqual(raised.exception.code, "E_PREVIEW_STALE")
+        self.assertTrue(mutated)
+        self.assertEqual(self.preview_bytes(), preview_before)
 
 
 if __name__ == "__main__":
