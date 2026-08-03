@@ -2,31 +2,38 @@
 
 > 文档角色：软件架构师 / 技术负责人实施蓝图
 > 目标仓库：`Acfufu/readme-showcase`
-> 基线来源：当前仓库提交 `b38f780928a7982746965e5ec8673375609e5aa5`
+> 历史基线来源：M0 前仓库提交 `b38f780928a7982746965e5ec8673375609e5aa5`（仅作对照，已过时）
 > 适用执行者：Codex 及人工 Reviewer
-> 文档状态：已审查；Batch 1 已于 2026-08-02 验收通过
+> 文档状态：M0–M9 实现已完成；功能实现基线提交为 `a7dc83ee553d870c4b479f59aebc6fff52550ebd`（tree `101c50502c9d1a5d64213dfc318c8cc416ff8ee9`）；F1–F4 全局验收的 live status 不在本实现基线文档中冻结，由 same-SHA Trellis/evidence final gates 记录
 > 范围声明：**明确排除供应链优化、依赖治理、渲染引擎插件化及 ELK 依赖锁升级。**
 
 ---
 
 ## 执行状态
 
-Batch 1 已按 M0-T1、M0-T2、M0-T3 的依赖顺序完成，后续里程碑尚未开始。
+M0–M9 的实现任务与对应任务级 gate 已完成，功能实现基线提交为
+`a7dc83ee553d870c4b479f59aebc6fff52550ebd`（tree
+`101c50502c9d1a5d64213dfc318c8cc416ff8ee9`）。F1–F4 将对同一棵树执行最终全局验收；其 live status 不在本文冻结，由 same-SHA Trellis/evidence final gates 记录。
 
-| 任务 | 结果 | 提交 |
+| 里程碑 | 状态 | 代表性实现提交 / 结果 |
 |---|---|---|
-| 规划矛盾校正 | 完成 | `3877388` |
-| M0-T1 架构兼容基线 | 完成 | `1615573` |
-| M0-T2 完整测试长尾调查与 CI 边界 | 完成 | `59205a3` |
-| M0-T3 通用 Diagnostics 模型 | 完成 | `dfd86de` |
+| M0 基线与护栏 | 完成 | `1615573`, `59205a3`, `dfd86de` |
+| M1 编排闭环 | 完成 | workspace、stage runner、generation request；`62e1e29`, `a0f422b`, `9b7eb64` |
+| M2 Scanner v2 | 完成 | tracked index、profiles、partial scan；`413857e`, `af5fd3b`, `c479f0f` |
+| M3 Evidence v2 | 完成 | evidence graph、extractors、bundle/claim contracts；`8e49850`, `8476889`, `e5d040a` |
+| M4 诊断与修订 | 完成 | aggregated diagnostics、revision context；`bdd86ab`, `cdf23b0` |
+| M5 评测与预览 | 完成 | contract/behavior/editorial、offline preview；`7a4e1f3`, `63a0557`, `9afcaa7`, `eb81d4e` |
+| M6 Retrieval v2 | 完成 | classifier、hybrid ranker、benchmark、22 records；`e718ac4`, `bd31518`, `e1c7d81`, `c92d5ec` |
+| M7 Schema 与 locale | 完成 | schema parity、restricted BCP 47；总数在 M8/M9 producer 加入后达到 17；`8e82a48`, `1c15ec8` |
+| M8 交付闭环 | 完成 | detached worktree、GitHub dry-run、reject-default approval；`ad9fd49`, `88b9c0a`, `ae2057a` |
+| M9 反馈闭环 | 完成 | append-only events、bounded advisory metrics；`d024d93`, `a7dc83e` |
 
 验收结果：
 
-- Python 3.11 与 Python 3.13 完整测试均为 89/89 通过，`npm test` 使用受支持解释器时同样为 89/89；
-- 数据集 manifest、英文与中文 README audit、ELK vendor parity、Node 语法、动效 GIF 渲染及 `npm pack --dry-run` 全部通过；
-- 未复现历史 90 秒长尾，完整测试约 8 秒结束且无残留测试进程，因此没有引入自定义进程管理 runner；
-- v1 CLI、公开 Python 导入、canonical JSON、安装边界及现有 fail-closed 安全行为保持不变；
-- 下一执行入口为 Batch 2，开始前应再次确认 M1 的 workspace、stage runner 与 generation request 契约仍与当前代码一致。
+- M9-T2 在支持的 Python 3.11 + `jsonschema==4.26.0` 环境下复现完整测试 321/321，`npm test` 同样为 321/321；focused regression 为 32/32；
+- 当前快照为 `pipeline_core.py` 238 行、`readme_pipeline.py` 485 行、17 个 Schema、22 条 Retrieval 记录（train/test=20/2）；
+- v1 CLI、公开 Python 导入、canonical JSON、安装边界及现有 fail-closed 安全行为保持不变；live GitHub 写入与 push 未执行；
+- F1–F4 的 live status 不在本文冻结；由 same-SHA Trellis/evidence final gates 记录，不得用任务级 green 替代其最终结论。
 
 ---
 
@@ -67,9 +74,9 @@ test(ci): isolate slow and integration suites
 
 # 1. 当前代码基线
 
-## 1.1 已确认的仓库状态
+## 1.1 历史 M0 代码基线（2026-08-02；已过时，仅作对照）
 
-| 项目 | 当前值 |
+| 项目 | M0 基线值 |
 |---|---:|
 | `skill/scripts/pipeline_core.py` | 2,694 行 |
 | `skill/scripts/readme_pipeline.py` | 254 行 |
@@ -81,7 +88,31 @@ test(ci): isolate slow and integration suites
 | 项目类型 | 4 类 |
 | Pipeline CLI 子命令 | 8 个 |
 
-当前 CLI：
+以上数值是 M0 冻结时的历史快照，不代表当前实现。
+
+### 功能实现基线快照（提交 `a7dc83ee553d870c4b479f59aebc6fff52550ebd`；tree `101c50502c9d1a5d64213dfc318c8cc416ff8ee9`）
+
+| 项目 | 当前值 |
+|---|---:|
+| `skill/scripts/pipeline_core.py` | 238 行 |
+| `skill/scripts/readme_pipeline.py` | 485 行 |
+| 测试用例 | 321 个（支持环境；Python/npm 均通过） |
+| Retrieval 数据记录 | 22 条 |
+| Retrieval 训练/测试划分 | 20 / 2 |
+| `skill/schemas/*.schema.json` | 17 个 |
+| v1 CLI | 原 8 个命令保留 |
+| 新增生命周期/质量/交付/反馈命令 | `run`, `resume`, `status`, `explain`, `preview`, `create-approval-template`, `deliver`, `record-feedback` |
+
+当前快照复核命令：
+
+```bash
+git rev-parse HEAD HEAD^{tree}
+wc -l skill/scripts/pipeline_core.py skill/scripts/readme_pipeline.py
+find skill/schemas -maxdepth 1 -name '*.schema.json' -type f | wc -l
+PYTHONDONTWRITEBYTECODE=1 uv run --python 3.11 --with jsonschema==4.26.0 python -m unittest discover -s tests -v
+```
+
+M0 基线 CLI：
 
 ```text
 validate-dataset
@@ -103,7 +134,7 @@ wc -l skill/scripts/pipeline_core.py skill/scripts/readme_pipeline.py \
 python3 -m unittest discover -s tests -v
 ```
 
-2026-08-02 本机复现结果：82 个测试在 24.337 秒内全部通过。测试数量以 `unittest` 实际 discovery 结果为准，行数统一以 `wc -l` 为准。
+2026-08-02 本机复现结果：82 个测试在 24.337 秒内全部通过；该结果属于历史基线。当前测试数量以支持环境中的 `unittest` discovery 结果为准，行数统一以 `wc -l` 为准。
 
 ## 1.2 已有核心能力
 
@@ -2083,46 +2114,48 @@ JSON 日志字段：
 
 整个架构升级完成必须同时满足：
 
+> 以下 `[x]` 仅表示对应 M0–M9 任务级 gate 已有直接证据；F1–F4 的 live status 不在本实现基线文档中冻结，由 same-SHA Trellis/evidence final gates 记录。GitHub live branch/commit/push/PR 写入不在本轮范围内；交付 execute 仅以 mock 验证，真实 `gh` 仅做 network-denied dry-run。
+
 ## 功能
 
-- [ ] 用户可通过 `run` 创建完整 workspace。
-- [ ] Pipeline 能暂停等待 Codex candidate。
-- [ ] `resume` 能从正确阶段恢复。
-- [ ] Scanner 支持 tracked index、profile 和 partial result。
-- [ ] Evidence v2 支持行、符号、配置和 observation。
-- [ ] Claim v2 支持多证据绑定。
-- [ ] 内容问题一次返回完整 diagnostics。
-- [ ] Evaluation 分为 contract、behavior、editorial。
-- [ ] Retrieval 支持自动分类与混合排序。
-- [ ] JSON Schema 对外发布。
-- [ ] Locale 使用显式 BCP 47。
-- [ ] 可以在临时 worktree 中准备 PR。
-- [ ] GitHub delivery 支持 dry-run 与幂等重试。
-- [ ] 可以记录本地 feedback event。
+- [x] 用户可通过 `run` 创建完整 workspace。
+- [x] Pipeline 能暂停等待 Codex candidate。
+- [x] `resume` 能从正确阶段恢复。
+- [x] Scanner 支持 tracked index、profile 和 partial result。
+- [x] Evidence v2 支持行、符号、配置和 observation。
+- [x] Claim v2 支持多证据绑定。
+- [x] 内容问题一次返回完整 diagnostics。
+- [x] Evaluation 分为 contract、behavior、editorial。
+- [x] Retrieval 支持自动分类与混合排序。
+- [x] JSON Schema 对外发布。
+- [x] Locale 使用显式 BCP 47。
+- [x] 可以在临时 worktree 中准备 PR。
+- [x] GitHub delivery 支持 dry-run 与幂等重试（mock execute + network-denied dry-run；不包含 live 写入）。
+- [x] 可以记录本地 feedback event。
 
 ## 兼容
 
-- [ ] 原 8 个 CLI 命令继续工作。
-- [ ] v1 fixture 全部通过。
-- [ ] 原公开 Python 导入继续工作。
-- [ ] 现有安全错误码不被静默替换。
+- [x] 原 8 个 CLI 命令继续工作。
+- [x] v1 fixture 全部通过。
+- [x] 原公开 Python 导入继续工作。
+- [x] 现有安全错误码不被静默替换。
 
 ## 质量
 
-- [ ] 完整测试套件有重复耗时证据和残留进程检查；只有复现挂起时才要求自定义模块级超时 runner。
-- [ ] 新模块覆盖 unit/contract/integration/e2e。
-- [ ] 相同输入产生相同核心 artifact bytes。
-- [ ] 无新增未说明的网络依赖。
-- [ ] `pipeline_core.py` 显著缩小，目标低于 500 行兼容 wrapper。
-- [ ] 所有 Schema 有 valid/invalid fixtures。
-- [ ] CI 包含 retrieval benchmark 和性能烟雾测试。
+- [x] 完整测试套件有重复耗时证据和残留进程检查；只有复现挂起时才要求自定义模块级超时 runner。
+- [x] 新模块覆盖 unit/contract/integration/e2e。
+- [x] 相同输入产生相同核心 artifact bytes。
+- [x] 无新增未说明的网络依赖。
+- [x] `pipeline_core.py` 显著缩小，目标低于 500 行兼容 wrapper（当前 238 行）。
+- [x] 所有 Schema 有 valid/invalid fixtures。
+- [x] CI 包含 retrieval benchmark 和性能烟雾测试。
 
 ## 安全
 
-- [ ] 所有安全不变量有测试。
-- [ ] 主工作区不会被修改。
-- [ ] 未审批或发生漂移时无法获得 write authority。
-- [ ] preview 和 diagnostics 不泄漏敏感内容。
+- [x] 所有安全不变量有测试。
+- [x] 主工作区不会被修改。
+- [x] 未审批或发生漂移时无法获得 write authority。
+- [x] preview 和 diagnostics 不泄漏敏感内容。
 
 ---
 
@@ -2250,6 +2283,54 @@ M9-T2
 ```
 
 任何测试失败不得以“与本次无关”为理由跳过。必须定位、修复或在报告中提供可复现证据和明确阻断说明。
+
+## 22.1 Batch 2–6 已完成交付报告（功能实现基线提交 `a7dc83ee553d870c4b479f59aebc6fff52550ebd`；tree `101c50502c9d1a5d64213dfc318c8cc416ff8ee9`）
+
+### Implemented
+
+| Batch | 已交付结果 | 关键提交 |
+|---|---|---|
+| Batch 2：编排闭环 | M1 run workspace、stage runner、`run/resume/status/explain`、bounded generation request | `62e1e29`, `a0f422b`, `9b7eb64` |
+| Batch 3：证据与诊断 | M2 scanner v2、M3 evidence/claim/bundle v2、M4 aggregated diagnostics 与 revision loop | `413857e`、`af5fd3b`、`c479f0f`、`8e49850`、`8476889`、`e5d040a`、`bdd86ab`、`cdf23b0` |
+| Batch 4：质量体系 | M5 contract/behavior/editorial/offline preview、M6 classifier/ranker/benchmark 与 reviewed corpus | `7a4e1f3`、`63a0557`、`9afcaa7`、`eb81d4e`、`e718ac4`、`bd31518`、`e1c7d81`、`c92d5ec` |
+| Batch 5：泛化与交付 | M7 schema/locale parity；总数在 M8/M9 producer 加入后达到 17；M8 detached worktree、approval、GitHub dry-run adapter | `8e82a48`、`1c15ec8`、`ad9fd49`、`88b9c0a`、`ae2057a` |
+| Batch 6：反馈闭环 | M9 append-only feedback events 与 bounded advisory metrics/ranking signal | `d024d93`、`a7dc83e` |
+
+变更模块：orchestration、scanner、evidence、validation/evaluation/preview、retrieval、contracts/schemas、delivery/feedback；`pipeline_core.py` 保留兼容 facade。
+
+新增接口：`run/resume/status/explain/preview`、`create-approval-template`、`deliver`、`record-feedback`，以及 v2 artifact/schema 与可选 feedback ranking seam。
+
+修改文件 manifest（可复现；范围为 `f708e994..a7dc83ee`）：运行
+`git diff --name-only f708e994 a7dc83ee -- . ':(exclude).omo/**'`
+得到 200 个 non-`.omo` changed paths；其中 `skill/scripts/readme_showcase/**` 63 个、`tests/**` 109 个。主要分组为 `skill/scripts/readme_showcase/**`、`tests/**`、`skill/schemas/**`、`dataset/retrieval/**`、`.github/workflows/` 及 package/requirements/docs/fixtures。
+
+### Compatibility
+
+- v1：原 8 个 CLI、公开 Python 导入、canonical JSON、v1 fixtures 与 fail-closed 错误语义保持不变。
+- v2/special：新增命令与 17 个 producer-owned schemas；v2 通过新入口表达，不放宽 v1 行为。
+- Delivery：execute 仅由 mock 覆盖，真实 `gh` 仅 network-denied dry-run；无 live remote write 或 push。
+
+### Tests
+
+- 支持的 Python 3.11 + `jsonschema==4.26.0`：`PYTHONDONTWRITEBYTECODE=1 uv run --python 3.11 --with jsonschema==4.26.0 python -m unittest discover -s tests -v` 为 321/321；同环境 `npm test` 为 321/321；M9-T2 focused 为 32/32。
+- 当前发布面复核：`pipeline_core.py` 238 行、`readme_pipeline.py` 485 行、17 schemas、22 records（20 train/2 test）；`npm pack` entryCount=112，离线安装/CLI 检查通过。最终支持 receipt：`.omo/evidence/M9-T2-final-gate-review.md`。
+- 最慢测试：`unittest` 当前未记录逐用例 duration，不能诚实命名单项最慢测试；F3 将在冻结树补采样。
+- 残留进程：任务级/最终 M9 gate 清理检查为 0；F3 将再次全局复核。
+
+### Security
+
+- 任务级 gate 保留并覆盖路径穿越、symlink/special file、secret/binary、hash/Git base/index、schema/diagnostic、split leakage、approval drift、并发锁及主工作区不变等 fail-closed 不变量。
+- GitHub delivery 仅做 mock execute 与 network-denied `gh --dry-run`；未执行 live branch/commit/push/PR 写入，未 push。
+- 代表性新增测试：`tests/contract/test_approval_envelope.py`、`tests/contract/test_feedback_event.py`、`tests/e2e/test_delivery_dry_run.py`、`tests/integration/test_delivery_worktree.py`、`tests/test_schema_parity.py`、`tests/unit/delivery/test_github_adapter.py`、`tests/unit/test_feedback_metrics.py`。
+
+### Known Limitations
+
+- F1–F4 的 live status 不在 implementation-baseline document（本功能实现基线文档）中冻结，由 same-SHA Trellis/evidence final gates 记录；当前 green 只代表 M0–M9 任务级 gate。
+- 真实 GitHub 远端写入与 push 明确不在本报告范围；最终 wave 仍需在同一功能实现基线提交上完成独立兼容、质量、安全、E2E、包装、媒体和残留审计。
+
+### Next Batch
+
+F1 计划/兼容审计、F2 代码质量/schema parity/独立安全审查、F3 真实 CLI/data E2E 与 packaging/media/performance/cleanup QA、F4 scope fidelity/no-residue review；四项将对同一树执行并由 same-SHA Trellis/evidence final gates 记录其 live status，本报告不冻结其结论；整体验收完成仍以最终 gates 的约定为准。
 
 ---
 
