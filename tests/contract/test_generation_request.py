@@ -127,10 +127,101 @@ class GenerationRequestContractTests(unittest.TestCase):
         arguments.update(changes)
         return build_generation_request(**arguments)  # type: ignore[arg-type]
 
+    def compiled_request(self, **changes: object) -> dict[str, object]:
+        fact = build_fact(
+            kind="file-presence",
+            path="README.md",
+            locator=None,
+            semantic_key="presence",
+            value=True,
+            source_bytes=b"compiled source\n",
+        )
+        evidence = EvidenceGraph([fact]).to_dict()
+        plan = {
+            "schema_version": 3,
+            "mode": "readme",
+            "locales": [
+                {"tag": "en", "readme_path": "README.md"},
+                {"tag": "zh-Hans", "readme_path": "docs/README.zh-Hans.md"},
+            ],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": "compiled",
+            "commands": [],
+            "evidence_ids": [fact["fact_id"]],
+        }
+        arguments: dict[str, object] = {
+            "target": {"repository": "Owner/Demo", "base_sha": "a" * 40},
+            "locales": ["en", "zh-Hans"],
+            "project_classification": "developer-tool",
+            "plan": plan,
+            "retrieval_packet": self.retrieval(evidence),
+            "evidence_packet": evidence,
+        }
+        arguments.update(changes)
+        return build_generation_request(**arguments)  # type: ignore[arg-type]
+
     def assert_code(self, code: str, function: object, *arguments: object, **keywords: object) -> None:
         with self.assertRaises(ContractError) as raised:
             function(*arguments, **keywords)  # type: ignore[operator]
         self.assertEqual(raised.exception.code, code)
+
+    def test_compiled_v3_request_is_author_owned_and_schema_bound(self) -> None:
+        request = self.compiled_request()
+        self.assertEqual(
+            request["output_contract"]["required_files"],
+            ["README.md", "claim-map.json", "docs/README.zh-Hans.md", "visual-spec.json"],
+        )
+        self.assertEqual(
+            request["output_contract"]["forbidden_paths"],
+            [".env", ".git/**", ".omo/**", "asset-manifest.json", "node_modules/**"],
+        )
+        self.assertEqual(
+            request["output_contract"]["schemas"],
+            {
+                "claim-map.json": "schemas/claim-map.v3.schema.json",
+                "visual-spec.json": "schemas/visual-spec.v1.schema.json",
+            },
+        )
+        self.assertEqual(list(self.schema("generation-request.v1.schema.json").iter_errors(request)), [])
+        self.assertEqual(validate_generation_request(request), request)
+
+    def test_compiled_v3_request_rejects_manifest_omitted_spec_unsafe_path_and_v2_route(self) -> None:
+        manifest = self.compiled_request()
+        manifest["output_contract"]["required_files"].append("asset-manifest.json")  # type: ignore[index]
+        manifest["output_contract"]["required_files"].sort()  # type: ignore[index]
+        self.assert_code("E_SCHEMA_VALUE", validate_generation_request, manifest)
+
+        omitted = self.compiled_request()
+        omitted["output_contract"]["required_files"].remove("visual-spec.json")  # type: ignore[index]
+        omitted["output_contract"]["schemas"].pop("visual-spec.json")  # type: ignore[index]
+        self.assert_code("E_SCHEMA_VALUE", validate_generation_request, omitted)
+
+        extra = self.compiled_request()
+        extra["output_contract"]["required_files"].append("assets/author.png")  # type: ignore[index]
+        extra["output_contract"]["required_files"].sort()  # type: ignore[index]
+        self.assert_code("E_SCHEMA_VALUE", validate_generation_request, extra)
+
+        unsafe = self.compiled_request()
+        unsafe["output_contract"]["required_files"].append("/tmp/spec.json")  # type: ignore[index]
+        self.assert_code("E_GENERATION_REQUEST_VALUE", validate_generation_request, unsafe)
+
+        v2 = self.compiled_request()
+        v2_plan = copy.deepcopy(v2["plan"])
+        v2_plan["schema_version"] = 2
+        v2["plan"] = v2_plan
+        self.assert_code("E_BUNDLE_PLAN", validate_generation_request, v2)
+
+    def test_legacy_generation_request_canonical_bytes_and_fixture_hash_remain_stable(self) -> None:
+        raw = canonical_generation_request(self.request())
+        self.assertEqual(
+            hashlib.sha256(raw).hexdigest(),
+            "2940d5fdcb8c030d0a24a81f9581da55c0844c47ef4477cdf1e0ea6c7861f912",
+        )
+        self.assertEqual(
+            hashlib.sha256((FIXTURES / "generation-request-v1.valid.json").read_bytes()).hexdigest(),
+            "2940d5fdcb8c030d0a24a81f9581da55c0844c47ef4477cdf1e0ea6c7861f912",
+        )
 
     def schema(self, name: str) -> Draft202012Validator:
         self.assertEqual(importlib.metadata.version("jsonschema"), "4.26.0")

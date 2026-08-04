@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Acfufu/readme-showcase/schemas/generation-request.v1.schema.json",
   "title": "Generation Request v1",
-  "$comment": "Python semantic validation additionally enforces exact byte cap, Python float rejection, canonical priority order, evidence bindings, and normalized values.",
+  "$comment": "Python semantic validation additionally enforces exact byte cap, Python float rejection, canonical priority order, evidence bindings, normalized values, and Plan v3 compiled output ownership. For a compiled request, output_contract.schemas binds visual-spec.json to schemas/visual-spec.v1.schema.json (Visual Spec v1's 256 KiB bound and E_VISUAL_SPEC_* error boundary) and claim-map.json to schemas/claim-map.v3.schema.json; asset-manifest.json is forbidden.",
   "x-python-semantic-validation": {
     "codes": ["E_SCHEMA_FLOAT", "E_GENERATION_REQUEST_SIZE", "E_GENERATION_EVIDENCE_DANGLING"],
     "validator": "skill.scripts.readme_showcase.generation.request.validate_generation_request"
@@ -64,7 +64,7 @@
     "text": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!.*(?:^|\\s)(?:/|~/))(?!.*(?i:api[_-]?key|api[_-]?token|access[_-]?token|auth[_-]?token|password|private[_-]?key|secret)\\s*[:=])[^\\u0000]+$"},
     "path": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!/|~/)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\\\u0000]+$"},
     "locale": {"enum": ["en", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de"]},
-    "plan": {"oneOf": [{"$ref": "#/$defs/planV1"}, {"$ref": "#/$defs/planV2"}]},
+    "plan": {"oneOf": [{"$ref": "#/$defs/planV1"}, {"$ref": "#/$defs/planV2"}, {"$ref": "#/$defs/planV3"}]},
     "planV1": {
       "type": "object",
       "additionalProperties": false,
@@ -100,6 +100,30 @@
         "sections": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
         "visual_intent": {"$ref": "#/$defs/text"},
         "diagram_route": {"enum": ["none", "static", "elk"]},
+        "commands": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}}
+      }
+    },
+    "planV3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "mode", "locales", "sections", "visual_intent", "diagram_route", "commands", "evidence_ids"],
+      "properties": {
+        "schema_version": {"const": 3},
+        "mode": {"enum": ["readme", "asset-only", "audit-only"]},
+        "locales": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tag", "readme_path"],
+            "properties": {"tag": {"$ref": "#/$defs/locale"}, "readme_path": {"$ref": "#/$defs/path"}}
+          }
+        },
+        "sections": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "visual_intent": {"$ref": "#/$defs/text"},
+        "diagram_route": {"enum": ["none", "static", "elk", "compiled"]},
         "commands": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
         "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}}
       }

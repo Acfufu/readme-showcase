@@ -24,6 +24,13 @@ PROJECT_CLASSIFICATIONS = frozenset({"developer-tool", "library", "runtime-toolc
 REQUEST_MODES = frozenset({"readme", "asset-only", "audit-only"})
 _SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_DEFAULT_FORBIDDEN_PATHS = (".env", ".git/**", ".omo/**", "node_modules/**")
+_COMPILED_AUTHOR_PATHS = ("claim-map.json", "visual-spec.json")
+_COMPILED_SCHEMA_REFERENCES = {
+    "claim-map.json": "schemas/claim-map.v3.schema.json",
+    "visual-spec.json": "schemas/visual-spec.v1.schema.json",
+}
+_COMPILED_FINAL_MANIFEST = "asset-manifest.json"
 
 
 def _revision_reason(value: Any, index: int) -> dict[str, Any]:
@@ -270,6 +277,39 @@ def _output_contract(value: Any) -> dict[str, Any]:
     return {"required_files": required_paths, "schemas": schema_map, "forbidden_paths": forbidden_paths}
 
 
+def _validate_compiled_output_contract(
+    contract: dict[str, Any],
+    plan: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind Plan v3 compiled author inputs to the installed schema atoms."""
+    expected_readme_paths = [entry["readme_path"] for entry in plan["locales"]]
+    expected_required = set(expected_readme_paths) | set(_COMPILED_AUTHOR_PATHS)
+    required = set(contract["required_files"])
+    forbidden = set(contract["forbidden_paths"])
+    schemas = contract["schemas"]
+    if required != expected_required:
+        raise ContractError(
+            "E_SCHEMA_VALUE",
+            "compiled generation request must require every README, claim map, and visual spec author output",
+        )
+    if _COMPILED_FINAL_MANIFEST in required or _COMPILED_FINAL_MANIFEST not in forbidden:
+        raise ContractError(
+            "E_SCHEMA_VALUE",
+            "compiled generation request must forbid the final asset manifest",
+        )
+    if expected_required & forbidden:
+        raise ContractError(
+            "E_SCHEMA_VALUE",
+            "compiled generation request required and forbidden paths overlap",
+        )
+    if schemas != _COMPILED_SCHEMA_REFERENCES:
+        raise ContractError(
+            "E_SCHEMA_VALUE",
+            "compiled generation request schema references must cover exactly the author JSON outputs",
+        )
+    return contract
+
+
 def _revision_context(value: Any) -> dict[str, Any] | None:
     if value is None:
         return None
@@ -362,7 +402,7 @@ def validate_generation_request(payload: Any) -> dict[str, Any]:
     plan = validate_readme_plan(request["plan"], mode=mode)
     plan_locales = (
         [entry["tag"] for entry in plan["locales"]]
-        if plan["schema_version"] == 2
+        if plan["schema_version"] in {2, 3}
         else ["zh-Hans" if tag == "zh" else tag for tag in plan["languages"]]
     )
     if normalized_locales != plan_locales:
@@ -370,6 +410,9 @@ def validate_generation_request(payload: Any) -> dict[str, Any]:
     evidence_index = _evidence_index(request["evidence_index"])
     if {entry["fact_id"] for entry in evidence_index} != set(plan["evidence_ids"]):
         raise ContractError("E_GENERATION_EVIDENCE_DANGLING", "generation request evidence index does not bind every plan fact")
+    output_contract = _output_contract(request["output_contract"])
+    if plan["schema_version"] == 3 and plan["diagram_route"] == "compiled":
+        output_contract = _validate_compiled_output_contract(output_contract, plan)
     normalized = {
         "schema_version": GENERATION_REQUEST_SCHEMA_VERSION,
         "mode": mode,
@@ -379,7 +422,7 @@ def validate_generation_request(payload: Any) -> dict[str, Any]:
         "plan": plan,
         "retrieval_records": _records(request["retrieval_records"]),
         "evidence_index": evidence_index,
-        "output_contract": _output_contract(request["output_contract"]),
+        "output_contract": output_contract,
         "revision_context": _revision_context(request["revision_context"]),
     }
     if len(canonical_json_bytes(normalized)) > MAX_GENERATION_REQUEST_BYTES:
@@ -506,14 +549,22 @@ def build_generation_request(
         raise ContractError("E_GENERATION_EVIDENCE_STALE", "retrieval packet does not bind current evidence packet")
     if project_classification is not None and query.get("project_type") != project_classification:
         raise ContractError("E_GENERATION_RETRIEVAL", "retrieval packet does not bind project classification")
-    required = ["asset-manifest.json", "claim-map.json"]
-    if normalized_plan["mode"] == "readme":
-        if normalized_plan["schema_version"] == 2:
+    compiled = normalized_plan["schema_version"] == 3 and normalized_plan["diagram_route"] == "compiled"
+    required = list(_COMPILED_AUTHOR_PATHS if compiled else ("asset-manifest.json", "claim-map.json"))
+    if compiled:
+        required.extend(entry["readme_path"] for entry in normalized_plan["locales"])
+    elif normalized_plan["mode"] == "readme":
+        if normalized_plan["schema_version"] in {2, 3}:
             required.extend(entry["readme_path"] for entry in normalized_plan["locales"])
         else:
             required.append("README.md")
             if "zh" in normalized_plan["languages"]:
                 required.append("README_zh.md")
+    forbidden = list(_DEFAULT_FORBIDDEN_PATHS)
+    schemas: dict[str, str] = {}
+    if compiled:
+        forbidden.append(_COMPILED_FINAL_MANIFEST)
+        schemas.update(_COMPILED_SCHEMA_REFERENCES)
     request: dict[str, Any] = {
         "schema_version": GENERATION_REQUEST_SCHEMA_VERSION,
         "mode": normalized_plan["mode"],
@@ -525,8 +576,8 @@ def build_generation_request(
         "evidence_index": evidence_index,
         "output_contract": dict(output_contract) if output_contract is not None else {
             "required_files": sorted(required),
-            "schemas": {},
-            "forbidden_paths": sorted([".env", ".git/**", ".omo/**", "node_modules/**"]),
+            "schemas": schemas,
+            "forbidden_paths": sorted(forbidden),
         },
         "revision_context": None if revision_context is None else dict(revision_context),
     }
