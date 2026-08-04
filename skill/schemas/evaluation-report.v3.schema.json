@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://readme-showcase.local/schemas/evaluation-report.v3.schema.json",
+  "title": "Evaluation report v3",
+  "$comment": "Closed report projection for compiled visual evaluation. Python validation supplements canonical ordering, metric equations, trusted behavior observations, and external bundle/inventory identity binding.",
+  "x-python-semantic-validation": {
+    "validator": "skill.scripts.readme_showcase.contracts.evaluation.validate_evaluation_report_v3",
+    "codes": ["E_EVALUATION_METRIC", "E_EVALUATION_REPORT", "E_SCHEMA_FLOAT"]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "decision_basis",
+    "bundle_sha256",
+    "compiled_fingerprint",
+    "hard_gate",
+    "compiled",
+    "advisory",
+    "behavior",
+    "behavior_required"
+  ],
+  "properties": {
+    "schema_version": {"const": 3},
+    "status": {"enum": ["pass", "fail"]},
+    "decision_basis": {"const": "hard-compiled-gates-with-configured-behavior"},
+    "bundle_sha256": {"$ref": "#/$defs/sha256"},
+    "compiled_fingerprint": {"$ref": "#/$defs/sha256"},
+    "hard_gate": {"$ref": "#/$defs/hardGate"},
+    "compiled": {"$ref": "#/$defs/compiled"},
+    "advisory": {"$ref": "#/$defs/advisory"},
+    "behavior": {"$ref": "#/$defs/behavior"},
+    "behavior_required": {"type": "boolean"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"status": {"const": "pass"}},
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "hard_gate": {
+            "properties": {"status": {"const": "pass"}}
+          },
+          "compiled": {
+            "properties": {
+              "determinism": {"properties": {"basis_points": {"const": 10000}}},
+              "element_evidence_coverage": {"properties": {"basis_points": {"const": 10000}}},
+              "gate_pass": {"properties": {"basis_points": {"const": 10000}}},
+              "resource_budgets": {"properties": {"basis_points": {"const": 10000}}},
+              "variant_completeness": {"properties": {"basis_points": {"const": 10000}}}
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {"behavior_required": {"const": true}},
+              "required": ["behavior_required"]
+            },
+            "then": {"properties": {"behavior": {"properties": {"status": {"const": "pass"}}}}}
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonEmptyText": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000]+$"},
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {"$ref": "#/$defs/nonEmptyText"},
+        "message": {"$ref": "#/$defs/nonEmptyText"}
+      }
+    },
+    "hardGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "findings"],
+      "properties": {
+        "status": {"enum": ["pass", "fail"]},
+        "findings": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {"$ref": "#/$defs/finding"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"status": {"const": "pass"}},
+            "required": ["status"]
+          },
+          "then": {"properties": {"findings": {"maxItems": 0}}}
+        },
+        {
+          "if": {
+            "properties": {"status": {"const": "fail"}},
+            "required": ["status"]
+          },
+          "then": {"properties": {"findings": {"minItems": 1}}}
+        }
+      ]
+    },
+    "notApplicableMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["covered", "total", "status", "reasons"],
+      "properties": {
+        "covered": {"const": 0},
+        "total": {"const": 0},
+        "status": {"const": "not-applicable"},
+        "reasons": {"type": "array", "maxItems": 0}
+      }
+    },
+    "measuredMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["covered", "total", "status", "basis_points", "reasons"],
+      "properties": {
+        "covered": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "total": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "status": {"const": "measured"},
+        "basis_points": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "reasons": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {"$ref": "#/$defs/nonEmptyText"}
+        }
+      }
+    },
+    "metric": {
+      "oneOf": [
+        {"$ref": "#/$defs/notApplicableMetric"},
+        {"$ref": "#/$defs/measuredMetric"}
+      ]
+    },
+    "compiled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gate_pass",
+        "element_evidence_coverage",
+        "variant_completeness",
+        "determinism",
+        "resource_budgets"
+      ],
+      "properties": {
+        "gate_pass": {"$ref": "#/$defs/measuredMetric"},
+        "element_evidence_coverage": {"$ref": "#/$defs/measuredMetric"},
+        "variant_completeness": {"$ref": "#/$defs/measuredMetric"},
+        "determinism": {"$ref": "#/$defs/measuredMetric"},
+        "resource_budgets": {"$ref": "#/$defs/measuredMetric"}
+      }
+    },
+    "advisory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_coverage",
+        "diagram_label_coverage",
+        "evidence_sources",
+        "language_truth_pairs",
+        "observable_commands",
+        "section_intents",
+        "visual_provenance"
+      ],
+      "properties": {
+        "claim_coverage": {"$ref": "#/$defs/metric"},
+        "diagram_label_coverage": {"$ref": "#/$defs/metric"},
+        "evidence_sources": {"$ref": "#/$defs/metric"},
+        "language_truth_pairs": {"$ref": "#/$defs/metric"},
+        "observable_commands": {"$ref": "#/$defs/metric"},
+        "section_intents": {"$ref": "#/$defs/metric"},
+        "visual_provenance": {"$ref": "#/$defs/metric"}
+      }
+    },
+    "behaviorCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command_id", "status", "exit_code", "verification", "observation_sha256", "reasons"],
+      "properties": {
+        "command_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.:-]{0,127}$"},
+        "status": {"enum": ["pass", "fail", "unverified", "unsupported", "not-observed"]},
+        "exit_code": {"type": ["integer", "null"], "minimum": -255, "maximum": 255},
+        "verification": {"enum": [null, "imported-unverified", "verified"]},
+        "observation_sha256": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]},
+        "reasons": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {"$ref": "#/$defs/nonEmptyText"}
+        }
+      }
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reasons", "commands", "observable_commands", "total_commands"],
+      "properties": {
+        "status": {"enum": ["pass", "fail", "unverified", "unsupported", "not-observed"]},
+        "reasons": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {"$ref": "#/$defs/nonEmptyText"}
+        },
+        "commands": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {"$ref": "#/$defs/behaviorCommand"}
+        },
+        "observable_commands": {"type": "integer", "minimum": 0, "maximum": 128},
+        "total_commands": {"type": "integer", "minimum": 0, "maximum": 128}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"status": {"const": "pass"}},
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "commands": {"minItems": 1},
+              "observable_commands": {"minimum": 1},
+              "total_commands": {"minimum": 1}
+            }
+          }
+        }
+      ]
+    }
+  }
+}
