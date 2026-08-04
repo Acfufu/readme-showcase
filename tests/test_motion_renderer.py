@@ -131,6 +131,63 @@ class MotionRendererTests(unittest.TestCase):
         self.assertEqual(both.returncode, 2)
         self.assertIn("argument --timeline: not allowed with argument --spec", both.stderr)
 
+    def test_installed_layout_direct_script_imports_and_reaches_timeline_validation(self) -> None:
+        installed = self.root / "installed"
+        installed.mkdir()
+        shutil.copytree(
+            REPO_ROOT / "skill/scripts",
+            installed / "scripts",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        help_result = subprocess.run(
+            [sys.executable, str(installed / "scripts/render_motion_gif.py"), "--help"],
+            cwd=installed,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("--timeline TIMELINE", help_result.stdout)
+
+        invalid = self.root / "installed-invalid.json"
+        invalid.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "targets": ["moving"],
+                    "duration_ms": 120,
+                    "operations": [
+                        {
+                            "id": "reveal:missing",
+                            "kind": "reveal",
+                            "target": "missing",
+                            "start_ms": 0,
+                            "end_ms": 120,
+                        }
+                    ],
+                    "reduced_motion": {"mode": "static", "visible": ["moving"]},
+                }
+            ),
+            encoding="utf-8",
+        )
+        validation_result = subprocess.run(
+            [
+                sys.executable,
+                str(installed / "scripts/render_motion_gif.py"),
+                str(HERO_SVG),
+                str(self.root / "installed.gif"),
+                "--timeline",
+                str(invalid),
+            ],
+            cwd=installed,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(validation_result.returncode, 0)
+        self.assertIn("E_VISUAL_SPEC_EDGE", validation_result.stderr)
+        self.assertNotIn("ModuleNotFoundError", validation_result.stderr)
+
     def test_invalid_timeline_fails_before_frame_directory_or_output_replacement(self) -> None:
         timeline = self.root / "invalid.json"
         timeline.write_text(

@@ -16,12 +16,15 @@ import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-if not __package__:  # Keep the existing direct-file CI command importable.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from skill.scripts.pipeline_contracts import ContractError
-from skill.scripts.readme_showcase.visual_kernel.motion import project_motion_spec
-from skill.scripts.readme_showcase.visual_kernel.timeline import Timeline
+if __package__ and __package__.startswith("skill."):
+    from skill.scripts.pipeline_contracts import ContractError
+    from skill.scripts.readme_showcase.visual_kernel.motion import project_motion_spec
+    from skill.scripts.readme_showcase.visual_kernel.timeline import Timeline
+else:  # The installed Skill runs this file directly from its scripts directory.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts.pipeline_contracts import ContractError
+    from scripts.readme_showcase.visual_kernel.motion import project_motion_spec
+    from scripts.readme_showcase.visual_kernel.timeline import Timeline
 
 try:
     from PIL import Image, ImageChops
