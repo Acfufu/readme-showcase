@@ -1,0 +1,616 @@
+{
+  "schema_version": 1,
+  "primary_case": "swimlane",
+  "evidence": {
+    "schema_version": 2,
+    "facts": [
+      {
+        "fact_id": "file:09a959c8490c8177c5c79355eae4380559eada6d070095433d840b3181c47724",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/architecture/request.md"
+        },
+        "semantic_key": "architecture:request",
+        "value": "request",
+        "source_sha256": "3576c0370c7711d180b08ab82a26d8caaf04b5af13f0d04a063dfb365f753a50",
+        "confidence": "observed",
+        "evidence_sha256": "fbb612219765d6dd63738c668f4400c5db62e6bcfde7d0c5c0cec074e14307e7"
+      },
+      {
+        "fact_id": "file:151598dd426d95de40a754a0bae151d731eb6fd524989bfaae4156a08b787124",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/sequence/intent.md"
+        },
+        "semantic_key": "sequence:intent",
+        "value": "Sequence interaction",
+        "source_sha256": "5a42df6bea982ddfe68b7194ddb29d09c837466706a851b5deb35c72aa54df3a",
+        "confidence": "observed",
+        "evidence_sha256": "dfc67dc8e45466e8b30958437975984cd4d0fe9a104e3115d9cf8af24362a30c"
+      },
+      {
+        "fact_id": "file:1913c9e379ae4e2323eebea62cf501581c01dd74c93f9da8e58cc7d15ace0c74",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/swimlane/intent.md"
+        },
+        "semantic_key": "swimlane:intent",
+        "value": "数据流泳道",
+        "source_sha256": "298a39b2c2781daaa675aff986b3ae55bfd932ddae1867fabe4500575fe86c33",
+        "confidence": "observed",
+        "evidence_sha256": "6e5f0205ee118546028d57e6f931decaa2dc128c538b6f6e6c28a1728033e747"
+      },
+      {
+        "fact_id": "file:26da7a12027db6cfc3e1d5aa53a8c5ab3d9596c2e811a5a03fe159fb0bca5fcc",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/sequence/caller.md"
+        },
+        "semantic_key": "sequence:caller",
+        "value": "Caller",
+        "source_sha256": "3870d71fa27c9fc34f8336acd86b43e9638f6a2e396324eba02ebdcc991321f8",
+        "confidence": "observed",
+        "evidence_sha256": "16636f42a909e49e3f409a52f4c4de527c97fe1b263e4e4fa42ca189df885d1a"
+      },
+      {
+        "fact_id": "file:29282b74ab96e33c06983b466c7585073f0c7ced7cc0de35f3d25ec09093303c",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/architecture/runtime.md"
+        },
+        "semantic_key": "architecture:runtime",
+        "value": "Runtime",
+        "source_sha256": "d964e7c2b79df7131a21e7226f2ba4bd8fc68c205c80494770454f6898feb403",
+        "confidence": "observed",
+        "evidence_sha256": "09a7768cdd8c7c4c4924f7550722b073ce426d2961fb123726e3ee7980ccbb39"
+      },
+      {
+        "fact_id": "file:2df1af981eff7c7b1ef296cf68d4c7153ef5d4ada6105a7d0048b217d1444729",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/flow/intent.md"
+        },
+        "semantic_key": "flow:intent",
+        "value": "Request flow",
+        "source_sha256": "0d7f5daedf1cbb31deec3921ba2a14e4faaeed18ae4aea1154a5869f3ef672a2",
+        "confidence": "observed",
+        "evidence_sha256": "744db64f630289301cb920010c4d8c8af20817b3bae349ae908e9ec3615486e8"
+      },
+      {
+        "fact_id": "file:3cc41c5e8b2bc707fce9ac18c07c5c9e95df648b9e63f65539a8c5ffd6c58a5e",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/swimlane/gateway.md"
+        },
+        "semantic_key": "swimlane:gateway",
+        "value": "网关",
+        "source_sha256": "04d9b8b1822f2a8998205068d06d75fc838db74a35ca0c84eb5976f79f3ff31b",
+        "confidence": "observed",
+        "evidence_sha256": "bceeae8e09927b67ba9eefa36b8691714394ded220ef763f72842e584074080a"
+      },
+      {
+        "fact_id": "file:40e8795b681b4b587a157549ef648e99c9ef32f7ff99a67a75bd8151fbae17d1",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/flow/accept.md"
+        },
+        "semantic_key": "flow:accept",
+        "value": "accept",
+        "source_sha256": "d7044f573ad900793781b4c54892f12b2deb37119bab286d9e3ceaab819c3f94",
+        "confidence": "observed",
+        "evidence_sha256": "3842901f88559bc665d60d10a5018af509e73648599e1c9eda2d3ba019962da1"
+      },
+      {
+        "fact_id": "file:44cec9820b6a1d76e8c9212982714f72c87a3db92664ede75fa90e3f7e96af9a",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/sequence/participants.md"
+        },
+        "semantic_key": "sequence:participants",
+        "value": "Actors",
+        "source_sha256": "d82375efe2b33869f2e882348a9c9c3075e2597b946b4a8657cea2604beb4b2e",
+        "confidence": "observed",
+        "evidence_sha256": "55ab69dd44891f465dd1f2e0a4a5be95c1d9f144ce6e91e728ca670e97f8a291"
+      },
+      {
+        "fact_id": "file:4627bdfb1875974aff2da52d852d4a91a695529754038af029c1400ebab9cfe6",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/architecture/service.md"
+        },
+        "semantic_key": "architecture:service",
+        "value": "Service",
+        "source_sha256": "a7460f93ec10ebbdc2ba91a7b4669aa0af914d8923be440c405157f24f6d84b7",
+        "confidence": "observed",
+        "evidence_sha256": "fefe1f68a39073ea411962dddcfe668b37ab1b068d67758a23fc81c5e3899ec2"
+      },
+      {
+        "fact_id": "file:4cab5a32825485fdf4970160f40b7f2418728b54241a39c7acdc6da7412e024e",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/swimlane/store.md"
+        },
+        "semantic_key": "swimlane:store",
+        "value": "存储",
+        "source_sha256": "bd9bdeddbedf54bda4c317784a6c2aabdc105facd7858abd6fe7dba7e04d8c21",
+        "confidence": "observed",
+        "evidence_sha256": "76ae79f3cc4d2f9e40b05e9d0a9d9e2fda1e7b5c5e9832b2409ab0a52f635f4e"
+      },
+      {
+        "fact_id": "file:516a69e5d0b10ee7942efa299e3b168690732d751912bb373723b92c78ae2023",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/sequence/worker.md"
+        },
+        "semantic_key": "sequence:worker",
+        "value": "Worker",
+        "source_sha256": "0f6d7b550c163f743656907c3b36531a6ad67e3568dceda6721279c92a5e6ebb",
+        "confidence": "observed",
+        "evidence_sha256": "1268d4c82687b81dc9a0fd39de9ba21714cf99f9c52b0ed4d54f42f702d31f04"
+      },
+      {
+        "fact_id": "file:618401807a560fb56df66ea08a22e3e70ace5ff760d22396a22bd9e0825483bb",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/sequence/result.md"
+        },
+        "semantic_key": "sequence:result",
+        "value": "Result",
+        "source_sha256": "72ebf926115a6ea2dca66e740378e26f4b683326e2d66d3440b8bf4361c366ec",
+        "confidence": "observed",
+        "evidence_sha256": "a031463bb7e03f9fb5d8df188024ea973bf1aedf67215fa3aeec2e82fc4724d0"
+      },
+      {
+        "fact_id": "file:62f4c07e56ac79cdd4f23e7770a3e9b59c766d540bd7c3a319ca5d38a09ab632",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/architecture/client.md"
+        },
+        "semantic_key": "architecture:client",
+        "value": "Client",
+        "source_sha256": "c3cd72227195f375a35133bc88e9067666ca14974c80f184c4e04c347dcf991a",
+        "confidence": "observed",
+        "evidence_sha256": "6e48308b03862f5f44e91b6b6c06bfa0941ff12539cc893b56d8c420dc0da978"
+      },
+      {
+        "fact_id": "file:6687c9e134f9fb7c41674381d6aabca08ce4295a224f519dd3c13d67d74f02dc",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/sequence/invoke.md"
+        },
+        "semantic_key": "sequence:invoke",
+        "value": "invoke",
+        "source_sha256": "da2a48e5149f3297c2dbaf296e71e4581664bccfbae93f09ef07572cd9dcff68",
+        "confidence": "observed",
+        "evidence_sha256": "1f635196a50094ea34f21cc5866d2603cec1a4fa7d7f8ef4b88b0a07737a9aae"
+      },
+      {
+        "fact_id": "file:7de031a59d3f0eee363af341fe09cc9916dad33f1be697a3e32098a1cda9bbb6",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/architecture/store.md"
+        },
+        "semantic_key": "architecture:store",
+        "value": "Store",
+        "source_sha256": "0ead9d4e278776923a27f02bd0516d628cf95c732649e357bc12286ec400a2f8",
+        "confidence": "observed",
+        "evidence_sha256": "5806ee32b9b3f72d6c00920ed59dcd7bd4c4c65438a6515e141227424c239796"
+      },
+      {
+        "fact_id": "file:913ee764fe584365a487a8605806200c1b1820eaadd0502b8b7f3825828ac5ee",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/flow/runtime.md"
+        },
+        "semantic_key": "flow:runtime",
+        "value": "Flow",
+        "source_sha256": "210d12e070f3eed59736a6e33d856fe91ae40f5f5abb31b0c508a9f29bfd2e1f",
+        "confidence": "observed",
+        "evidence_sha256": "f3c5e2112e6425bbd997a5d293cc97324541851ed81582fe8e67ef4cc1212675"
+      },
+      {
+        "fact_id": "file:94833e45f4d7e994a0abe34c1b8b4110e5a232c49c41115c2b6036d7908dc967",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/swimlane/request-lane.md"
+        },
+        "semantic_key": "swimlane:request-lane",
+        "value": "请求",
+        "source_sha256": "febc1db08d0b78d583d21100045b44d3ed215f75e4a554a558782d7229efffe2",
+        "confidence": "observed",
+        "evidence_sha256": "0d53b5d998cacefba439cb080d7d172960cc66b7fad0163d81a60edb0a04570a"
+      },
+      {
+        "fact_id": "file:a9e64216def9756f73a2e5c756bcc13e62891f6b00dbc3b752cfa8ae71fd0078",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/swimlane/storage-lane.md"
+        },
+        "semantic_key": "swimlane:storage-lane",
+        "value": "结果",
+        "source_sha256": "9bdc0774e10bd3bcaff0f6b630b3690d6d841a678a048d2ae9e786c883d7608a",
+        "confidence": "observed",
+        "evidence_sha256": "16dedc1cab9d14328b8c0706b437075f31df00d162de1cd9474f55a7a8dcb336"
+      },
+      {
+        "fact_id": "file:b921c5a78ac6b481d91abeaeb95e481a1d231c5b13d31683bb0e95e67a653571",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/flow/input.md"
+        },
+        "semantic_key": "flow:input",
+        "value": "Input",
+        "source_sha256": "bb0755e77bf69f3080e234cd9f7dc2608cd50babc7966566e5282dfee00ad151",
+        "confidence": "observed",
+        "evidence_sha256": "fe214617a542d06039d7f841ed99348bd72a7d27561a72e2c24aceceb98629a3"
+      },
+      {
+        "fact_id": "file:bec05d1d8a9e5dcd58ace559abb5481ae70be8024405e5d251fb37adcafad303",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/flow/output.md"
+        },
+        "semantic_key": "flow:output",
+        "value": "Output",
+        "source_sha256": "e103bc47b641c3326f9c3fb9de7ba14df0035d4c5d89e02fdaefecf4359a063a",
+        "confidence": "observed",
+        "evidence_sha256": "38ff8fbbb8ae3ff99d805b8b81a0a381e2b8bf16d72a7fa7ae9bcbdfc79e047f"
+      },
+      {
+        "fact_id": "file:c27820a845cb1f56df936afd6c44e5ca32c69c7243398b0d8b793fcb49ebeccd",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/swimlane/call.md"
+        },
+        "semantic_key": "swimlane:call",
+        "value": "调用",
+        "source_sha256": "f03158233636d47c75a15229e75bdbaa453ae1814663033a73c70780726081e5",
+        "confidence": "observed",
+        "evidence_sha256": "df02634ef7d5ca7d679af069c8903e97a18eade2a54cf4bd04ba4000d3fd9cfb"
+      },
+      {
+        "fact_id": "file:c4219f327ee752498a864d869eb4c7ec2ee7c2e797c06e0599c162e67f8ea23f",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/flow/validate.md"
+        },
+        "semantic_key": "flow:validate",
+        "value": "Validate",
+        "source_sha256": "376bf2bd7948a073874f68297be269d100170633e66258d8279b4cf9e8417967",
+        "confidence": "observed",
+        "evidence_sha256": "354ddc42dbad20a7e07d3d17c4f8997247166f48f1fc0d0f9477fe7cb4e3835d"
+      },
+      {
+        "fact_id": "file:c65f80ff9d0f332418ebbd10380b8f4a715a0df8396b046f1c9fce852cd608c3",
+        "kind": "file-presence",
+        "source": {
+          "path": "tests/fixtures/visual-kernel/architecture/intent.md"
+        },
+        "semantic_key": "architecture:intent",
+        "value": "Architecture overview",
+        "source_sha256": "dc3f390767f65887e740796059eae2a876e35808ea92446118ba63edc55f614e",
+        "confidence": "observed",
+        "evidence_sha256": "156c431ecfecb0e487b729c2b6c1f48f9f7b7f790516fba6272f9ebe216e989e"
+      }
+    ],
+    "evidence_sha256": "c241d162954740012bd8951bafd48fe4d78d5ae799ad6d88fb37dbf79ca5382f"
+  },
+  "cases": [
+    {
+      "id": "architecture",
+      "spec": {
+        "schema_version": 1,
+        "intent": {
+          "kind": "architecture",
+          "label": "Architecture overview",
+          "evidence_ids": [
+            "file:c65f80ff9d0f332418ebbd10380b8f4a715a0df8396b046f1c9fce852cd608c3"
+          ]
+        },
+        "locale": "en",
+        "variants": [
+          "desktop",
+          "mobile"
+        ],
+        "nodes": [
+          {
+            "id": "client",
+            "kind": "actor",
+            "group_id": "runtime",
+            "label": "Client",
+            "evidence_ids": [
+              "file:62f4c07e56ac79cdd4f23e7770a3e9b59c766d540bd7c3a319ca5d38a09ab632"
+            ]
+          },
+          {
+            "id": "service",
+            "kind": "service",
+            "group_id": "runtime",
+            "label": "Service",
+            "evidence_ids": [
+              "file:4627bdfb1875974aff2da52d852d4a91a695529754038af029c1400ebab9cfe6"
+            ]
+          },
+          {
+            "id": "store",
+            "kind": "store",
+            "group_id": "runtime",
+            "label": "Store",
+            "evidence_ids": [
+              "file:7de031a59d3f0eee363af341fe09cc9916dad33f1be697a3e32098a1cda9bbb6"
+            ]
+          }
+        ],
+        "edges": [
+          {
+            "id": "client-service",
+            "kind": "flow",
+            "source": "client",
+            "target": "service",
+            "label": "request",
+            "evidence_ids": [
+              "file:09a959c8490c8177c5c79355eae4380559eada6d070095433d840b3181c47724"
+            ]
+          },
+          {
+            "id": "service-store",
+            "kind": "data",
+            "source": "service",
+            "target": "store"
+          },
+          {
+            "id": "store-client",
+            "kind": "back",
+            "source": "store",
+            "target": "client"
+          }
+        ],
+        "groups": [
+          {
+            "id": "runtime",
+            "label": "Runtime",
+            "evidence_ids": [
+              "file:29282b74ab96e33c06983b466c7585073f0c7ced7cc0de35f3d25ec09093303c"
+            ]
+          }
+        ],
+        "lanes": [],
+        "constraints": []
+      }
+    },
+    {
+      "id": "flow",
+      "spec": {
+        "schema_version": 1,
+        "intent": {
+          "kind": "flow",
+          "label": "Request flow",
+          "evidence_ids": [
+            "file:2df1af981eff7c7b1ef296cf68d4c7153ef5d4ada6105a7d0048b217d1444729"
+          ]
+        },
+        "locale": "en",
+        "variants": [
+          "desktop",
+          "mobile"
+        ],
+        "nodes": [
+          {
+            "id": "input",
+            "kind": "actor",
+            "group_id": "runtime",
+            "label": "Input",
+            "evidence_ids": [
+              "file:b921c5a78ac6b481d91abeaeb95e481a1d231c5b13d31683bb0e95e67a653571"
+            ]
+          },
+          {
+            "id": "output",
+            "kind": "store",
+            "group_id": "runtime",
+            "label": "Output",
+            "evidence_ids": [
+              "file:bec05d1d8a9e5dcd58ace559abb5481ae70be8024405e5d251fb37adcafad303"
+            ]
+          },
+          {
+            "id": "validate",
+            "kind": "process",
+            "group_id": "runtime",
+            "label": "Validate",
+            "evidence_ids": [
+              "file:c4219f327ee752498a864d869eb4c7ec2ee7c2e797c06e0599c162e67f8ea23f"
+            ]
+          }
+        ],
+        "edges": [
+          {
+            "id": "input-validate",
+            "kind": "flow",
+            "source": "input",
+            "target": "validate",
+            "label": "accept",
+            "evidence_ids": [
+              "file:40e8795b681b4b587a157549ef648e99c9ef32f7ff99a67a75bd8151fbae17d1"
+            ]
+          },
+          {
+            "id": "output-input",
+            "kind": "back",
+            "source": "output",
+            "target": "input"
+          },
+          {
+            "id": "validate-output",
+            "kind": "flow",
+            "source": "validate",
+            "target": "output"
+          }
+        ],
+        "groups": [
+          {
+            "id": "runtime",
+            "label": "Flow",
+            "evidence_ids": [
+              "file:913ee764fe584365a487a8605806200c1b1820eaadd0502b8b7f3825828ac5ee"
+            ]
+          }
+        ],
+        "lanes": [],
+        "constraints": []
+      }
+    },
+    {
+      "id": "sequence",
+      "spec": {
+        "schema_version": 1,
+        "intent": {
+          "kind": "sequence",
+          "label": "Sequence interaction",
+          "evidence_ids": [
+            "file:151598dd426d95de40a754a0bae151d731eb6fd524989bfaae4156a08b787124"
+          ]
+        },
+        "locale": "en",
+        "variants": [
+          "desktop",
+          "mobile"
+        ],
+        "nodes": [
+          {
+            "id": "caller",
+            "kind": "actor",
+            "group_id": "participants",
+            "label": "Caller",
+            "evidence_ids": [
+              "file:26da7a12027db6cfc3e1d5aa53a8c5ab3d9596c2e811a5a03fe159fb0bca5fcc"
+            ]
+          },
+          {
+            "id": "result",
+            "kind": "store",
+            "group_id": "participants",
+            "label": "Result",
+            "evidence_ids": [
+              "file:618401807a560fb56df66ea08a22e3e70ace5ff760d22396a22bd9e0825483bb"
+            ]
+          },
+          {
+            "id": "worker",
+            "kind": "service",
+            "group_id": "participants",
+            "label": "Worker",
+            "evidence_ids": [
+              "file:516a69e5d0b10ee7942efa299e3b168690732d751912bb373723b92c78ae2023"
+            ]
+          }
+        ],
+        "edges": [
+          {
+            "id": "caller-worker",
+            "kind": "flow",
+            "source": "caller",
+            "target": "worker",
+            "label": "invoke",
+            "evidence_ids": [
+              "file:6687c9e134f9fb7c41674381d6aabca08ce4295a224f519dd3c13d67d74f02dc"
+            ]
+          },
+          {
+            "id": "result-caller",
+            "kind": "back",
+            "source": "result",
+            "target": "caller"
+          },
+          {
+            "id": "worker-result",
+            "kind": "flow",
+            "source": "worker",
+            "target": "result"
+          }
+        ],
+        "groups": [
+          {
+            "id": "participants",
+            "label": "Actors",
+            "evidence_ids": [
+              "file:44cec9820b6a1d76e8c9212982714f72c87a3db92664ede75fa90e3f7e96af9a"
+            ]
+          }
+        ],
+        "lanes": [],
+        "constraints": []
+      }
+    },
+    {
+      "id": "swimlane",
+      "spec": {
+        "schema_version": 1,
+        "intent": {
+          "kind": "swimlane",
+          "label": "数据流泳道",
+          "evidence_ids": [
+            "file:1913c9e379ae4e2323eebea62cf501581c01dd74c93f9da8e58cc7d15ace0c74"
+          ]
+        },
+        "locale": "zh-Hans",
+        "variants": [
+          "desktop",
+          "mobile"
+        ],
+        "nodes": [
+          {
+            "id": "gateway",
+            "kind": "actor",
+            "lane_id": "request-lane",
+            "label": "网关",
+            "evidence_ids": [
+              "file:3cc41c5e8b2bc707fce9ac18c07c5c9e95df648b9e63f65539a8c5ffd6c58a5e"
+            ]
+          },
+          {
+            "id": "store",
+            "kind": "store",
+            "lane_id": "storage-lane",
+            "label": "存储",
+            "evidence_ids": [
+              "file:4cab5a32825485fdf4970160f40b7f2418728b54241a39c7acdc6da7412e024e"
+            ]
+          }
+        ],
+        "edges": [
+          {
+            "id": "gateway-store",
+            "kind": "flow",
+            "source": "gateway",
+            "target": "store"
+          },
+          {
+            "id": "store-gateway",
+            "kind": "back",
+            "source": "store",
+            "target": "gateway"
+          }
+        ],
+        "groups": [],
+        "lanes": [
+          {
+            "id": "request-lane",
+            "label": "请求",
+            "evidence_ids": [
+              "file:94833e45f4d7e994a0abe34c1b8b4110e5a232c49c41115c2b6036d7908dc967"
+            ]
+          },
+          {
+            "id": "storage-lane",
+            "label": "结果",
+            "evidence_ids": [
+              "file:a9e64216def9756f73a2e5c756bcc13e62891f6b00dbc3b752cfa8ae71fd0078"
+            ]
+          }
+        ],
+        "constraints": []
+      }
+    }
+  ]
+}
