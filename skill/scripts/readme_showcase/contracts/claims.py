@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import re
 from typing import Any, Mapping
 
@@ -11,6 +12,7 @@ from .locale import parse_locale
 
 
 CLAIM_MAP_SCHEMA_VERSION = 2
+CLAIM_MAP_V3_SCHEMA_VERSION = 3
 MAX_CLAIMS = 100_000
 CLAIM_KINDS = frozenset({"factual", "instruction", "decorative"})
 SUPPORT_LEVELS = frozenset({"direct", "composed", "documented-only"})
@@ -20,6 +22,7 @@ _CLAIM_FIELDS = {
     "claim_id", "content_sha256", "claim_kind", "evidence_ids",
     "language_pair_id", "support_level",
 }
+_V3_DIAGRAM_LABEL_FIELDS = _CLAIM_FIELDS | {"element_id"}
 _V1_CLAIM_FIELDS = {
     "claim_id", "content_sha256", "claim_kind", "truth_id",
     "evidence_sha256", "language_pair_id",
@@ -70,10 +73,81 @@ def _locale(claim_id: str) -> str | None:
         return None
 
 
+def _element_id(value: Any, context: str) -> str:
+    try:
+        normalized = normalize_text(value, context, maximum=512)
+    except ContractError as exc:
+        raise ContractError("E_CLAIM_COVERAGE", f"{context} must be a non-empty element ID") from exc
+    if normalized != value:
+        raise ContractError("E_CLAIM_COVERAGE", f"{context} must be a non-empty NFC-normalized element ID")
+    return value
+
+
+def _visual_bindings(
+    visual_spec: Any,
+    *,
+    evidence_graph: Mapping[str, Any] | None,
+) -> tuple[Any, dict[str, tuple[str, tuple[str, ...]]]]:
+    """Return the validated Visual Spec and its visible element bindings.
+
+    VisualIntent is deliberately not included: it has no element identity in
+    Visual Spec v1 even though the renderer later emits a synthetic title
+    source.  Nodes, edges, groups, and lanes with labels are the user-visible
+    Spec elements that Claim Map v3 must cover.
+    """
+
+    from ..visual_kernel.model import validate_visual_spec
+
+    spec = validate_visual_spec(visual_spec, evidence_graph=evidence_graph)
+    bindings: dict[str, tuple[str, tuple[str, ...]]] = {}
+    for collection in (spec.nodes, spec.edges, spec.groups, spec.lanes):
+        for element in collection:
+            if element.label is not None:
+                bindings[element.id] = (
+                    hashlib.sha256(element.label.encode("utf-8")).hexdigest(),
+                    tuple(element.evidence_ids),
+                )
+    return spec, bindings
+
+
+def _validate_visual_coverage(
+    claims: Mapping[str, Any],
+    *,
+    visual_spec: Any,
+    evidence_graph: Mapping[str, Any] | None,
+) -> None:
+    spec, expected = _visual_bindings(visual_spec, evidence_graph=evidence_graph)
+    covered: set[str] = set()
+    for index, claim in enumerate(claims["diagram_labels"]):
+        context = f"claim map.diagram_labels[{index}]"
+        element_id = claim["element_id"]
+        if element_id in covered:
+            raise ContractError("E_CLAIM_COVERAGE", f"{context} duplicates element_id {element_id}")
+        binding = expected.get(element_id)
+        if binding is None:
+            raise ContractError("E_CLAIM_COVERAGE", f"{context} references an unknown Visual Spec element")
+        claim_locale = _locale(claim["claim_id"])
+        if claim_locale != spec.locale:
+            raise ContractError("E_CLAIM_EVIDENCE", f"{context} locale differs from Visual Spec locale")
+        expected_content_hash, expected_evidence_ids = binding
+        if claim["content_sha256"] != expected_content_hash:
+            raise ContractError("E_CLAIM_COVERAGE", f"{context} content differs from Visual Spec label")
+        if tuple(claim["evidence_ids"]) != expected_evidence_ids:
+            raise ContractError("E_CLAIM_EVIDENCE", f"{context} evidence differs from Visual Spec element")
+        if claim["claim_kind"] == "decorative":
+            raise ContractError("E_CLAIM_COVERAGE", f"{context} decorative claims cannot support a Visual Spec label")
+        covered.add(element_id)
+
+    missing = sorted(set(expected) - covered, key=lambda item: item.encode("utf-8"))
+    if missing:
+        raise ContractError("E_CLAIM_COVERAGE", f"claim map is missing Visual Spec label coverage: {missing[0]}")
+
+
 def validate_claim_map(
     payload: Any,
     *,
     evidence_graph: Mapping[str, Any] | None = None,
+    visual_spec: Any | None = None,
 ) -> dict[str, Any]:
     _reject_float(payload)
     claim_map = _closed(
@@ -81,14 +155,17 @@ def validate_claim_map(
         {"schema_version", "markdown_blocks", "diagram_labels"},
         "claim map",
     )
-    if type(claim_map["schema_version"]) is not int or claim_map["schema_version"] != CLAIM_MAP_SCHEMA_VERSION:
-        raise ContractError("E_SCHEMA_VERSION", "claim map requires schema_version 2")
+    schema_version = claim_map["schema_version"]
+    if type(schema_version) is not int or schema_version not in {CLAIM_MAP_SCHEMA_VERSION, CLAIM_MAP_V3_SCHEMA_VERSION}:
+        raise ContractError("E_SCHEMA_VERSION", "claim map requires schema_version 2 or 3")
+    if schema_version == CLAIM_MAP_V3_SCHEMA_VERSION and visual_spec is None:
+        raise ContractError("E_CLAIM_COVERAGE", "claim map v3 validation requires a Visual Spec")
     known_ids: set[str] | None = None
     if evidence_graph is not None:
         graph = validate_evidence_graph(dict(evidence_graph))
         known_ids = {fact["fact_id"] for fact in graph["facts"]}
 
-    normalized: dict[str, Any] = {"schema_version": CLAIM_MAP_SCHEMA_VERSION}
+    normalized: dict[str, Any] = {"schema_version": schema_version}
     seen_claims: set[str] = set()
     seen_content: set[str] = set()
     pairs: dict[str, list[dict[str, Any]]] = {}
@@ -103,7 +180,10 @@ def validate_claim_map(
         collection: list[dict[str, Any]] = []
         for index, raw in enumerate(raw_collection):
             context = f"claim map.{collection_name}[{index}]"
-            claim = _closed(raw, _CLAIM_FIELDS, context)
+            is_v3_diagram = schema_version == CLAIM_MAP_V3_SCHEMA_VERSION and collection_name == "diagram_labels"
+            if is_v3_diagram and isinstance(raw, dict) and "element_id" not in raw:
+                raise ContractError("E_CLAIM_COVERAGE", f"{context} requires element_id")
+            claim = _closed(raw, _V3_DIAGRAM_LABEL_FIELDS if is_v3_diagram else _CLAIM_FIELDS, context)
             claim_id = normalize_text(claim["claim_id"], f"{context}.claim_id", maximum=512)
             content_hash = claim["content_sha256"]
             if not isinstance(content_hash, str) or not _SHA256.fullmatch(content_hash):
@@ -136,6 +216,8 @@ def validate_claim_map(
                 "language_pair_id": pair_id,
                 "support_level": support,
             }
+            if is_v3_diagram:
+                item["element_id"] = _element_id(claim["element_id"], f"{context}.element_id")
             collection.append(item)
             if pair_id is not None:
                 pairs.setdefault(pair_id, []).append(item)
@@ -155,11 +237,20 @@ def validate_claim_map(
             for item in pair[1:]
         ):
             raise ContractError("E_CLAIM_LANGUAGE", f"language pair {pair_id} changed evidence or support semantics")
+    if schema_version == CLAIM_MAP_V3_SCHEMA_VERSION:
+        _validate_visual_coverage(normalized, visual_spec=visual_spec, evidence_graph=evidence_graph)
     return copy.deepcopy(normalized)
 
 
-def canonical_claim_map_bytes(payload: Any, *, evidence_graph: Mapping[str, Any] | None = None) -> bytes:
-    return canonical_json_bytes(validate_claim_map(payload, evidence_graph=evidence_graph))
+def canonical_claim_map_bytes(
+    payload: Any,
+    *,
+    evidence_graph: Mapping[str, Any] | None = None,
+    visual_spec: Any | None = None,
+) -> bytes:
+    return canonical_json_bytes(
+        validate_claim_map(payload, evidence_graph=evidence_graph, visual_spec=visual_spec)
+    )
 
 
 def adapt_v1_claim_map(
@@ -194,5 +285,14 @@ def adapt_v1_claim_map(
     return validate_claim_map(adapted)
 
 
-def read_claim_map(payload: Mapping[str, Any], *, evidence_graph: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    return adapt_v1_claim_map(payload) if payload.get("schema_version") == 1 else validate_claim_map(payload, evidence_graph=evidence_graph)
+def read_claim_map(
+    payload: Mapping[str, Any],
+    *,
+    evidence_graph: Mapping[str, Any] | None = None,
+    visual_spec: Any | None = None,
+) -> dict[str, Any]:
+    return (
+        adapt_v1_claim_map(payload)
+        if payload.get("schema_version") == 1
+        else validate_claim_map(payload, evidence_graph=evidence_graph, visual_spec=visual_spec)
+    )

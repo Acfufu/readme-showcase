@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import subprocess
@@ -14,6 +15,12 @@ from skill.scripts.pipeline_contracts import (
     canonical_sha256,
     write_canonical_json_atomic,
 )
+from skill.scripts.readme_showcase.contracts.claims import (
+    canonical_claim_map_bytes,
+    validate_claim_map,
+)
+from skill.scripts.readme_showcase.contracts.evidence import build_fact
+from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
 from skill.scripts.pipeline_core import validate_generated_bundle
 from tests import test_bundle_contracts as bundle_contracts
 
@@ -225,6 +232,156 @@ class ClaimCoverageTests(unittest.TestCase):
         with self.assertRaises(ContractError) as raised:
             validate_generated_bundle(bundle, root)
         self.assertEqual(raised.exception.code, code)
+
+    def visual_spec_fixture(self) -> tuple[dict[str, Any], dict[str, Any], str, str]:
+        primary = build_fact(
+            kind="file-presence",
+            path="README.md",
+            locator=None,
+            semantic_key="architecture",
+            value=True,
+            source_bytes=b"README architecture\n",
+        )
+        secondary = build_fact(
+            kind="file-presence",
+            path="pyproject.toml",
+            locator=None,
+            semantic_key="metadata",
+            value=True,
+            source_bytes=b"[project]\n",
+        )
+        graph = EvidenceGraph([primary, secondary]).to_dict()
+        fact_id = str(primary["fact_id"])
+        secondary_id = str(secondary["fact_id"])
+        spec = {
+            "schema_version": 1,
+            "intent": {"kind": "flow", "label": "Architecture", "evidence_ids": [fact_id]},
+            "locale": "en",
+            "variants": ["desktop"],
+            "nodes": [
+                {"id": "client", "kind": "actor", "label": "Client", "evidence_ids": [fact_id]},
+                {"id": "service", "kind": "service", "label": "Service", "evidence_ids": [fact_id]},
+            ],
+            "edges": [{
+                "id": "request",
+                "kind": "flow",
+                "source": "client",
+                "target": "service",
+                "label": "Request",
+                "evidence_ids": [fact_id],
+            }],
+            "groups": [],
+            "lanes": [],
+            "constraints": [],
+        }
+        return graph, spec, fact_id, secondary_id
+
+    def v3_claim_map(
+        self,
+        fact_id: str,
+        *,
+        secondary_id: str | None = None,
+    ) -> dict[str, Any]:
+        markdown = [
+            {
+                "claim_id": "markdown:en:overview",
+                "content_sha256": hashlib.sha256(b"Overview").hexdigest(),
+                "claim_kind": "factual",
+                "evidence_ids": [fact_id],
+                "language_pair_id": "overview",
+                "support_level": "direct",
+            },
+            {
+                "claim_id": "markdown:zh-Hans:overview",
+                "content_sha256": hashlib.sha256("概览".encode()).hexdigest(),
+                "claim_kind": "factual",
+                "evidence_ids": [fact_id],
+                "language_pair_id": "overview",
+                "support_level": "direct",
+            },
+        ]
+        element_rows = []
+        labels = {"client": "Client", "request": "Request", "service": "Service"}
+        for element_id in ("client", "request", "service"):
+            element_rows.append({
+                "claim_id": f"diagram:en:{element_id}",
+                "content_sha256": hashlib.sha256(labels[element_id].encode()).hexdigest(),
+                "claim_kind": "factual",
+                "evidence_ids": [fact_id],
+                "language_pair_id": None,
+                "support_level": "direct",
+                "element_id": element_id,
+            })
+        if secondary_id is not None:
+            element_rows[0]["evidence_ids"] = [secondary_id]
+        return {
+            "schema_version": 3,
+            "markdown_blocks": markdown,
+            "diagram_labels": element_rows,
+        }
+
+    def test_v3_bindings_require_visual_spec_and_leave_v2_bytes_unchanged(self) -> None:
+        graph, spec, fact_id, _ = self.visual_spec_fixture()
+        payload = self.v3_claim_map(fact_id)
+        normalized = validate_claim_map(payload, evidence_graph=graph, visual_spec=spec)
+        self.assertEqual(
+            [row["element_id"] for row in normalized["diagram_labels"]],
+            ["client", "request", "service"],
+        )
+        with self.assertRaises(ContractError) as missing_spec:
+            validate_claim_map(payload, evidence_graph=graph)
+        self.assertEqual(missing_spec.exception.code, "E_CLAIM_COVERAGE")
+
+        v2 = {
+            "schema_version": 2,
+            "markdown_blocks": copy.deepcopy(payload["markdown_blocks"]),
+            "diagram_labels": [],
+        }
+        before = canonical_claim_map_bytes(v2, evidence_graph=graph)
+        after = canonical_claim_map_bytes(v2, evidence_graph=graph, visual_spec=spec)
+        self.assertEqual(before, after)
+
+    def test_v3_element_locale_evidence_and_decorative_failures_are_typed(self) -> None:
+        graph, spec, fact_id, secondary_id = self.visual_spec_fixture()
+        cases: list[tuple[str, str, Any]] = []
+
+        missing_element = self.v3_claim_map(fact_id)
+        missing_element["diagram_labels"][0].pop("element_id")
+        cases.append(("missing-element", "E_CLAIM_COVERAGE", missing_element))
+
+        duplicate_element = self.v3_claim_map(fact_id)
+        duplicate_element["diagram_labels"][1]["element_id"] = "client"
+        cases.append(("duplicate-element", "E_CLAIM_COVERAGE", duplicate_element))
+
+        unknown_element = self.v3_claim_map(fact_id)
+        unknown_element["diagram_labels"][0]["element_id"] = "missing"
+        cases.append(("unknown-element", "E_CLAIM_COVERAGE", unknown_element))
+
+        locale_drift = self.v3_claim_map(fact_id)
+        locale_drift["diagram_labels"][0]["claim_id"] = "diagram:zh-Hans:client"
+        locale_drift["diagram_labels"].sort(key=lambda item: item["claim_id"])
+        cases.append(("locale-drift", "E_CLAIM_EVIDENCE", locale_drift))
+
+        evidence_drift = self.v3_claim_map(fact_id, secondary_id=secondary_id)
+        cases.append(("evidence-drift", "E_CLAIM_EVIDENCE", evidence_drift))
+
+        content_drift = self.v3_claim_map(fact_id)
+        content_drift["diagram_labels"][0]["content_sha256"] = "f" * 64
+        cases.append(("content-drift", "E_CLAIM_COVERAGE", content_drift))
+
+        uncovered = self.v3_claim_map(fact_id)
+        uncovered["diagram_labels"].pop()
+        cases.append(("uncovered-label", "E_CLAIM_COVERAGE", uncovered))
+
+        decorative = self.v3_claim_map(fact_id)
+        decorative["diagram_labels"][0]["claim_kind"] = "decorative"
+        cases.append(("decorative-label", "E_CLAIM_COVERAGE", decorative))
+
+        for name, expected, candidate in cases:
+            with self.subTest(case=name):
+                with self.assertRaises(ContractError) as raised:
+                    validate_claim_map(candidate, evidence_graph=graph, visual_spec=spec)
+                self.assertEqual(raised.exception.code, expected)
 
     def test_complete_monolingual_markdown_and_elk_labels_pass(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
