@@ -16,6 +16,13 @@ import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+if not __package__:  # Keep the existing direct-file CI command importable.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from skill.scripts.pipeline_contracts import ContractError
+from skill.scripts.readme_showcase.visual_kernel.motion import project_motion_spec
+from skill.scripts.readme_showcase.visual_kernel.timeline import Timeline
+
 try:
     from PIL import Image, ImageChops
 except ImportError as exc:  # pragma: no cover - dependency error path
@@ -28,11 +35,13 @@ ET.register_namespace("", SVG_NS)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Animate named SVG layers from a JSON motion spec and encode a GIF."
+        description="Animate named SVG layers from a JSON motion spec or Timeline v1 and encode a GIF."
     )
     parser.add_argument("input_svg", type=Path)
     parser.add_argument("output_gif", type=Path)
-    parser.add_argument("--spec", required=True, type=Path, help="JSON motion spec")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--spec", type=Path, help="JSON motion spec")
+    source.add_argument("--timeline", type=Path, help="Timeline v1 JSON")
     parser.add_argument(
         "--keep-frames",
         type=Path,
@@ -68,6 +77,42 @@ def load_spec(path: Path) -> dict:
     }
     defaults.update(spec)
     return defaults
+
+
+def load_timeline(path: Path) -> dict:
+    """Validate Timeline v1, then project it through the legacy motion adapter."""
+    try:
+        timeline_payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        fail(f"timeline not found: {path}")
+    except json.JSONDecodeError as exc:
+        fail(f"invalid Timeline JSON: {exc}")
+
+    if not isinstance(timeline_payload, dict):
+        fail("Timeline v1 must be a JSON object")
+    required = {"schema_version", "targets", "duration_ms", "operations", "reduced_motion"}
+    unknown = sorted(set(timeline_payload) - required)
+    if unknown:
+        fail(f"Timeline v1 contains unknown field: {unknown[0]}")
+    missing = sorted(required - set(timeline_payload))
+    if missing:
+        fail(f"Timeline v1 is missing field: {missing[0]}")
+    if (
+        type(timeline_payload["schema_version"]) is not int
+        or timeline_payload["schema_version"] != Timeline.schema_version
+    ):
+        fail(f"Timeline v1 requires schema_version {Timeline.schema_version}")
+
+    try:
+        timeline = Timeline(
+            timeline_payload["targets"],
+            timeline_payload["duration_ms"],
+            timeline_payload["operations"],
+            timeline_payload["reduced_motion"],
+        )
+        return dict(project_motion_spec(timeline))
+    except ContractError as exc:
+        fail(f"{exc.code}: {exc}")
 
 
 def validate_spec(spec: dict) -> None:
@@ -559,11 +604,13 @@ def encode_gif(
 def run(args: argparse.Namespace) -> None:
     input_svg = args.input_svg.expanduser().resolve()
     output_gif = args.output_gif.expanduser().resolve()
-    spec_path = args.spec.expanduser().resolve()
     if not input_svg.is_file():
         fail(f"input SVG not found: {input_svg}")
 
-    spec = load_spec(spec_path)
+    if args.spec is not None:
+        spec = load_spec(args.spec.expanduser().resolve())
+    else:
+        spec = load_timeline(args.timeline.expanduser().resolve())
     validate_spec(spec)
     ffmpeg = command_path("ffmpeg")
     renderer = choose_renderer()
