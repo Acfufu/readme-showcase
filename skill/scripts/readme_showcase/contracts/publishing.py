@@ -13,6 +13,7 @@ from ...pipeline_contracts import (
     read_regular_bytes,
 )
 from ..delivery import legacy as _LEGACY
+from ..visual_kernel.reader import load_compiled_visual
 
 
 APPROVAL_SCHEMA_VERSION = 2
@@ -25,6 +26,7 @@ ALLOWED_ACTIONS = [
 EVALUATION_PATH = "evaluation-report.json"
 PREVIEW_PATH = "output/preview/index.html"
 PREVIEW_REPORT_PATH = "output/preview/report.json"
+COMPILED_MANIFEST_PATH = "asset-manifest.json"
 MAX_BOUND_BYTES = 16 * 1024 * 1024
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _COMMIT = re.compile(r"[0-9a-f]{40}\Z")
@@ -277,12 +279,43 @@ def _canonical_report(root: Path, relative: str, code: str) -> tuple[bytes, dict
     return raw, value
 
 
+def _validate_compiled_binding(pr: dict[str, Any], root: Path) -> None:
+    """Re-read the complete stage-6 set before deriving approval bindings."""
+
+    compiled = cast(dict[str, Any], pr["compiled"])
+    inventory = cast(dict[str, str], compiled["inventory"])
+    manifest_raw = _read(root, COMPILED_MANIFEST_PATH, "E_APPROVAL_FINGERPRINT")
+    bundle = {
+        "schema_version": 3,
+        "artifacts": {
+            "asset_manifest": {
+                "path": COMPILED_MANIFEST_PATH,
+                "sha256": hashlib.sha256(manifest_raw).hexdigest(),
+            }
+        },
+        "compiled": {
+            "inventory": dict(inventory),
+            "fingerprint": compiled["fingerprint"],
+            "retention": "manual",
+        },
+    }
+    try:
+        load_compiled_visual(root, bundle)
+    except ContractError as exc:
+        raise ContractError(
+            "E_APPROVAL_FINGERPRINT",
+            "compiled artifact bytes differ from PR bundle",
+        ) from exc
+
+
 def current_approval_bindings(pr_payload: Any, candidate_root: Path) -> dict[str, Any]:
     try:
-        pr = _LEGACY._validate_pr_bundle(pr_payload)
+        pr = _LEGACY.validate_pr_bundle(pr_payload)
     except ContractError as exc:
         raise ContractError("E_APPROVAL_FINGERPRINT", str(exc)) from exc
     root = _root(candidate_root)
+    if pr["schema_version"] == 2:
+        _validate_compiled_binding(pr, root)
     target = cast(dict[str, Any], pr["target"])
     evaluation = cast(dict[str, Any], pr["evaluation"])
     candidates = [

@@ -21,6 +21,9 @@ from tests import test_pr_bundle as pr_bundle
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = REPO_ROOT / "skill/scripts/readme_pipeline.py"
 _CORE = importlib.import_module("skill.scripts.pipeline_core")
+_PUBLISHING = importlib.import_module(
+    "skill.scripts.readme_showcase.contracts.publishing"
+)
 check_publish_gate = _CORE.check_publish_gate
 
 
@@ -70,6 +73,33 @@ class PublishGateTests(unittest.TestCase):
             "candidate_hashes": candidate_hashes,
         }
         return target, pr, remote, approval
+
+    def compiled_fixture(
+        self,
+        root: Path,
+    ) -> tuple[Path, dict[str, Any], Path, dict[str, Any]]:
+        helper = pr_bundle.PrBundleTests(methodName="runTest")
+        target, _, run_root, bundle, evaluation = helper.run_compiled_bundle(root)
+        write_canonical_json_atomic(run_root / "evaluation-report.json", evaluation)
+        pr = _CORE.build_pr_bundle(bundle, evaluation, run_root, target)
+        preview_root = run_root / "output/preview"
+        preview_root.mkdir(parents=True)
+        write_canonical_json_atomic(
+            preview_root / "report.json",
+            {
+                "schema_version": 1,
+                "status": "complete",
+                "generated_at": "2000-01-01T00:00:00Z",
+                "surfaces": ["desktop", "mobile"],
+            },
+        )
+        (preview_root / "index.html").write_bytes(b"<!doctype html>\n")
+        approval = {
+            "schema_version": 2,
+            "decision": "approve",
+            **_PUBLISHING.current_approval_bindings(pr, run_root),
+        }
+        return target, pr, run_root, approval
 
     def test_matching_preflight_and_approval_authorize_exact_connector_actions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -314,6 +344,92 @@ class PublishGateTests(unittest.TestCase):
             self.assertIn("E_SCHEMA_UNKNOWN_FIELD", rejected.stderr)
             self.assertNotIn("must-never-be-read", rejected.stderr)
             self.assertFalse(rejected_output.exists())
+
+    def test_compiled_pr_binds_every_layer_before_authorizing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, pr, run_root, approval = self.compiled_fixture(root)
+            result = _PUBLISHING.check_approval_envelope(approval, pr, run_root)
+            self.assertEqual(result["status"], "authorized")
+            self.assertEqual(result["findings"], [])
+            self.assertEqual(result["write_authority"]["actions"], approval["actions"])
+
+            inventory = json.loads(
+                (run_root / "compiled/inventory.json").read_text(encoding="utf-8")
+            )
+            layers = {layer["name"]: layer for layer in inventory["layers"]}
+            layer_paths = [
+                "compiled/inventory.json",
+                "compiled/visual-spec.json",
+                "compiled/theme.json",
+                *[
+                    f"compiled/{directory}/{record['locale']}/{record['variant']}.json"
+                    for layer, directory in (
+                        ("scenes", "scenes"),
+                        ("gates", "gates"),
+                        ("timelines", "timeline"),
+                        ("interactions", "interaction"),
+                    )
+                    for record in layers[layer]["records"][:1]
+                ],
+                "assets/readme-showcase/en/desktop.svg",
+            ]
+            for relative in layer_paths:
+                with self.subTest(relative=relative):
+                    candidate = run_root / relative
+                    original = candidate.read_bytes()
+                    candidate.write_bytes(original + b"drift")
+                    try:
+                        drift = _PUBLISHING.check_approval_envelope(
+                            approval,
+                            pr,
+                            run_root,
+                        )
+                        self.assertEqual(drift["status"], "fail")
+                        self.assertIn("E_APPROVAL_FINGERPRINT", drift["findings"])
+                        self.assertIsNone(drift["write_authority"])
+                    finally:
+                        candidate.write_bytes(original)
+
+            for relative, code in (
+                ("evaluation-report.json", "E_EVALUATION_DRIFT"),
+                ("output/preview/index.html", "E_PREVIEW_DRIFT"),
+                ("output/preview/report.json", "E_PREVIEW_DRIFT"),
+            ):
+                with self.subTest(relative=relative):
+                    bound = run_root / relative
+                    original = bound.read_bytes()
+                    bound.write_bytes(original + b"drift")
+                    try:
+                        drift = _PUBLISHING.check_approval_envelope(
+                            approval,
+                            pr,
+                            run_root,
+                        )
+                        self.assertEqual(drift["status"], "fail")
+                        self.assertIn(code, drift["findings"])
+                        self.assertIsNone(drift["write_authority"])
+                    finally:
+                        bound.write_bytes(original)
+
+    def test_compiled_pr_rejects_missing_and_symlinked_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, pr, run_root, approval = self.compiled_fixture(root)
+            scene = run_root / "compiled/scenes/en/desktop.json"
+            original = scene.read_bytes()
+            scene.unlink()
+            missing = _PUBLISHING.check_approval_envelope(approval, pr, run_root)
+            self.assertEqual(missing["status"], "fail")
+            self.assertIn("E_APPROVAL_FINGERPRINT", missing["findings"])
+            self.assertIsNone(missing["write_authority"])
+            scene.symlink_to(run_root / "compiled/theme.json")
+            symlinked = _PUBLISHING.check_approval_envelope(approval, pr, run_root)
+            self.assertEqual(symlinked["status"], "fail")
+            self.assertIn("E_APPROVAL_FINGERPRINT", symlinked["findings"])
+            self.assertIsNone(symlinked["write_authority"])
+            scene.unlink()
+            scene.write_bytes(original)
 
 
 if __name__ == "__main__":
