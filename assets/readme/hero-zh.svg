@@ -1,57 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg"
-     width="1200" height="420" viewBox="0 0 1200 420"
-     data-readme-language="zh"
-     role="img" aria-labelledby="title desc">
-  <title id="title">README Showcase</title>
-  <desc id="desc">编辑证据台把仓库事实整理成经过验证的 GitHub 项目主页，并保持远程发布锁定。</desc>
-
-  <rect width="1200" height="420" rx="26" fill="#F4F0E7"/>
-  <rect x="18" y="18" width="1164" height="384" rx="18" fill="none" stroke="#1D1B17" stroke-width="2"/>
-  <path d="M640 18V402" stroke="#C9C1B4" stroke-width="2"/>
-
-  <g id="identity" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
-    <text x="58" y="66" fill="#6B675F" font-size="18" font-weight="700" letter-spacing="3">CODEX SKILL / 证据驱动 README</text>
-    <text x="58" y="144" fill="#1D1B17" font-size="64" font-weight="800" letter-spacing="-2">README</text>
-    <text x="58" y="207" fill="#1D1B17" font-size="64" font-weight="800" letter-spacing="-2">SHOWCASE</text>
-    <rect id="title-highlight" x="58" y="232" width="534" height="5" fill="#C84B3C"/>
-    <text x="58" y="282" fill="#4C4943" font-size="24">仓库事实 → 清晰可信的 GitHub 项目主页。</text>
-
-    <g id="command-prompt" transform="translate(58 316)">
-      <rect width="534" height="58" rx="8" fill="#1D1B17"/>
-      <circle cx="510" cy="29" r="7" fill="#C84B3C"/>
-      <text x="24" y="37" fill="#F4F0E7" font-size="20" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">$readme-showcase</text>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">README Showcase 证据账本</title><desc id="desc">本地验收台将仓库证据整理成双语、可审查的 GitHub 主页，同时保持远端发布锁定。</desc>
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#101722"/><stop offset="1" stop-color="#172434"/></linearGradient><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#8FA1B5" stroke-opacity=".08"/></pattern></defs>
+  <rect width="1200" height="520" rx="28" fill="url(#bg)"/><rect width="1200" height="520" rx="28" fill="url(#grid)"/><path d="M48 58h10m-5-5v10" stroke="#17A398" stroke-width="2"/><text x="76" y="65" fill="#AEBCCB" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" letter-spacing="2">README SHOWCASE /</text><text x="286" y="65" fill="#AEBCCB" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="17" letter-spacing="2">本地验收台</text><circle cx="1095" cy="60" r="5" fill="#17A398"/><text x="1110" y="66" fill="#AEBCCB" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="15">就绪</text>
+  <g id="identity"><text x="64" y="156" fill="#F4F7FA" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="56" font-weight="750">证据进入。</text><text x="64" y="225" fill="#F4F7FA" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="56" font-weight="750">可审查主页交付。</text><text x="66" y="270" fill="#AEBCCB" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="20">项目原生文案、视觉、声明映射与本地交付。</text></g>
+  <g id="title-highlight"><rect x="65" y="289" width="455" height="6" rx="3" fill="#17A398"/><circle cx="530" cy="292" r="6" fill="#F1B94B"/></g>
+  <g id="command-prompt"><rect x="64" y="337" width="544" height="94" rx="14" fill="#0A1018" stroke="#314156" stroke-width="2"/><circle cx="91" cy="363" r="5" fill="#F16D64"/><circle cx="109" cy="363" r="5" fill="#F1B94B"/><circle cx="127" cy="363" r="5" fill="#17A398"/><text x="89" y="405" fill="#17A398" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18">$</text><text x="113" y="405" fill="#E5EBF1" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18">npx --yes github:Acfufu/readme-showcase</text></g>
+  <g id="evidence-docket"><rect x="670" y="108" width="466" height="340" rx="18" fill="#F4F7FA"/><rect x="670" y="108" width="466" height="58" rx="18" fill="#DCE4EA"/><path d="M670 148h466" stroke="#DCE4EA" stroke-width="36"/><text x="698" y="144" fill="#101722" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="17" font-weight="700" letter-spacing="2">候选交付回执</text><text x="1090" y="144" text-anchor="end" fill="#5F6B7A" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="14">本地</text>
+    <g font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="16"><text x="698" y="205" fill="#5F6B7A">数据集</text><text x="1090" y="205" text-anchor="end" fill="#101722" font-weight="700">20 训练 / 2 测试</text><path d="M698 222h392" stroke="#C9D3DC"/><text x="698" y="258" fill="#5F6B7A">语言</text><text x="1090" y="258" text-anchor="end" fill="#101722" font-weight="700">7 个明确标签</text><path d="M698 275h392" stroke="#C9D3DC"/><text x="698" y="311" fill="#5F6B7A">运行时</text><text x="1090" y="311" text-anchor="end" fill="#101722" font-weight="700">PY 3.11+ / NODE 22.22.3</text><path d="M698 328h392" stroke="#C9D3DC"/><text x="698" y="364" fill="#5F6B7A">布局引擎</text><text x="1090" y="364" text-anchor="end" fill="#101722" font-weight="700">ELK 0.9.3 · 固定版本</text></g>
+    <g id="verification-stamp"><rect x="698" y="389" width="392" height="39" rx="8" fill="#DDF3EF" stroke="#17A398" stroke-width="2"/><circle cx="721" cy="408" r="8" fill="#17A398"/><path d="m717 408 3 3 6-7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="740" y="414" fill="#0F6E68" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="15" font-weight="700">本地交付 · 远端锁定</text></g>
   </g>
-
-  <g id="evidence-docket" transform="rotate(1 904 202)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
-    <rect x="684" y="48" width="452" height="310" rx="8" fill="#FBF8F1" stroke="#1D1B17" stroke-width="2"/>
-    <text x="714" y="88" fill="#6B675F" font-size="18" font-weight="700" letter-spacing="2">证据档案 / 本地运行</text>
-    <path d="M714 108H1106" stroke="#C9C1B4" stroke-width="2"/>
-
-    <g fill="#1D1B17" font-size="21">
-      <text x="714" y="151" font-weight="800">01</text>
-      <text x="768" y="151">映射仓库事实</text>
-      <text x="714" y="198" font-weight="800">02</text>
-      <text x="768" y="198">按项目类型选择叙事</text>
-      <text x="714" y="245" font-weight="800">03</text>
-      <text x="768" y="245">每条声明绑定证据</text>
-      <text x="714" y="292" font-weight="800">04</text>
-      <text x="768" y="292">本地交付前完成验证</text>
-    </g>
-
-    <g id="verification-stamp" transform="translate(930 300) rotate(-7)">
-      <rect x="0" y="0" width="168" height="47" rx="5" fill="#FBF8F1" stroke="#C84B3C" stroke-width="3"/>
-      <text x="84" y="31" fill="#C84B3C" font-size="19" font-weight="800" letter-spacing="2" text-anchor="middle">声明已验证</text>
-    </g>
-  </g>
-
-  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif" font-size="17" font-weight="700">
-    <text x="674" y="389" fill="#6B675F">价值</text>
-    <path d="M722 383H758" stroke="#C84B3C" stroke-width="2"/>
-    <text x="774" y="389" fill="#6B675F">证明</text>
-    <path d="M822 383H858" stroke="#C84B3C" stroke-width="2"/>
-    <text x="874" y="389" fill="#6B675F">首次使用</text>
-    <path d="M958 383H994" stroke="#C84B3C" stroke-width="2"/>
-    <text x="1010" y="389" fill="#2F6B5F">仅本地</text>
-  </g>
+  <text x="64" y="482" fill="#77899D" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="14">扫描 → 检索 → 编写 → 校验 → 评估 → 预览</text><text x="1136" y="482" text-anchor="end" fill="#F1B94B" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="14">发布需要明确批准</text>
 </svg>

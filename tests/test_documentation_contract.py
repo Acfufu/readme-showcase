@@ -13,8 +13,9 @@ class DocumentationContractTests(unittest.TestCase):
         chinese = (REPO_ROOT / "README_zh.md").read_text(encoding="utf-8")
         for text in (english, chinese):
             self.assertEqual(text.count("```mermaid"), 0)
-            self.assertIn("12", text)
-            self.assertIn("10", text)
+            self.assertIn("22", text)
+            self.assertIn("20", text)
+            self.assertIn("2", text)
             self.assertIn("npx --yes github:Acfufu/readme-showcase", text)
             self.assertIn('"status":"installed"', text)
             self.assertIn('"status":"current"', text)

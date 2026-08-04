@@ -1,49 +1,55 @@
 <p align="center">
-  <img src="./assets/readme/hero.gif" width="100%" alt="README Showcase maps repository evidence into a verified, reviewable GitHub homepage">
+  <img src="./assets/readme/hero.gif" width="100%" alt="README Showcase turns repository evidence into a verified local GitHub homepage while remote publishing stays locked">
 </p>
-<p align="center"><sub><a href="./assets/readme/hero.svg">Static SVG</a> · Evidence-bound README design · Local by default</sub></p>
+<p align="center"><sub><a href="./assets/readme/hero.svg">Static fallback</a> · Evidence-bound design · Local-first handoff</sub></p>
+
+<p align="center"><strong>English</strong> · <a href="./README_zh.md">简体中文</a></p>
+
+`readme-showcase` is a Codex Skill that redesigns a repository homepage from
+the repository itself. One Agent scans evidence, retrieves licensed editorial
+patterns, builds project-native copy and visuals, validates every claim and
+asset, then stops at a fingerprinted local preview.
 
 <p align="center">
-  <strong>English</strong> · <a href="./README_zh.md">简体中文</a>
-</p>
-
-`readme-showcase` is a Codex Skill for repository maintainers. It reads the
-current codebase, chooses a narrative that fits the project, creates only
-evidence-backed copy and visuals, verifies the result, and stops at a local
-fingerprinted handoff.
-
-<p align="center">
-  <a href="#quick-start"><strong>Quick start</strong></a> ·
-  <a href="#from-evidence-to-handoff"><strong>Workflow</strong></a> ·
-  <a href="#choose-a-mode"><strong>Modes</strong></a> ·
-  <a href="#safety-boundary"><strong>Safety</strong></a>
+  <a href="#install-in-60-seconds"><strong>Install</strong></a> ·
+  <a href="#the-evidence-rail"><strong>Workflow</strong></a> ·
+  <a href="#run-the-resumable-pipeline"><strong>Pipeline</strong></a> ·
+  <a href="#the-remote-stays-locked"><strong>Safety</strong></a>
 </p>
 
 > [!IMPORTANT]
-> A passing evaluation authorizes a local preview only. Commits, pushes,
-> publishing, and pull requests always require separate explicit approval.
+> A green evaluation authorizes a local preview, not a remote write. Commit,
+> push, publishing, and pull-request actions require separate explicit approval.
 
-## From evidence to handoff
+## Proof at a glance
+
+| Contract | Current repository fact | Why it matters |
+| --- | --- | --- |
+| Editorial retrieval | 22 reviewed records: 20 train, 2 isolated test | Test patterns cannot leak into production retrieval |
+| Localization | 7 explicit locale tags | Each text-bearing README asset can stay paired with its language |
+| Runtime | Python 3.11+; exact Node 22.22.3 for ELK | Reproducible local execution |
+| Diagram engine | Vendored, hash-verified `elkjs@0.9.3` | No runtime download or hidden layout dependency |
+| Handoff | Candidate receipt + local preview | Review happens before remote authority exists |
+
+Patterns influence structure only. Repository evidence remains the sole source
+of public product claims.
+
+## The evidence rail
 
 ![Repository facts and licensed editorial patterns pass through one README Agent, claim and asset gates, and a fingerprinted local handoff](assets/readme/workflow.svg)
 
-_ELK lays out the graph; project code serializes and verifies the SVG. The Skill
-owns every claim, label, palette choice, caption, and publish boundary._
-
-| What you need | What the Skill does | What you receive |
+| Input | One-Agent work | Local output |
 | --- | --- | --- |
-| A homepage grounded in the real project | Scans repository evidence before drafting | README copy with traceable claims |
-| A visual system that belongs to the project | Derives story, palette, typography, and composition from repository semantics | Editable static sources and optional GitHub-safe GIFs |
-| A safe review boundary | Audits links, commands, assets, localization, and hard gates | Evaluation report and fingerprinted local bundle |
+| Tracked files, commands, config, tests | Story, copy, visual system, localization | `README.md` and localized counterparts |
+| Licensed train-only patterns | Claim and asset binding | Editable SVG, optional derived GIF, manifests |
+| Current base SHA | Hard-gate validation and evaluation | Fingerprinted candidate, report, offline preview |
 
-The retrieval dataset contains 12 licensed, human-reviewed abstract patterns:
-10 are available to production retrieval and two remain isolated test records.
-Patterns guide editorial structure only; they never become facts about the
-target repository.
+ELK owns layout only. Project code owns serialization and verification; the
+Skill owns claims, labels, visual direction, captions, and publish boundaries.
 
-## Quick start
+## Install in 60 seconds
 
-Requirements: macOS or Linux, Python 3.11+, and Codex. The default path has no
+Requirements: macOS or Linux, Python 3.11+, and Codex. Default flow has no
 third-party Python dependency.
 
 ```bash
@@ -51,82 +57,84 @@ npx --yes github:Acfufu/readme-showcase
 npx --yes github:Acfufu/readme-showcase --check
 ```
 
-Observable success:
+Success is observable:
 
 ```text
 "status":"installed"
 "status":"current"
 ```
 
-After the first npm release, shorten `github:Acfufu/readme-showcase` to
-`readme-showcase`. Start a new Codex task so Skill discovery reloads, then run:
+Start a new Codex task so Skill discovery reloads, then invoke it:
 
 ```text
-$readme-showcase Redesign this repository README around verified behavior and a runnable quick start.
+$readme-showcase Redesign this repository homepage around verified behavior and a runnable quick start. Use motion. Stop at local preview.
 ```
 
-The first visible action is repository inspection. If scope is unclear, the
-Skill asks whether the job is a whole README, assets only, or an audit.
+Choose `README`, `asset-only`, or `audit-only` scope. Motion and hybrid raster
+composition remain explicit opt-ins. ELK is reserved for relationship-heavy
+`architecture`, `flowchart`, and `c4` body diagrams.
 
-## Choose a mode
+## Run the resumable pipeline
 
-| Mode | Changes | Best for |
-| --- | --- | --- |
-| README | Reading order, copy, proof, Markdown, and justified visuals | A complete GitHub homepage |
-| Asset-only | Requested hero, diagram, badge, or coordinated asset set | Visual work without changing README content |
-| Audit-only | Findings and evidence only | Truth, safety, localization, and publish-readiness review |
+The orchestrator records each deterministic stage and waits at explicit input
+boundaries instead of inventing a candidate:
 
-Motion and hybrid raster composition are explicit opt-ins, not separate modes.
-ELK is optional and limited to relationship-heavy `architecture`,
-`flowchart`, or `c4` body diagrams.
+```bash
+python3 skill/scripts/readme_pipeline.py run \
+  --root . \
+  --workspace ../readme-showcase-run \
+  --mode readme \
+  --project-type developer-tool \
+  --locale en \
+  --locale zh-Hans
 
-## How the local pipeline works
-
-1. **Validate** the pinned retrieval manifest and its license evidence.
-2. **Scan** the target repository into deterministic evidence facts.
-3. **Retrieve** up to five train-only editorial patterns.
-4. **Draft** the README, claim map, asset manifest, and any justified visuals.
-5. **Evaluate** claims, links, commands, assets, accessibility, and localization.
-6. **Handoff** a fingerprinted local bundle after every hard gate passes.
-
-The installed Skill includes eight deterministic pipeline commands:
-
-```text
-validate-dataset  scan  retrieve  validate-bundle  evaluate
-import-benchmark  build-pr-bundle  check-publish-gate
+python3 skill/scripts/readme_pipeline.py status \
+  --workspace ../readme-showcase-run
+python3 skill/scripts/readme_pipeline.py resume \
+  --workspace ../readme-showcase-run
+python3 skill/scripts/readme_pipeline.py preview \
+  --workspace ../readme-showcase-run
 ```
+
+The 13 CLI surfaces divide cleanly:
+
+| Purpose | Commands |
+| --- | --- |
+| Orchestrate | `run` · `resume` · `status` · `explain` · `preview` |
+| Build evidence | `validate-dataset` · `scan` · `retrieve` |
+| Gate candidates | `validate-bundle` · `evaluate` |
+| Benchmark and delivery | `import-benchmark` · `build-pr-bundle` · `check-publish-gate` |
+
+The resulting handoff keeps `claim-map.json`, `asset-manifest.json`, editable
+visual sources, evaluation output, and preview files beside the candidate.
 
 <details>
-<summary><strong>Optional ELK and motion boundaries</strong></summary>
+<summary><strong>Deterministic visual routes</strong></summary>
 
 <br>
 
-- The Skill ships a hash-verified `elkjs@0.9.3` bundle and requires exact Node
-  `22.22.3` for the ELK route.
-- The adapter accepts strict semantic JSON, renders twice in fresh processes,
-  and accepts only byte-identical, standalone, GitHub-safe SVG.
-- Accepted SVG is never post-edited. Any mismatch selects the project-owned
-  static fallback and leaves the last-known-good asset unchanged.
-- GIF motion starts from an approved static SVG. The editable SVG and motion
-  JSON remain beside the derived GIF.
-- The exact ELK bundle, package metadata, and EPL-2.0 license are installed with
-  the Skill; `node_modules`, Docker, credentials, and runtime downloads are not.
+- Static SVG is the fallback for every visual route.
+- ELK accepts strict semantic JSON, renders twice in fresh processes, and only
+  accepts byte-identical standalone SVG.
+- Accepted ELK bytes are never post-edited; a mismatch preserves the last-known-good asset.
+- GIF motion begins with an approved SVG. Motion JSON and SVG remain editable
+  beside the derived GIF.
+- Vendored ELK uses exact Node `22.22.3`; no `node_modules`, Docker, credentials,
+  or runtime download is required.
 
 </details>
 
-## Safety boundary
+## The remote stays locked
 
-- Repository evidence owns public claims.
-- Retrieved patterns are editorial references, never target facts.
-- Commands, configuration, limitations, and changing information stay in
-  searchable Markdown.
-- Text-bearing visuals are localized per README language.
-- Static SVG is the deterministic fallback for every visual route.
-- Evaluation success never grants remote-write authority.
-- An exact approval envelope, current base SHA, and fresh remote preflight are
-  required before any publish connector action can become eligible.
+- Evidence owns factual claims; retrieval patterns never do.
+- Commands, limitations, and changing information remain searchable Markdown.
+- Text-bearing visuals receive locale-specific assets.
+- Validation failure cannot silently degrade into publish eligibility.
+- Passing evaluation cannot grant remote-write authority.
+- Publishing requires an exact approval envelope, matching base SHA, and fresh
+  remote preflight.
 
-## Verify locally
+## Verify from source
 
 ```bash
 python3 skill/scripts/readme_pipeline.py validate-dataset \
@@ -137,9 +145,8 @@ python3 -m unittest discover -s tests -v
 npm pack --dry-run
 ```
 
-Motion generation additionally needs Pillow, `ffmpeg`, and either
-`rsvg-convert` or macOS `sips`. Verified ELK rendering uses Node `22.22.3` and
-the vendored files documented in
+Motion generation additionally needs Pillow, `ffmpeg`, and `rsvg-convert` or
+macOS `sips`. ELK details live in
 [`skill/references/elk-structure.md`](skill/references/elk-structure.md).
 
 ## Repository map
@@ -147,24 +154,20 @@ the vendored files documented in
 ```text
 skill/
 ├── SKILL.md                 # one-Agent workflow and scope gates
-├── agents/openai.yaml       # Codex discovery metadata
 ├── references/              # narrative, visual, motion, and ELK rules
-├── scripts/                 # scan, retrieval, evaluation, audit, renderers
-└── vendor/elkjs/            # pinned ELK bundle, metadata, EPL-2.0 license
+├── scripts/                 # evidence, orchestration, audit, renderers
+└── vendor/elkjs/            # pinned bundle, metadata, EPL-2.0 license
 dataset/retrieval/manifest.json
-scripts/install_skill.py     # atomic installer and upgrade rollback
-package.json                 # npx package entrypoint
-tests/                       # deterministic contracts and failure cases
+scripts/install_skill.py     # atomic install, backup, rollback
+package.json                 # npx entrypoint
+tests/                       # contracts, gates, failure cases
 ```
 
 ## License and source boundaries
 
-This project is distributed under the
-[GNU General Public License v3.0](LICENSE).
-
-The visual and motion workflow adapts MIT-licensed guidance from
+Released under [GNU General Public License v3.0](LICENSE). Visual and motion
+guidance adapts MIT-licensed
 [`oil-oil/beautify-github-readme`](https://github.com/oil-oil/beautify-github-readme);
-the retained notice lives in
-[`skill/references/motion-production.md`](skill/references/motion-production.md#upstream-license).
-The vendored `elkjs@0.9.3` files remain under `EPL-2.0`; the unmodified license
-is included at [`skill/vendor/elkjs/LICENSE.md`](skill/vendor/elkjs/LICENSE.md).
+notice: [`motion-production.md`](skill/references/motion-production.md#upstream-license).
+Vendored `elkjs@0.9.3` remains under `EPL-2.0`; its unmodified
+[license](skill/vendor/elkjs/LICENSE.md) ships with the Skill.
