@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +24,10 @@ class ElkBackendTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.envelope = json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+    def test_repository_layout_keeps_pinned_asset_paths(self) -> None:
+        self.assertEqual(elk_backend._adapter_path(), ROOT / "skill" / "scripts" / "render_elk.mjs")
+        elk_backend._verify_vendor_identity()
 
     def test_real_pinned_runs_are_identical_and_clean_attempts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -163,6 +168,54 @@ class ElkBackendTests(unittest.TestCase):
                 render_elk_geometry(self.envelope, linked)
             self.assertEqual(raised.exception.code, "E_RUN_PATH")
             self.assertEqual(list(target.iterdir()), [])
+
+    def test_flattened_installed_skill_resolves_pinned_adapter_and_vendor(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "installed"
+            adapter = root / "scripts" / "render_elk.mjs"
+            module_root = root / "scripts" / "readme_showcase" / "visual_kernel"
+            module_root.mkdir(parents=True)
+            shutil.copy2(ROOT / "skill" / "scripts" / "render_elk.mjs", adapter)
+            shutil.copytree(ROOT / "skill" / "vendor" / "elkjs", root / "vendor" / "elkjs")
+            fake_module = module_root / "elk_backend.py"
+            run = root / "run"
+            run.mkdir()
+
+            with mock.patch.object(elk_backend, "__file__", str(fake_module)):
+                self.assertEqual(elk_backend._adapter_path(), adapter.resolve())
+                elk_backend._verify_vendor_identity()
+                result = render_elk_geometry(self.envelope, run)
+
+            self.assertEqual(result.geometry["engine"]["package_version"], "0.9.3")
+            self.assertEqual(result.metadata["module_sha256"], elk_backend._MODULE_SHA256)
+            self.assertEqual(list(run.iterdir()), [])
+
+    def test_flattened_installed_skill_keeps_missing_and_symlink_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "installed"
+            adapter = root / "scripts" / "render_elk.mjs"
+            module_root = root / "scripts" / "readme_showcase" / "visual_kernel"
+            module_root.mkdir(parents=True)
+            shutil.copy2(ROOT / "skill" / "scripts" / "render_elk.mjs", adapter)
+            vendor = root / "vendor" / "elkjs"
+            shutil.copytree(ROOT / "skill" / "vendor" / "elkjs", vendor)
+            fake_module = module_root / "elk_backend.py"
+
+            with mock.patch.object(elk_backend, "__file__", str(fake_module)):
+                adapter.unlink()
+                with self.assertRaises(ContractError) as missing_adapter:
+                    elk_backend._read_adapter_snapshot(adapter)
+                self.assertEqual(missing_adapter.exception.code, "E_ENGINE_IDENTITY")
+
+                adapter.symlink_to(ROOT / "skill" / "scripts" / "render_elk.mjs")
+                with self.assertRaises(ContractError) as symlink_adapter:
+                    elk_backend._read_adapter_snapshot(adapter)
+                self.assertEqual(symlink_adapter.exception.code, "E_ENGINE_IDENTITY")
+
+                (vendor / "lib" / "elk.bundled.js").unlink()
+                with self.assertRaises(ContractError) as missing_vendor:
+                    elk_backend._verify_vendor_identity()
+                self.assertEqual(missing_vendor.exception.code, "E_ENGINE_IDENTITY")
 
     def test_input_envelope_is_closed_before_subprocess(self) -> None:
         invalid = copy.deepcopy(self.envelope)

@@ -412,8 +412,10 @@ def _validate_metadata(
             raise _fail("E_ENGINE_METADATA", "engine metadata runtime field is invalid")
 
 
-def _repository_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+def _skill_root() -> Path:
+    # The module is shipped beneath the flattened Skill root.  Resolving from
+    # the module keeps repository and installed layouts on the same path.
+    return Path(__file__).resolve().parents[3]
 
 
 def _read_adapter_snapshot(path: Path) -> tuple[bytes, tuple[int, int, int, int]]:
@@ -453,15 +455,15 @@ def _read_adapter_snapshot(path: Path) -> tuple[bytes, tuple[int, int, int, int]
 
 
 def _adapter_path() -> Path:
-    root = _repository_root()
-    adapter = root / "skill" / "scripts" / "render_elk.mjs"
+    root = _skill_root()
+    adapter = root / "scripts" / "render_elk.mjs"
     # Resolution is repository-owned; bytes are snapshotted separately so the
     # same identity can be checked again after the child process exits.
     return adapter
 
 
 def _verify_vendor_identity() -> None:
-    root = _repository_root() / "skill" / "vendor" / "elkjs"
+    root = _skill_root() / "vendor" / "elkjs"
     expected = (
         (root / "package.json", _PACKAGE_SHA256),
         (root / "lib" / "elk.bundled.js", _MODULE_SHA256),
