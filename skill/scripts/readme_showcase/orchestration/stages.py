@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib
+import json
 import os
 import stat
 import tempfile
@@ -19,12 +20,15 @@ from ...pipeline_contracts import (
 )
 from ..contracts.run import STAGE_NAMES
 from ..contracts.plan import validate_readme_plan
+from ..contracts.assets import validate_asset_manifest
 from ..evidence.adapters import adapt_v1_repository_evidence
+from ..generation.assembler import assemble_generated_bundle_v3
 from ..generation.request import (
     MAX_GENERATION_REQUEST_BYTES,
     build_generation_request,
     canonical_generation_request,
 )
+from ..visual_kernel import compile_visual
 from .workspace import RunWorkspace
 
 _CORE = importlib.import_module(
@@ -278,7 +282,9 @@ class BundleAssembleStage:
         return canonical_sha256({"candidate": _upstream(context, 4), "plan": _upstream(context, 2), "retrieval": _upstream(context, 1)})
 
     def execute(self, context: RunContext) -> StageResult:
-        _, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
+        plan_raw, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
+        if plan.get("schema_version") == 3 and plan.get("diagram_route") == "compiled":
+            return self._execute_compiled(context, plan_raw, plan)
         _, manifest = _canonical_object(context.workspace.root / "stages/05-candidate/asset-manifest.json")
         assets = manifest.get("assets")
         if not isinstance(assets, list):
@@ -319,6 +325,188 @@ class BundleAssembleStage:
             "artifacts": artifacts,
         }
         return StageResult("pass", {"generated-readme-bundle.json": canonical_json_bytes(bundle)})
+
+    @staticmethod
+    def _execute_compiled(context: RunContext, plan_raw: bytes, plan: Mapping[str, Any]) -> StageResult:
+        """Compile one validated Plan v3 candidate into a closed stage-6 map."""
+
+        validate_readme_plan(plan, mode=context.manifest["configuration"]["mode"])
+        _, evidence = _canonical_object(context.attempt_file(0, "repository-evidence.json"))
+        evidence_graph = _v3_evidence_graph(evidence)
+        retrieval_raw, _ = _canonical_object(context.attempt_file(1, "retrieval-packet.json"))
+        claim_raw, _ = _canonical_object(context.workspace.root / "stages/05-candidate/claim-map.json")
+        spec_raw, spec = _canonical_object(context.workspace.root / "stages/05-candidate/visual-spec.json")
+
+        readmes: dict[str, bytes] = {}
+        for locale in plan["locales"]:
+            readmes[locale["readme_path"]] = _read_candidate(context, locale["readme_path"])
+
+        compiled = compile_visual(spec, evidence_graph)
+        compiled_files = dict(compiled.artifacts)
+        inventory = json.loads(compiled_files["compiled/inventory.json"].decode("utf-8"))
+        layers = {layer["name"]: layer for layer in inventory["layers"]}
+        artifact_hashes = {
+            record["path"]: record["sha256"]
+            for record in layers["artifacts"]["records"]
+        }
+
+        def single(path: str) -> dict[str, str]:
+            return {"path": path, "sha256": artifact_hashes[path]}
+
+        def variants(layer: str, pattern: str) -> list[dict[str, str]]:
+            return [
+                {
+                    "locale": record["locale"],
+                    "variant": record["variant"],
+                    "path": pattern.format(locale=record["locale"], variant=record["variant"]),
+                    "sha256": record["sha256"],
+                }
+                for record in layers[layer]["records"]
+            ]
+
+        svgs = [
+            {
+                "locale": path.split("/")[2],
+                "variant": path.split("/")[3][:-4],
+                "path": path,
+                "sha256": digest,
+            }
+            for path, digest in sorted(artifact_hashes.items())
+            if path.startswith("assets/readme-showcase/")
+        ]
+        compiled_projection = {
+            "spec": single("compiled/visual-spec.json"),
+            "theme": single("compiled/theme.json"),
+            "inventory": {
+                "path": "compiled/inventory.json",
+                "sha256": hashlib.sha256(compiled_files["compiled/inventory.json"]).hexdigest(),
+            },
+            "scenes": variants("scenes", "compiled/scenes/{locale}/{variant}.json"),
+            "gates": variants("gates", "compiled/gates/{locale}/{variant}.json"),
+            "timelines": variants("timelines", "compiled/timeline/{locale}/{variant}.json"),
+            "interactions": variants("interactions", "compiled/interaction/{locale}/{variant}.json"),
+            "svgs": svgs,
+            "identities": layers["identities"]["values"],
+        }
+        scene_by_key = {
+            (item["locale"], item["variant"]): item
+            for item in compiled_projection["scenes"]
+        }
+        gate_by_key = {
+            (item["locale"], item["variant"]): item
+            for item in compiled_projection["gates"]
+        }
+        manifest_assets = [
+            {
+                "asset_id": f"diagram-{svg['locale']}-{svg['variant']}",
+                "path": svg["path"],
+                "artifact_sha256": svg["sha256"],
+                "evidence_ids": list(plan["evidence_ids"]),
+                "role": "diagram",
+                "locale": svg["locale"],
+                "variant": svg["variant"],
+                "scene_sha256": scene_by_key[(svg["locale"], svg["variant"])]["sha256"],
+                "gate_sha256": gate_by_key[(svg["locale"], svg["variant"])]["sha256"],
+                "provenance": {
+                    "kind": "generated",
+                    "path": f"compiled/scenes/{svg['locale']}/{svg['variant']}.json",
+                    "sha256": scene_by_key[(svg["locale"], svg["variant"])]["sha256"],
+                },
+            }
+            for svg in compiled_projection["svgs"]
+        ]
+        manifest_payload = {
+            "schema_version": 3,
+            "assets": manifest_assets,
+            "compiled": compiled_projection,
+        }
+
+        mode = context.manifest["configuration"]["mode"]
+        stage_files = {
+            "readme-plan.json": plan_raw,
+            "retrieval-packet.json": retrieval_raw,
+            # Stage 1 remains the authoritative raw v1 packet on disk.  Bundle
+            # v3 consumes the canonical v2 projection without promoting that
+            # internal adapter output as a stage-6 candidate artifact.
+            "repository-evidence.json": canonical_json_bytes(evidence_graph),
+            "claim-map.json": claim_raw,
+            "visual-spec.json": spec_raw,
+            **readmes,
+            **compiled_files,
+        }
+        with tempfile.TemporaryDirectory(prefix=".bundle-v3-") as temporary:
+            artifact_root = Path(temporary)
+            for relative, raw in stage_files.items():
+                destination = artifact_root.joinpath(*PurePosixPath(relative).parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(raw)
+            manifest = validate_asset_manifest(
+                manifest_payload,
+                evidence_graph=evidence_graph,
+                artifact_root=artifact_root,
+                candidate_assets=[{"path": "visual-spec.json", "sha256": hashlib.sha256(spec_raw).hexdigest()}],
+            )
+            manifest_raw = canonical_json_bytes(manifest)
+            (artifact_root / "asset-manifest.json").write_bytes(manifest_raw)
+            stage_files["asset-manifest.json"] = manifest_raw
+            artifacts = {
+                name: {
+                    "path": path,
+                    "sha256": hashlib.sha256(stage_files[path]).hexdigest(),
+                }
+                for name, path in {
+                    "plan": "readme-plan.json",
+                    "retrieval": "retrieval-packet.json",
+                    "evidence": "repository-evidence.json",
+                    "claim_map": "claim-map.json",
+                    "visual_spec": "visual-spec.json",
+                    "asset_manifest": "asset-manifest.json",
+                }.items()
+            }
+            candidate = {
+                "readmes": (
+                    [
+                        {
+                            "path": entry["readme_path"],
+                            "sha256": hashlib.sha256(readmes[entry["readme_path"]]).hexdigest(),
+                        }
+                        for entry in plan["locales"]
+                    ]
+                    if mode == "readme"
+                    else []
+                ),
+                "assets": (
+                    [
+                        {"path": asset["path"], "sha256": asset["artifact_sha256"]}
+                        for asset in manifest["assets"]
+                    ]
+                    if mode != "audit-only"
+                    else []
+                ),
+            }
+            bundle = assemble_generated_bundle_v3(
+                artifact_root,
+                mode=mode,
+                target={
+                    "repository": context.manifest["target"]["repository"],
+                    "base_sha": context.manifest["target"]["base_sha"],
+                },
+                candidate=candidate,
+                artifacts=artifacts,
+                compiled={
+                    "inventory": manifest["compiled"]["inventory"],
+                    "fingerprint": compiled.inventory_sha256,
+                    "retention": "manual",
+                },
+            )
+        return StageResult(
+            "pass",
+            {
+                **compiled_files,
+                "asset-manifest.json": manifest_raw,
+                "generated-readme-bundle.json": canonical_json_bytes(bundle),
+            },
+        )
 
 
 def _materialize(context: RunContext, root: Path) -> dict[str, Any]:

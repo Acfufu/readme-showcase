@@ -28,10 +28,20 @@ from skill.scripts.readme_showcase.contracts.plan import (
 from skill.scripts.readme_showcase.evidence.adapters import adapt_v1_repository_evidence
 from skill.scripts.readme_showcase.orchestration.stages import (
     MAX_CANDIDATE_BYTES,
+    BundleAssembleStage,
     CandidateImportStage,
     GenerationRequestStage,
+    STAGES,
     candidate_files,
 )
+from skill.scripts.readme_showcase.contracts.run import STAGE_NAMES
+from skill.scripts.readme_showcase.generation.assembler import (
+    canonical_markdown_blocks,
+    validate_generated_bundle_v3,
+)
+from skill.scripts.readme_showcase.orchestration.workspace import RunWorkspace
+from skill.scripts.readme_showcase.orchestration import workspace as workspace_module
+from tests.unit.visual_kernel.test_scene import EVIDENCE, _spec
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -527,6 +537,385 @@ class CandidateFilesVersionTests(unittest.TestCase):
             self.assertEqual(
                 [name for name, _ in candidate_files(legacy_context) or []],
                 ["claim-map.json", "asset-manifest.json", "README.md"],
+            )
+
+
+class BundleAssembleStageTests(unittest.TestCase):
+    @staticmethod
+    def _context(
+        root: Path,
+        plan: dict[str, object],
+        *,
+        candidate: dict[str, bytes],
+        mode: str,
+        evidence: dict[str, object] | None = None,
+    ) -> SimpleNamespace:
+        stage_roots: dict[int, Path] = {}
+        for index, name in (
+            (0, "repository-evidence.json"),
+            (1, "retrieval-packet.json"),
+            (2, "readme-plan.json"),
+        ):
+            stage_root = root / f"stages/{index + 1:02d}-stage/attempts/1"
+            stage_root.mkdir(parents=True, exist_ok=True)
+            stage_roots[index] = stage_root
+        (stage_roots[0] / "repository-evidence.json").write_bytes(
+            canonical_json_bytes(evidence or EVIDENCE)
+        )
+        (stage_roots[1] / "retrieval-packet.json").write_bytes(
+            canonical_json_bytes({"schema_version": 1, "status": "unavailable", "records": []})
+        )
+        (stage_roots[2] / "readme-plan.json").write_bytes(canonical_json_bytes(plan))
+        candidate_root = root / "stages/05-candidate"
+        for relative, raw in candidate.items():
+            destination = candidate_root.joinpath(*Path(relative).parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(raw)
+
+        class Workspace:
+            def __init__(self, workspace_root: Path) -> None:
+                self.root = workspace_root
+
+        class Context:
+            def __init__(self, workspace_root: Path, workspace_mode: str) -> None:
+                self.workspace = Workspace(workspace_root)
+                self.manifest = {
+                    "configuration": {
+                        "mode": workspace_mode,
+                        "locales": ["en"],
+                        "project_type": "developer-tool",
+                    },
+                    "target": {"repository": "owner/demo", "base_sha": "a" * 40},
+                }
+
+            def attempt_file(self, stage_index: int, name: str) -> Path:
+                return stage_roots[stage_index] / name
+
+        return Context(root, mode)  # type: ignore[return-value]
+
+    @staticmethod
+    def _compiled_inputs() -> tuple[dict[str, object], dict[str, bytes]]:
+        spec = _spec("flow")
+        plan = {
+            "schema_version": 3,
+            "mode": "readme",
+            "locales": [{"tag": "en", "readme_path": "README.md"}],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": "compiled",
+            "commands": [],
+            "evidence_ids": [fact["fact_id"] for fact in EVIDENCE["facts"]],
+        }
+        readme = b"# README\n"
+        markdown_claim = {
+            "claim_id": "markdown:en:overview",
+            "content_sha256": hashlib.sha256(canonical_markdown_blocks(readme)[0]).hexdigest(),
+            "claim_kind": "factual",
+            "evidence_ids": [EVIDENCE["facts"][0]["fact_id"]],
+            "language_pair_id": None,
+            "support_level": "direct",
+        }
+        diagram_claims = []
+        for collection in (spec["nodes"], spec["edges"], spec["groups"], spec["lanes"]):
+            for element in collection:
+                if element.get("label") is None:
+                    continue
+                diagram_claims.append(
+                    {
+                        "claim_id": f"diagram:en:{element['id']}",
+                        "content_sha256": hashlib.sha256(element["label"].encode("utf-8")).hexdigest(),
+                        "claim_kind": "factual",
+                        "evidence_ids": element["evidence_ids"],
+                        "language_pair_id": None,
+                        "support_level": "direct",
+                        "element_id": element["id"],
+                    }
+                )
+        claim_map = {
+            "schema_version": 3,
+            "markdown_blocks": [markdown_claim],
+            "diagram_labels": sorted(diagram_claims, key=lambda item: item["claim_id"]),
+        }
+        return plan, {
+            "claim-map.json": canonical_json_bytes(claim_map),
+            "visual-spec.json": canonical_json_bytes(spec),
+            "README.md": readme,
+        }
+
+    @staticmethod
+    def _compiled_inputs_with_v1_evidence() -> tuple[dict[str, object], dict[str, bytes], dict[str, object], dict[str, object]]:
+        plan, candidate = BundleAssembleStageTests._compiled_inputs()
+        v1_evidence = CandidateFilesVersionTests._v1_scan_evidence()
+        evidence_v2 = adapt_v1_repository_evidence(v1_evidence)
+        fact_id = evidence_v2["facts"][0]["fact_id"]
+
+        def replace(value: object) -> object:
+            if isinstance(value, dict):
+                return {
+                    key: [fact_id] if key == "evidence_ids" else replace(item)
+                    for key, item in value.items()
+                }
+            if isinstance(value, list):
+                return [replace(item) for item in value]
+            return value
+
+        spec = replace(json.loads(candidate["visual-spec.json"]))
+        claim_map = replace(json.loads(candidate["claim-map.json"]))
+        plan["evidence_ids"] = [fact_id]
+        candidate["visual-spec.json"] = canonical_json_bytes(spec)
+        candidate["claim-map.json"] = canonical_json_bytes(claim_map)
+        return plan, candidate, v1_evidence, evidence_v2
+
+    def test_legacy_bundle_bytes_and_stage_registry_are_unchanged(self) -> None:
+        plan = {
+            "schema_version": 2,
+            "mode": "readme",
+            "locales": [{"tag": "en", "readme_path": "README.md"}],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": "static",
+            "commands": [],
+            "evidence_ids": ["file:" + "a" * 64],
+        }
+        asset = b"<svg>legacy</svg>\n"
+        candidate = {
+            "claim-map.json": b"claim-map\n",
+            "asset-manifest.json": canonical_json_bytes(
+                {
+                    "schema_version": 2,
+                    "assets": [
+                        {
+                            "path": "assets/diagram.svg",
+                            "sha256": hashlib.sha256(asset).hexdigest(),
+                        }
+                    ],
+                }
+            ),
+            "README.md": b"# Legacy\n",
+            "assets/diagram.svg": asset,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            context = self._context(Path(temporary), plan, candidate=candidate, mode="readme")
+            result = BundleAssembleStage().execute(context)
+        expected = {
+            "schema_version": 1,
+            "mode": "readme",
+            "target": {"repository": "owner/demo", "base_sha": "a" * 40},
+            "candidate": {
+                "readme": {
+                    "path": "README.md",
+                    "sha256": hashlib.sha256(b"# Legacy\n").hexdigest(),
+                },
+                "assets": [
+                    {
+                        "path": "assets/diagram.svg",
+                        "sha256": hashlib.sha256(asset).hexdigest(),
+                    }
+                ],
+            },
+            "artifacts": {
+                "asset_manifest": {
+                    "path": "asset-manifest.json",
+                    "sha256": hashlib.sha256(candidate["asset-manifest.json"]).hexdigest(),
+                },
+                "claim_map": {
+                    "path": "claim-map.json",
+                    "sha256": hashlib.sha256(candidate["claim-map.json"]).hexdigest(),
+                },
+                "plan": {
+                    "path": "readme-plan.json",
+                    "sha256": hashlib.sha256(canonical_json_bytes(plan)).hexdigest(),
+                },
+                "retrieval": {
+                    "path": "retrieval-packet.json",
+                    "sha256": hashlib.sha256(
+                        canonical_json_bytes({"schema_version": 1, "status": "unavailable", "records": []})
+                    ).hexdigest(),
+                },
+            },
+        }
+        self.assertEqual(result.files, {"generated-readme-bundle.json": canonical_json_bytes(expected)})
+        self.assertEqual(tuple(stage.name for stage in STAGES), STAGE_NAMES)
+
+    def test_compiled_stage_emits_real_bundle_v3_and_complete_nested_topology(self) -> None:
+        plan, candidate = self._compiled_inputs()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._context(root, plan, candidate=candidate, mode="readme")
+            before = {name: (root / "stages/05-candidate" / name).read_bytes() for name in candidate}
+            result = BundleAssembleStage().execute(context)
+            self.assertEqual(result.status, "pass")
+            self.assertEqual(
+                set(result.files),
+                {
+                    "generated-readme-bundle.json",
+                    "asset-manifest.json",
+                    "compiled/visual-spec.json",
+                    "compiled/theme.json",
+                    "compiled/inventory.json",
+                    "compiled/scenes/en/desktop.json",
+                    "compiled/scenes/en/mobile.json",
+                    "compiled/gates/en/desktop.json",
+                    "compiled/gates/en/mobile.json",
+                    "compiled/timeline/en/desktop.json",
+                    "compiled/timeline/en/mobile.json",
+                    "compiled/interaction/en/desktop.json",
+                    "compiled/interaction/en/mobile.json",
+                    "assets/readme-showcase/en/desktop.svg",
+                    "assets/readme-showcase/en/mobile.svg",
+                },
+            )
+            self.assertEqual(
+                {name: (root / "stages/05-candidate" / name).read_bytes() for name in candidate},
+                before,
+            )
+
+            artifact_root = root / "materialized"
+            for relative, raw in result.files.items():
+                destination = artifact_root.joinpath(*Path(relative).parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(raw)
+            for relative, raw in candidate.items():
+                destination = artifact_root.joinpath(*Path(relative).parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(raw)
+            for index, name in ((0, "repository-evidence.json"), (1, "retrieval-packet.json"), (2, "readme-plan.json")):
+                source = context.attempt_file(index, name)
+                destination = artifact_root / name
+                destination.write_bytes(source.read_bytes())
+            bundle = json.loads(result.files["generated-readme-bundle.json"])
+            report = validate_generated_bundle_v3(bundle, artifact_root)
+            self.assertEqual(report["schema_version"], 3)
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(bundle["compiled"]["retention"], "manual")
+            self.assertNotIn("evaluation", bundle["artifacts"])
+
+    def test_compiled_stage_adapts_v1_scan_evidence_without_promoting_raw_stage1(self) -> None:
+        plan, candidate, v1_evidence, evidence_v2 = self._compiled_inputs_with_v1_evidence()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._context(
+                root,
+                plan,
+                candidate=candidate,
+                mode="readme",
+                evidence=v1_evidence,
+            )
+            stage1_path = context.attempt_file(0, "repository-evidence.json")
+            stage1_before = stage1_path.read_bytes()
+            result = BundleAssembleStage().execute(context)
+            self.assertEqual(stage1_path.read_bytes(), stage1_before)
+            self.assertNotIn("repository-evidence.json", result.files)
+
+            artifact_root = root / "materialized"
+            for relative, raw in result.files.items():
+                destination = artifact_root.joinpath(*Path(relative).parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(raw)
+            for relative, raw in candidate.items():
+                destination = artifact_root.joinpath(*Path(relative).parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(raw)
+            for index, name in ((1, "retrieval-packet.json"), (2, "readme-plan.json")):
+                source = context.attempt_file(index, name)
+                (artifact_root / name).write_bytes(source.read_bytes())
+            adapted_raw = canonical_json_bytes(evidence_v2)
+            (artifact_root / "repository-evidence.json").write_bytes(adapted_raw)
+            bundle = json.loads(result.files["generated-readme-bundle.json"])
+            report = validate_generated_bundle_v3(bundle, artifact_root)
+            self.assertEqual(report["schema_version"], 3)
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(
+                bundle["artifacts"]["evidence"]["sha256"],
+                hashlib.sha256(adapted_raw).hexdigest(),
+            )
+            self.assertNotEqual(
+                bundle["artifacts"]["evidence"]["sha256"],
+                hashlib.sha256(stage1_before).hexdigest(),
+            )
+
+    def test_compiled_stage_failure_does_not_mutate_stage5_or_return_partial_attempt(self) -> None:
+        plan, candidate = self._compiled_inputs()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._context(root, plan, candidate=candidate, mode="readme")
+            before = {name: (root / "stages/05-candidate" / name).read_bytes() for name in candidate}
+            with mock.patch(
+                "skill.scripts.readme_showcase.orchestration.stages.compile_visual",
+                side_effect=ContractError("E_OUTPUT_GEOMETRY", "forced compiler failure"),
+            ):
+                with self.assertRaises(ContractError) as raised:
+                    BundleAssembleStage().execute(context)
+            self.assertEqual(raised.exception.code, "E_OUTPUT_GEOMETRY")
+            self.assertEqual(
+                {name: (root / "stages/05-candidate" / name).read_bytes() for name in candidate},
+                before,
+            )
+
+    def test_nested_write_failure_preserves_prior_current_attempt_and_stage5(self) -> None:
+        plan, candidate = self._compiled_inputs()
+        with tempfile.TemporaryDirectory() as source_temporary, tempfile.TemporaryDirectory() as workspace_temporary:
+            source_root = Path(source_temporary)
+            context = self._context(source_root, plan, candidate=candidate, mode="readme")
+            result = BundleAssembleStage().execute(context)
+            stage5_before = {
+                name: hashlib.sha256((source_root / "stages/05-candidate" / name).read_bytes()).hexdigest()
+                for name in candidate
+            }
+
+            workspace = RunWorkspace(Path(workspace_temporary), REPO_ROOT)
+            workspace.initialize(
+                repository="local/repository",
+                base_sha="a" * 40,
+                configuration={
+                    "mode": "readme",
+                    "project_type": "developer-tool",
+                    "locales": ["en"],
+                    "scanner_profile": "default",
+                },
+                clock=lambda: "2026-08-05T00:00:00Z",
+            )
+            prior = workspace.append_attempt(6, "bundle-assemble", result.files)
+            stage_root = workspace.root / "stages/06-bundle-assemble"
+            prior_hashes = {
+                str(path.relative_to(prior)): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in prior.rglob("*")
+                if path.is_file()
+            }
+            current_before = (stage_root / "current.json").read_bytes()
+            manifest_before = (workspace.root / "run-manifest.json").read_bytes()
+            real_write = workspace_module.os.write
+            calls = 0
+
+            def fail_after_one_write(fd: int, value: bytes) -> int:
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("forced nested write failure")
+                return real_write(fd, value)
+
+            with mock.patch.object(workspace_module.os, "write", side_effect=fail_after_one_write):
+                with self.assertRaises(ContractError) as raised:
+                    workspace.append_attempt(6, "bundle-assemble", result.files)
+            self.assertEqual(raised.exception.code, "E_RUN_PATH")
+            self.assertEqual(
+                {
+                    str(path.relative_to(prior)): hashlib.sha256(path.read_bytes()).hexdigest()
+                    for path in prior.rglob("*")
+                    if path.is_file()
+                },
+                prior_hashes,
+            )
+            self.assertEqual((stage_root / "current.json").read_bytes(), current_before)
+            self.assertEqual((workspace.root / "run-manifest.json").read_bytes(), manifest_before)
+            self.assertFalse((stage_root / "attempts/2").exists())
+            self.assertEqual(workspace.read_manifest()["stages"][5]["attempt"], 1)
+            self.assertEqual(
+                {
+                    name: hashlib.sha256((source_root / "stages/05-candidate" / name).read_bytes()).hexdigest()
+                    for name in candidate
+                },
+                stage5_before,
             )
 
 
