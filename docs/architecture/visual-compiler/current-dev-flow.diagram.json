@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "diagram_type": "flowchart",
+  "accessibility_title": "Current default runner flow from a target repository to local dry-run delivery",
+  "accessibility_claim_id": "accessibility_current_flow",
+  "direction": "TB",
+  "palette": {
+    "background": "#07111f",
+    "node_background": "#11263e",
+    "node_border": "#38bdf8",
+    "node_text": "#f8fafc",
+    "edge_color": "#7dd3fc",
+    "edge_label_color": "#cbd5e1"
+  },
+  "groups": [
+    {
+      "id": "runner",
+      "label": "Default runner · eight stages · state/readme-showcase/runs",
+      "parent_id": null,
+      "claim_id": "group_runner"
+    },
+    {
+      "id": "external",
+      "label": "External candidate boundary",
+      "parent_id": null,
+      "claim_id": "group_external"
+    },
+    {
+      "id": "standalone",
+      "label": "Standalone ELK adapter",
+      "parent_id": null,
+      "claim_id": "group_adapter"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "repository",
+      "label": "Target repository · current HEAD",
+      "group_id": null,
+      "kind": "system",
+      "claim_id": "node_repository"
+    },
+    {
+      "id": "scan",
+      "label": "1 · scan — collect repository evidence",
+      "group_id": "runner",
+      "kind": "service",
+      "claim_id": "node_scan"
+    },
+    {
+      "id": "retrieve",
+      "label": "2 · retrieve — train-only patterns",
+      "group_id": "runner",
+      "kind": "service",
+      "claim_id": "node_retrieve"
+    },
+    {
+      "id": "plan",
+      "label": "3 · plan-import — wait for a plan",
+      "group_id": "runner",
+      "kind": "service",
+      "claim_id": "node_plan"
+    },
+    {
+      "id": "generation",
+      "label": "4 · generation-request — freeze output contract",
+      "group_id": "runner",
+      "kind": "service",
+      "claim_id": "node_generation"
+    },
+    {
+      "id": "author",
+      "label": "External author — README, claims, manifest, assets",
+      "group_id": "external",
+      "kind": "external",
+      "claim_id": "node_author"
+    },
+    {
+      "id": "candidate",
+      "label": "5 · candidate — import immutable files",
+      "group_id": "runner",
+      "kind": "service",
+      "claim_id": "node_candidate"
+    },
+    {
+      "id": "bundle",
+      "label": "6 · bundle-assemble — append stage attempt",
+      "group_id": "runner",
+      "kind": "service",
+      "claim_id": "node_bundle"
+    },
+    {
+      "id": "validation",
+      "label": "7 · validation — hard gates and revisions",
+      "group_id": "runner",
+      "kind": "service",
+      "claim_id": "node_validation"
+    },
+    {
+      "id": "evaluation",
+      "label": "8 · evaluation — fingerprinted report + commit attempt",
+      "group_id": "runner",
+      "kind": "service",
+      "claim_id": "node_evaluation"
+    },
+    {
+      "id": "preview",
+      "label": "preview — render committed attempt; approval rejects by default",
+      "group_id": null,
+      "kind": "service",
+      "claim_id": "node_preview"
+    },
+    {
+      "id": "pr",
+      "label": "local PR bundle — fingerprinted handoff",
+      "group_id": null,
+      "kind": "service",
+      "claim_id": "node_pr"
+    },
+    {
+      "id": "delivery",
+      "label": "delivery --dry-run — no push, PR, or provider call",
+      "group_id": null,
+      "kind": "external",
+      "claim_id": "node_delivery"
+    },
+    {
+      "id": "elk",
+      "label": "render_elk.mjs — Node 22.22.3 / elkjs 0.9.3",
+      "group_id": "standalone",
+      "kind": "external",
+      "claim_id": "node_elk"
+    },
+    {
+      "id": "elk_note",
+      "label": "Not invoked by the default runner",
+      "group_id": "standalone",
+      "kind": "container",
+      "claim_id": "node_elk_note"
+    }
+  ],
+  "edges": [
+    {
+      "source": "repository",
+      "target": "scan",
+      "label": "start run",
+      "claim_id": "edge_repository_scan"
+    },
+    {
+      "source": "scan",
+      "target": "retrieve",
+      "label": "evidence",
+      "claim_id": "edge_scan_retrieve"
+    },
+    {
+      "source": "retrieve",
+      "target": "plan",
+      "label": "patterns",
+      "claim_id": "edge_retrieve_plan"
+    },
+    {
+      "source": "plan",
+      "target": "generation",
+      "label": "validated plan",
+      "claim_id": "edge_plan_generation"
+    },
+    {
+      "source": "generation",
+      "target": "author",
+      "label": "handoff",
+      "claim_id": "edge_generation_author"
+    },
+    {
+      "source": "author",
+      "target": "candidate",
+      "label": "import",
+      "claim_id": "edge_author_candidate"
+    },
+    {
+      "source": "candidate",
+      "target": "bundle",
+      "label": "candidate hash",
+      "claim_id": "edge_candidate_bundle"
+    },
+    {
+      "source": "bundle",
+      "target": "validation",
+      "label": "bundle",
+      "claim_id": "edge_bundle_validation"
+    },
+    {
+      "source": "validation",
+      "target": "evaluation",
+      "label": "gate result",
+      "claim_id": "edge_validation_evaluation"
+    },
+    {
+      "source": "evaluation",
+      "target": "preview",
+      "label": "read committed output",
+      "claim_id": "edge_evaluation_preview"
+    },
+    {
+      "source": "preview",
+      "target": "pr",
+      "label": "explicit approve",
+      "claim_id": "edge_approval_pr"
+    },
+    {
+      "source": "pr",
+      "target": "delivery",
+      "label": "dry-run only",
+      "claim_id": "edge_pr_delivery"
+    },
+    {
+      "source": "elk",
+      "target": "elk_note",
+      "label": "manual adapter",
+      "claim_id": "edge_elk_note"
+    }
+  ],
+  "claim_ids": [
+    "accessibility_current_flow",
+    "edge_approval_pr",
+    "edge_author_candidate",
+    "edge_bundle_validation",
+    "edge_candidate_bundle",
+    "edge_elk_note",
+    "edge_evaluation_preview",
+    "edge_generation_author",
+    "edge_plan_generation",
+    "edge_pr_delivery",
+    "edge_repository_scan",
+    "edge_retrieve_plan",
+    "edge_scan_retrieve",
+    "edge_validation_evaluation",
+    "group_adapter",
+    "group_external",
+    "group_runner",
+    "node_author",
+    "node_bundle",
+    "node_candidate",
+    "node_delivery",
+    "node_elk",
+    "node_elk_note",
+    "node_evaluation",
+    "node_generation",
+    "node_plan",
+    "node_pr",
+    "node_preview",
+    "node_repository",
+    "node_retrieve",
+    "node_scan",
+    "node_validation"
+  ]
+}
