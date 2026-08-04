@@ -12,7 +12,10 @@ import unittest
 from pathlib import Path
 
 from skill.scripts.readme_showcase.orchestration.workspace import RunWorkspace
+from skill.scripts.readme_showcase.evidence.adapters import adapt_v1_repository_evidence
 from skill.scripts.pipeline_contracts import write_canonical_json_atomic
+from tests import test_pipeline_contracts
+from tests.test_pr_bundle import PrBundleTests
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -69,6 +72,51 @@ class ResumablePipelineTests(unittest.TestCase):
     def install_candidate(self) -> None:
         destination = self.workspace / "stages/05-candidate"
         shutil.copytree(FIXTURES / "v1-candidate", destination, dirs_exist_ok=True)
+
+    def install_compiled_candidate(self, workspace: Path) -> tuple[dict[str, object], dict[str, bytes]]:
+        plan, candidate, _, _ = test_pipeline_contracts.BundleAssembleStageTests._compiled_inputs_with_v1_evidence()
+        write_canonical_json_atomic(self.root / "readme-plan-v3.json", plan)
+        destination = workspace / "stages/05-candidate"
+        for relative, raw in candidate.items():
+            path = destination / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(raw)
+        return plan, candidate
+
+    def materialize_compiled_delivery_root(self, workspace: Path) -> Path:
+        """Project the immutable stage inputs/outputs into one delivery root."""
+        source = self.root / "delivery"
+        source.mkdir()
+        files = {
+            "repository-evidence.json": workspace / "stages/01-scan/attempts/1/repository-evidence.json",
+            "retrieval-packet.json": workspace / "stages/02-retrieve/attempts/1/retrieval-packet.json",
+            "readme-plan.json": workspace / "stages/03-plan-import/attempts/1/readme-plan.json",
+            "claim-map.json": workspace / "stages/05-candidate/claim-map.json",
+            "visual-spec.json": workspace / "stages/05-candidate/visual-spec.json",
+            "asset-manifest.json": workspace / "stages/06-bundle-assemble/attempts/1/asset-manifest.json",
+            "generated-readme-bundle.json": workspace / "stages/06-bundle-assemble/attempts/1/generated-readme-bundle.json",
+            "evaluation-report.json": workspace / "stages/08-evaluation/attempts/1/evaluation-report.json",
+        }
+        for relative, path in files.items():
+            destination = source / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if relative == "repository-evidence.json":
+                evidence = json.loads(path.read_text(encoding="utf-8"))
+                if evidence.get("schema_version") == 1:
+                    write_canonical_json_atomic(destination, adapt_v1_repository_evidence(evidence))
+                    continue
+            shutil.copyfile(path, destination)
+        for relative in ("README.md", "README_zh.md"):
+            candidate = workspace / "stages/05-candidate" / relative
+            if candidate.is_file():
+                shutil.copyfile(candidate, source / relative)
+        for relative in ("compiled", "assets"):
+            shutil.copytree(
+                workspace / "stages/06-bundle-assemble/attempts/1" / relative,
+                source / relative,
+            )
+        shutil.copytree(workspace / "output/preview", source / "output/preview")
+        return source
 
     def manifest(self) -> dict[str, object]:
         return json.loads((self.workspace / "run-manifest.json").read_text(encoding="utf-8"))
@@ -304,7 +352,217 @@ class ResumablePipelineTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertIn(code, result.stderr)
                 self.assertEqual(self.git("status", "--porcelain"), "")
+        linked_home = self.root / "linked-codex-home"
+        real_home = self.root / "real-codex-home"
+        real_home.mkdir()
+        linked_home.symlink_to(real_home, target_is_directory=True)
+        environment = os.environ.copy()
+        environment["CODEX_HOME"] = str(linked_home)
+        linked = self.cli_at(self.target, *arguments, env=environment)
+        self.assertEqual(linked.returncode, 2)
+        self.assertIn("E_RUN_STATE_ROOT", linked.stderr)
+        self.assertEqual(self.git("status", "--porcelain"), "")
         self.assertFalse((self.target / "state-home").exists())
+
+    def test_compiled_default_state_cli_lifecycle_is_resumable_and_clean(self) -> None:
+        helper = PrBundleTests(methodName="runTest")
+        compiled_root = self.root / "compiled-target"
+        compiled_root.mkdir()
+        target, _ = helper.target(compiled_root)
+        (target / "README.md").write_text("# Demo\n", encoding="utf-8")
+        helper.git(target, "add", "README.md")
+        helper.git(target, "commit", "-m", "compiled demo")
+        (target / "nested").mkdir()
+
+        codex_home = (self.root / "codex-home").resolve()
+        temp_root = (self.root / "tmp").resolve()
+        codex_home.mkdir()
+        temp_root.mkdir()
+        environment = os.environ.copy()
+        environment.update({"CODEX_HOME": str(codex_home), "TMPDIR": str(temp_root)})
+        plan, _, _, _ = test_pipeline_contracts.BundleAssembleStageTests._compiled_inputs_with_v1_evidence()
+        plan_path = self.root / "readme-plan-v3.json"
+        write_canonical_json_atomic(plan_path, plan)
+
+        def git_snapshot() -> dict[str, bytes]:
+            return {
+                "refs": subprocess.check_output(["git", "-C", str(target), "show-ref"]),
+                "status": subprocess.check_output(["git", "-C", str(target), "status", "--porcelain=v1", "-z"]),
+                "index": subprocess.check_output(["git", "-C", str(target), "ls-files", "-s", "-z"]),
+            }
+
+        before = git_snapshot()
+        started = self.cli_at(
+            target,
+            "run",
+            "--root", str(target),
+            "--mode", "readme",
+            "--project-type", "developer-tool",
+            "--locale", "en",
+            "--plan", str(plan_path),
+            "--verbosity", "debug",
+            env=environment,
+        )
+        self.assertEqual(started.returncode, 0, started.stderr)
+        started_payload = json.loads(started.stdout)
+        self.assertEqual(started_payload["status"], "waiting-for-candidate")
+        workspace = Path(started_payload["workspace"])
+        self.assertTrue(workspace.is_relative_to(codex_home / "state/readme-showcase"))
+        self.assertNotIn(str(target), started.stderr)
+
+        self.install_compiled_candidate(workspace)
+        resumed = self.cli_at(target / "nested", "resume", env=environment)
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        resumed_payload = json.loads(resumed.stdout)
+        self.assertEqual(resumed_payload["status"], "complete")
+        self.assertNotIn(str(codex_home), resumed.stdout)
+
+        manifest = json.loads((workspace / "run-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(manifest["stages"]), 8)
+        self.assertEqual(
+            [stage["name"] for stage in manifest["stages"]],
+            list(test_pipeline_contracts.STAGE_NAMES),
+        )
+        self.assertEqual([stage["attempt"] for stage in manifest["stages"]], [1, 1, 1, 1, 0, 1, 1, 1])
+        self.assertTrue((workspace / "stages/06-bundle-assemble/attempts/1/compiled/inventory.json").is_file())
+        self.assertTrue((workspace / "stages/06-bundle-assemble/attempts/1/assets/readme-showcase/en/desktop.svg").is_file())
+
+        status = self.cli_at(target / "nested", "status", env=environment)
+        debug_status = self.cli_at(target / "nested", "status", "--verbosity", "debug", env=environment)
+        explain = self.cli_at(target / "nested", "explain", "--format", "json", env=environment)
+        preview = self.cli_at(target / "nested", "preview", env=environment)
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertEqual(debug_status.returncode, 0, debug_status.stderr)
+        self.assertEqual(explain.returncode, 0, explain.stderr)
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertEqual(json.loads(status.stdout)["run_id"], manifest["run_id"])
+        self.assertNotIn("workspace", json.loads(status.stdout))
+        self.assertEqual(json.loads(debug_status.stdout)["workspace"], str(workspace))
+        self.assertEqual(json.loads(explain.stdout), manifest)
+        self.assertNotIn(str(codex_home), status.stdout + explain.stdout + preview.stdout)
+        self.assertTrue((workspace / "output/preview/index.html").is_file())
+
+        delivery = self.materialize_compiled_delivery_root(workspace)
+        pr_bundle = delivery / "pr-bundle.json"
+        built = self.cli_at(
+            target,
+            "build-pr-bundle",
+            "--bundle", str(delivery / "generated-readme-bundle.json"),
+            "--evaluation", str(delivery / "evaluation-report.json"),
+            "--output", str(pr_bundle),
+            env=environment,
+        )
+        self.assertEqual(built.returncode, 0, built.stderr)
+        built_payload = json.loads(built.stdout)
+        self.assertEqual(built_payload["schema_version"], 2)
+        self.assertEqual(built_payload["status"], "ready")
+        generated_bundle = json.loads((delivery / "generated-readme-bundle.json").read_text(encoding="utf-8"))
+        self.assertEqual(generated_bundle["compiled"]["retention"], "manual")
+
+        repeat = self.cli_at(target / "nested", "resume", env=environment)
+        self.assertEqual(repeat.returncode, 0, repeat.stderr)
+        self.assertEqual(json.loads(repeat.stdout), resumed_payload)
+        after = git_snapshot()
+        self.assertEqual(after, before)
+        self.assertFalse(any(path.name == "venv" for path in workspace.rglob("*")))
+        self.assertEqual(list(temp_root.iterdir()), [])
+
+    def test_compiled_failures_preserve_last_good_and_resume_immutably(self) -> None:
+        helper = PrBundleTests(methodName="runTest")
+        compiled_root = self.root / "compiled-failure-target"
+        compiled_root.mkdir()
+        target, _ = helper.target(compiled_root)
+        (target / "README.md").write_text("# Demo\n", encoding="utf-8")
+        helper.git(target, "add", "README.md")
+        helper.git(target, "commit", "-m", "compiled failure fixture")
+        nested = target / "nested"
+        nested.mkdir()
+
+        codex_home = (self.root / "failure-codex-home").resolve()
+        temp_root = (self.root / "failure-tmp").resolve()
+        codex_home.mkdir()
+        temp_root.mkdir()
+        environment = os.environ.copy()
+        environment.update({"CODEX_HOME": str(codex_home), "TMPDIR": str(temp_root)})
+        plan, _, _, _ = test_pipeline_contracts.BundleAssembleStageTests._compiled_inputs_with_v1_evidence()
+        plan_path = self.root / "failure-plan-v3.json"
+        write_canonical_json_atomic(plan_path, plan)
+        started = self.cli_at(
+            target,
+            "run",
+            "--root", str(target),
+            "--mode", "readme",
+            "--project-type", "developer-tool",
+            "--locale", "en",
+            "--plan", str(plan_path),
+            "--verbosity", "debug",
+            env=environment,
+        )
+        self.assertEqual(started.returncode, 0, started.stderr)
+        workspace = Path(json.loads(started.stdout)["workspace"])
+        self.install_compiled_candidate(workspace)
+        completed = self.cli_at(nested, "resume", env=environment)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        stage6 = workspace / "stages/06-bundle-assemble"
+        last_good = {
+            path.relative_to(stage6).as_posix(): path.read_bytes()
+            for path in stage6.rglob("*")
+            if path.is_file()
+        }
+        target_before = {
+            "refs": subprocess.check_output(["git", "-C", str(target), "show-ref"]),
+            "status": subprocess.check_output(["git", "-C", str(target), "status", "--porcelain=v1", "-z"]),
+            "index": subprocess.check_output(["git", "-C", str(target), "ls-files", "-s", "-z"]),
+        }
+
+        oversized = workspace / "stages/05-candidate/assets/oversized.bin"
+        oversized.parent.mkdir(parents=True, exist_ok=True)
+        oversized.write_bytes(b"x" * (16 * 1024 * 1024 + 1))
+        rejected_size = self.cli_at(nested, "resume", env=environment)
+        self.assertEqual(rejected_size.returncode, 2)
+        self.assertIn("E_INPUT_SIZE", rejected_size.stderr)
+        oversized.unlink()
+        self.assertEqual(last_good, {
+            path.relative_to(stage6).as_posix(): path.read_bytes()
+            for path in stage6.rglob("*")
+            if path.is_file()
+        })
+
+        spec_path = workspace / "stages/05-candidate/visual-spec.json"
+        original_spec = spec_path.read_bytes()
+        invalid_spec = json.loads(original_spec)
+        invalid_spec["nodes"][0]["label"] = "x" * 121
+        write_canonical_json_atomic(spec_path, invalid_spec)
+        failed_compile = self.cli_at(nested, "resume", env=environment)
+        self.assertEqual(failed_compile.returncode, 2)
+        self.assertIn("E_VISUAL_TEXT_FIT", failed_compile.stderr)
+        self.assertEqual(last_good, {
+            path.relative_to(stage6).as_posix(): path.read_bytes()
+            for path in stage6.rglob("*")
+            if path.is_file()
+        })
+        failed_manifest = json.loads((workspace / "run-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(failed_manifest["status"], "failed")
+        self.assertEqual(failed_manifest["stages"][5]["attempt"], 1)
+        self.assertFalse((stage6 / "attempts/2").exists())
+        self.assertEqual(target_before["refs"], subprocess.check_output(["git", "-C", str(target), "show-ref"]))
+        self.assertEqual(target_before["status"], subprocess.check_output(["git", "-C", str(target), "status", "--porcelain=v1", "-z"]))
+        self.assertEqual(target_before["index"], subprocess.check_output(["git", "-C", str(target), "ls-files", "-s", "-z"]))
+
+        spec_path.write_bytes(original_spec)
+        recovered = self.cli_at(nested, "resume", env=environment)
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertEqual(json.loads(recovered.stdout)["status"], "complete")
+        self.assertTrue((stage6 / "attempts/2").is_dir())
+        self.assertEqual(
+            {key: value for key, value in last_good.items() if key.startswith("attempts/1/")},
+            {
+                path.relative_to(stage6).as_posix(): path.read_bytes()
+                for path in (stage6 / "attempts/1").rglob("*")
+                if path.is_file()
+            },
+        )
+        self.assertEqual(json.loads((stage6 / "current.json").read_text(encoding="utf-8"))["attempt"], 2)
 
 
 if __name__ == "__main__":

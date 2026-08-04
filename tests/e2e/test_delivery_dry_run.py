@@ -155,6 +155,97 @@ class DeliveryDryRunTests(unittest.TestCase):
             self.assertFalse(gh_ledger.exists())
             self.assertFalse(network_ledger.exists())
 
+    def test_compiled_dry_run_rechecks_fingerprint_without_external_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target, pr, workspace, approval = PublishGateTests().compiled_fixture(root)
+            bundle_path = workspace / "pr-bundle.json"
+            approval_path = workspace / "approval-envelope-v2.json"
+            write_canonical_json_atomic(bundle_path, pr)
+            write_canonical_json_atomic(approval_path, approval)
+
+            spy = root / "spy"
+            spy.mkdir()
+            gh_ledger = root / "gh-attempts"
+            network_ledger = root / "network-attempts"
+            gh_spy = spy / "gh"
+            gh_spy.write_text(f"#!/bin/sh\nprintf x >> {gh_ledger}\nexit 99\n", encoding="utf-8")
+            gh_spy.chmod(0o755)
+            (spy / "sitecustomize.py").write_text(
+                "import sys\n"
+                f"ledger = {str(network_ledger)!r}\n"
+                "def deny(event, args):\n"
+                "    if event == 'socket.connect':\n"
+                "        open(ledger, 'ab').write(b'x')\n"
+                "        raise RuntimeError('network denied by dry-run test')\n"
+                "sys.addaudithook(deny)\n",
+                encoding="utf-8",
+            )
+            before = {
+                "refs": subprocess.check_output(["git", "-C", str(target), "show-ref"]),
+                "status": subprocess.check_output(["git", "-C", str(target), "status", "--porcelain=v1", "-z"]),
+                "index": subprocess.check_output(["git", "-C", str(target), "ls-files", "-s", "-z"]),
+                "worktrees": subprocess.check_output(["git", "-C", str(target), "worktree", "list", "--porcelain"]),
+                "asset": (workspace / "assets/readme-showcase/en/desktop.svg").read_bytes(),
+                "approval": approval_path.read_bytes(),
+            }
+            environment = dict(os.environ)
+            environment["PATH"] = f"{spy}{os.pathsep}{environment['PATH']}"
+            environment["PYTHONPATH"] = f"{spy}{os.pathsep}{environment.get('PYTHONPATH', '')}"
+            command = [
+                sys.executable,
+                str(PIPELINE),
+                "deliver",
+                "--transport", "gh",
+                "--dry-run",
+                "--bundle", str(bundle_path),
+                "--approval", str(approval_path),
+                "--workspace", str(workspace),
+            ]
+            result = subprocess.run(command, cwd=target, env=environment, capture_output=True, text=True, check=False, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["status"], "dry-run")
+            self.assertEqual(payload["transport"], "gh")
+            self.assertEqual(payload["action_order"], ["create-branch", "commit-files", "push-branch", "open-pull-request"])
+            self.assertFalse(gh_ledger.exists())
+            self.assertFalse(network_ledger.exists())
+
+            repeat = subprocess.run(command, cwd=target, env=environment, capture_output=True, text=True, check=False, timeout=30)
+            self.assertEqual(repeat.returncode, 0, repeat.stderr)
+            self.assertEqual(repeat.stdout, result.stdout)
+            after = {
+                "refs": subprocess.check_output(["git", "-C", str(target), "show-ref"]),
+                "status": subprocess.check_output(["git", "-C", str(target), "status", "--porcelain=v1", "-z"]),
+                "index": subprocess.check_output(["git", "-C", str(target), "ls-files", "-s", "-z"]),
+                "worktrees": subprocess.check_output(["git", "-C", str(target), "worktree", "list", "--porcelain"]),
+                "asset": (workspace / "assets/readme-showcase/en/desktop.svg").read_bytes(),
+                "approval": approval_path.read_bytes(),
+            }
+            self.assertEqual(after, before)
+
+            live = subprocess.run(
+                [argument for argument in command if argument != "--dry-run"],
+                cwd=target,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            self.assertEqual(live.returncode, 2)
+            self.assertIn("E_GITHUB_LIVE_DISABLED", live.stderr)
+            self.assertFalse(gh_ledger.exists())
+            self.assertFalse(network_ledger.exists())
+
+            asset = workspace / "assets/readme-showcase/en/desktop.svg"
+            asset.write_bytes(asset.read_bytes() + b"drift")
+            drift = subprocess.run(command, cwd=target, env=environment, capture_output=True, text=True, check=False, timeout=30)
+            self.assertEqual(drift.returncode, 2)
+            self.assertIn("E_GITHUB_AUTHORITY", drift.stderr)
+            self.assertFalse(gh_ledger.exists())
+            self.assertFalse(network_ledger.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
