@@ -15,6 +15,7 @@ from jsonschema import Draft202012Validator
 from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes
 from skill.scripts.readme_showcase.contracts.evidence import build_fact
 from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
+from skill.scripts.readme_showcase.visual_kernel.fingerprint import build_layered_fingerprint
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +50,85 @@ class SchemaParityTests(unittest.TestCase):
     def _payload(self, value: Any) -> Any:
         return json.loads(json.dumps(value).replace("FACT_ID", self.fact["fact_id"]))
 
+    @staticmethod
+    def _asset_fixture_bytes(path: str) -> bytes:
+        return f"readme-showcase-asset-manifest-v3::{path}\n".encode("utf-8")
+
+    def _materialize_asset_manifest_v3(self, root: Path, payload: dict[str, Any]) -> None:
+        """Build the minimal real artifact root required by the v3 validator.
+
+        The fixture stores only relative references and hashes.  This adapter
+        materializes deterministic regular files for those references, then
+        rebuilds the canonical LayeredFingerprint inventory before invoking the
+        product validator.  It intentionally does not normalize or bypass any
+        v3 validation path.
+        """
+        compiled = payload["compiled"]
+        refs: list[dict[str, Any]] = [compiled["spec"], compiled["theme"]]
+        for name in ("scenes", "gates", "timelines", "interactions", "svgs"):
+            refs.extend(compiled[name])
+        files: dict[str, bytes] = {}
+        for reference in refs:
+            path = reference["path"]
+            raw = self._asset_fixture_bytes(path)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(), reference["sha256"], path)
+            files[path] = raw
+
+        scene_records = [
+            {
+                "locale": reference["locale"],
+                "variant": reference["variant"],
+                "sha256": reference["sha256"],
+                "prior_sha256": compiled["spec"]["sha256"],
+            }
+            for reference in compiled["scenes"]
+        ]
+        scene_hashes = {(record["locale"], record["variant"]): record["sha256"] for record in scene_records}
+
+        def report_records(name: str, previous: dict[tuple[str, str], str]) -> list[dict[str, str]]:
+            return [
+                {
+                    "locale": reference["locale"],
+                    "variant": reference["variant"],
+                    "sha256": reference["sha256"],
+                    "prior_sha256": previous[(reference["locale"], reference["variant"])],
+                }
+                for reference in compiled[name]
+            ]
+
+        gate_records = report_records("gates", scene_hashes)
+        gate_hashes = {(record["locale"], record["variant"]): record["sha256"] for record in gate_records}
+        timeline_records = report_records("timelines", gate_hashes)
+        timeline_hashes = {(record["locale"], record["variant"]): record["sha256"] for record in timeline_records}
+        interaction_records = report_records("interactions", timeline_hashes)
+        report_prior = hashlib.sha256(
+            canonical_json_bytes(
+                {"gates": gate_records, "timelines": timeline_records, "interactions": interaction_records}
+            )
+        ).hexdigest()
+        artifact_records = [
+            {"path": path, "sha256": hashlib.sha256(files[path]).hexdigest(), "prior_sha256": report_prior}
+            for path in sorted(files)
+        ]
+        fingerprint = build_layered_fingerprint(
+            compiled["spec"]["sha256"],
+            scene_records,
+            compiled["theme"]["sha256"],
+            compiled["identities"],
+            gate_records,
+            timeline_records,
+            interaction_records,
+            artifact_records,
+        )
+        inventory_raw = fingerprint.canonical_bytes()
+        inventory = compiled["inventory"]
+        self.assertEqual(hashlib.sha256(inventory_raw).hexdigest(), inventory["sha256"])
+        files[inventory["path"]] = inventory_raw
+        for path, raw in files.items():
+            destination = root / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(raw)
+
     def _python_result(
         self,
         entry: dict[str, Any],
@@ -73,6 +153,11 @@ class SchemaParityTests(unittest.TestCase):
                     generated = BundleV2ContractTests().make_bundle(root)
                     self.assertEqual(generated, payload)
                 validator(payload, root)
+            elif entry["adapter"] == "asset_manifest_v3":
+                valid_fixture = self._payload(_load(FIXTURES / "asset-manifest-v3.valid.json"))
+                manifest_root = root / "asset-manifest-v3"
+                self._materialize_asset_manifest_v3(manifest_root, valid_fixture)
+                validator(payload, evidence_graph=self.graph, artifact_root=manifest_root)
             else:
                 validator(payload)
         except ContractError as error:
@@ -90,10 +175,10 @@ class SchemaParityTests(unittest.TestCase):
         self.assertEqual(importlib.metadata.version("jsonschema"), "4.26.0")
         self.assertEqual(self.index["draft"], "https://json-schema.org/draft/2020-12/schema")
         entries = self.index["schemas"]
-        self.assertEqual(len(entries), 22)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 22)
-        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 22)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 44)
+        self.assertEqual(len(entries), 23)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 23)
+        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 23)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 46)
         self.assertEqual(INDEX.read_bytes(), canonical_json_bytes(self.index))
         self.assertEqual(
             [entry["schema"] for entry in entries],
@@ -174,6 +259,16 @@ class SchemaParityTests(unittest.TestCase):
             "skill/schemas/claim-map.v2.schema.json": "1a41b0ef2c3ad3bd7b2ec4707668cdcf52b91b36ae79efd6523245c4d51d0739",
             "tests/fixtures/contracts/claim-map-v2.valid.json": "8a8e46f5eb19ebce7934d3320d9a496c5ad3c36884335710abcfdffacb02cc4d",
             "tests/fixtures/contracts/claim-map-v2.invalid.json": "1d5fbf165d55603d879791918ea6b2990c499382c26dddabdb96b0216c0699c5",
+        }
+        for relative, digest in expected.items():
+            with self.subTest(path=relative):
+                self.assertEqual(hashlib.sha256((ROOT / relative).read_bytes()).hexdigest(), digest)
+
+    def test_asset_manifest_v2_schema_and_fixture_bytes_remain_unchanged(self) -> None:
+        expected = {
+            "skill/schemas/asset-manifest.v2.schema.json": "b0b6798cde76fa25d7cc4b10a39f6c41e974d6f23eca1e86291d986ce350529a",
+            "tests/fixtures/contracts/asset-manifest-v2.valid.json": "f6e3cac29897085f0541420bf66d54aadaa8df509e90841af185fe52b5c244ae",
+            "tests/fixtures/contracts/asset-manifest-v2.invalid.json": "75f7b4c3439942e0b4c53fb70367c21e1af065d0da72e394acbd59bd381c1f0c",
         }
         for relative, digest in expected.items():
             with self.subTest(path=relative):

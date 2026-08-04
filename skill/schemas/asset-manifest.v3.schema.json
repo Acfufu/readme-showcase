@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/asset-manifest.v3.schema.json",
+  "title": "Asset Manifest v3",
+  "$comment": "Python semantic validation additionally binds every compiled reference to regular-file bytes, the LayeredFingerprint inventory, and the normative Evidence graph.",
+  "x-python-semantic-validation": {
+    "validator": "skill.scripts.readme_showcase.contracts.assets.validate_asset_manifest",
+    "codes": ["E_BUNDLE_ASSET", "E_BUNDLE_HASH", "E_CLAIM_EVIDENCE", "E_PATH", "E_SCHEMA_UNKNOWN_FIELD", "E_VISUAL_DETERMINISM", "E_VISUAL_FINGERPRINT", "E_VISUAL_PATH"]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "assets", "compiled"],
+  "properties": {
+    "schema_version": {"const": 3},
+    "assets": {"type": "array", "minItems": 1, "maxItems": 10000, "items": {"$ref": "#/$defs/asset"}},
+    "compiled": {"$ref": "#/$defs/compiled"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "^[^\\u0000]+$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!/|~/)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\\\u0000]+$"},
+    "locale": {"enum": ["en", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de"]},
+    "variant": {"enum": ["desktop", "mobile"]},
+    "evidenceId": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "^[a-z]+:[0-9a-f]{64}$"},
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"$ref": "#/$defs/path"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "specRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"const": "compiled/visual-spec.json"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "themeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"const": "compiled/theme.json"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "inventoryRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"const": "compiled/inventory.json"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "sceneRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locale", "variant", "path", "sha256"],
+      "properties": {
+        "locale": {"$ref": "#/$defs/locale"},
+        "variant": {"$ref": "#/$defs/variant"},
+        "path": {"type": "string", "pattern": "^compiled/scenes/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.json$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "gateRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locale", "variant", "path", "sha256"],
+      "properties": {
+        "locale": {"$ref": "#/$defs/locale"},
+        "variant": {"$ref": "#/$defs/variant"},
+        "path": {"type": "string", "pattern": "^compiled/gates/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.json$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "timelineRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locale", "variant", "path", "sha256"],
+      "properties": {
+        "locale": {"$ref": "#/$defs/locale"},
+        "variant": {"$ref": "#/$defs/variant"},
+        "path": {"type": "string", "pattern": "^compiled/timeline/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.json$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "interactionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locale", "variant", "path", "sha256"],
+      "properties": {
+        "locale": {"$ref": "#/$defs/locale"},
+        "variant": {"$ref": "#/$defs/variant"},
+        "path": {"type": "string", "pattern": "^compiled/interaction/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.json$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "svgRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locale", "variant", "path", "sha256"],
+      "properties": {
+        "locale": {"$ref": "#/$defs/locale"},
+        "variant": {"$ref": "#/$defs/variant"},
+        "path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.svg$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "identities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kernel", "elk", "renderer"],
+      "properties": {
+        "kernel": {"$ref": "#/$defs/sha256"},
+        "elk": {"$ref": "#/$defs/sha256"},
+        "renderer": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "variantRefs": {"type": "array", "minItems": 1, "maxItems": 10000},
+    "compiled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spec", "theme", "inventory", "scenes", "gates", "timelines", "interactions", "svgs", "identities"],
+      "properties": {
+        "spec": {"$ref": "#/$defs/specRef"},
+        "theme": {"$ref": "#/$defs/themeRef"},
+        "inventory": {"$ref": "#/$defs/inventoryRef"},
+        "scenes": {"allOf": [{"$ref": "#/$defs/variantRefs"}, {"items": {"$ref": "#/$defs/sceneRef"}}]},
+        "gates": {"allOf": [{"$ref": "#/$defs/variantRefs"}, {"items": {"$ref": "#/$defs/gateRef"}}]},
+        "timelines": {"allOf": [{"$ref": "#/$defs/variantRefs"}, {"items": {"$ref": "#/$defs/timelineRef"}}]},
+        "interactions": {"allOf": [{"$ref": "#/$defs/variantRefs"}, {"items": {"$ref": "#/$defs/interactionRef"}}]},
+        "svgs": {"allOf": [{"$ref": "#/$defs/variantRefs"}, {"items": {"$ref": "#/$defs/svgRef"}}]},
+        "identities": {"$ref": "#/$defs/identities"}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "sha256"],
+      "properties": {
+        "kind": {"const": "generated"},
+        "path": {"type": "string", "pattern": "^compiled/scenes/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.json$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_id", "path", "artifact_sha256", "evidence_ids", "role", "locale", "variant", "scene_sha256", "gate_sha256"],
+      "properties": {
+        "asset_id": {"$ref": "#/$defs/text"},
+        "path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.svg$"},
+        "artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/evidenceId"}},
+        "role": {"const": "diagram"},
+        "locale": {"$ref": "#/$defs/locale"},
+        "variant": {"$ref": "#/$defs/variant"},
+        "scene_sha256": {"$ref": "#/$defs/sha256"},
+        "gate_sha256": {"$ref": "#/$defs/sha256"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    }
+  }
+}

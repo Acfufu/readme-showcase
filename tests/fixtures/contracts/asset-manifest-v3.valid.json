@@ -1,0 +1,226 @@
+{
+  "assets": [
+    {
+      "artifact_sha256": "d1d7bf5cab622391f65d89291ae63402d813050fcb3dd090458f578206cf72fb",
+      "asset_id": "diagram-en-desktop",
+      "evidence_ids": [
+        "FACT_ID"
+      ],
+      "gate_sha256": "4be05396ffcdb42f767710b470f2e48c0123fcc9fda3a6f49d03641a66504a8f",
+      "locale": "en",
+      "path": "assets/readme-showcase/en/desktop.svg",
+      "provenance": {
+        "kind": "generated",
+        "path": "compiled/scenes/en/desktop.json",
+        "sha256": "442ad6159c0180910fae38e8891dcfdd7f126ca5ae8a3d01ff0a249ac2e1b52f"
+      },
+      "role": "diagram",
+      "scene_sha256": "442ad6159c0180910fae38e8891dcfdd7f126ca5ae8a3d01ff0a249ac2e1b52f",
+      "variant": "desktop"
+    },
+    {
+      "artifact_sha256": "51a1c68ea3fd7cd6cd745caf86828b5a44d4417fb2fe91899b371e0e73876aea",
+      "asset_id": "diagram-en-mobile",
+      "evidence_ids": [
+        "FACT_ID"
+      ],
+      "gate_sha256": "041d85edce6521d52211a99fccbe3c7a4d33ef9c8e91f149b0535fae7a9f9723",
+      "locale": "en",
+      "path": "assets/readme-showcase/en/mobile.svg",
+      "provenance": {
+        "kind": "generated",
+        "path": "compiled/scenes/en/mobile.json",
+        "sha256": "3fcdd98f2e16c7130316f015dba29024519f6fc31a74a316339e4820e05aea2f"
+      },
+      "role": "diagram",
+      "scene_sha256": "3fcdd98f2e16c7130316f015dba29024519f6fc31a74a316339e4820e05aea2f",
+      "variant": "mobile"
+    },
+    {
+      "artifact_sha256": "b8ad4af2c571b2f40adc7b415c131ae00568cead60dfd8e0a5f41966601c7df8",
+      "asset_id": "diagram-zh-Hans-desktop",
+      "evidence_ids": [
+        "FACT_ID"
+      ],
+      "gate_sha256": "50aa4ddcd167ace45a05afa7849d2962060838ac9415cfd0c242a447ff9b46db",
+      "locale": "zh-Hans",
+      "path": "assets/readme-showcase/zh-Hans/desktop.svg",
+      "provenance": {
+        "kind": "generated",
+        "path": "compiled/scenes/zh-Hans/desktop.json",
+        "sha256": "39fbeeb6f899e449ae70ec9f39c9aeef2e35e0c49a25ae9affbfee8783903ef9"
+      },
+      "role": "diagram",
+      "scene_sha256": "39fbeeb6f899e449ae70ec9f39c9aeef2e35e0c49a25ae9affbfee8783903ef9",
+      "variant": "desktop"
+    },
+    {
+      "artifact_sha256": "c20d311ac33e7199eb8932061d194abbd99e1ac18ca7c230633e36e986e3a1b0",
+      "asset_id": "diagram-zh-Hans-mobile",
+      "evidence_ids": [
+        "FACT_ID"
+      ],
+      "gate_sha256": "f47f2d8aa15c4055fa7aa3b3e46ddf3f346e167a8b1468868ab29af29398995a",
+      "locale": "zh-Hans",
+      "path": "assets/readme-showcase/zh-Hans/mobile.svg",
+      "provenance": {
+        "kind": "generated",
+        "path": "compiled/scenes/zh-Hans/mobile.json",
+        "sha256": "db004810e173e028bc50fe39ab343902fb090ec2bb813dc6c6342ab81395db33"
+      },
+      "role": "diagram",
+      "scene_sha256": "db004810e173e028bc50fe39ab343902fb090ec2bb813dc6c6342ab81395db33",
+      "variant": "mobile"
+    }
+  ],
+  "compiled": {
+    "gates": [
+      {
+        "locale": "en",
+        "path": "compiled/gates/en/desktop.json",
+        "sha256": "4be05396ffcdb42f767710b470f2e48c0123fcc9fda3a6f49d03641a66504a8f",
+        "variant": "desktop"
+      },
+      {
+        "locale": "en",
+        "path": "compiled/gates/en/mobile.json",
+        "sha256": "041d85edce6521d52211a99fccbe3c7a4d33ef9c8e91f149b0535fae7a9f9723",
+        "variant": "mobile"
+      },
+      {
+        "locale": "zh-Hans",
+        "path": "compiled/gates/zh-Hans/desktop.json",
+        "sha256": "50aa4ddcd167ace45a05afa7849d2962060838ac9415cfd0c242a447ff9b46db",
+        "variant": "desktop"
+      },
+      {
+        "locale": "zh-Hans",
+        "path": "compiled/gates/zh-Hans/mobile.json",
+        "sha256": "f47f2d8aa15c4055fa7aa3b3e46ddf3f346e167a8b1468868ab29af29398995a",
+        "variant": "mobile"
+      }
+    ],
+    "identities": {
+      "elk": "a32d4d44281daba9b487654cc023f9c41626d8aee2fd6b403964e413cf1b4d85",
+      "kernel": "b3de3161fcda56c755ac3ea72bf5fe063aaf8fb7c3278af73c563167522e50f5",
+      "renderer": "ca9aeeabff68d75523b8ff05dca89c6ff5ff084d206706a8fa3f18e0db219001"
+    },
+    "interactions": [
+      {
+        "locale": "en",
+        "path": "compiled/interaction/en/desktop.json",
+        "sha256": "080230dbd700b084df47cc7088abf3842459d1fb632c1ad8c1f8c3a34084af61",
+        "variant": "desktop"
+      },
+      {
+        "locale": "en",
+        "path": "compiled/interaction/en/mobile.json",
+        "sha256": "dc076fa2bad00a19dc2138abaa887a369eaa4d6b626274ad5533b7ce6c1b1a97",
+        "variant": "mobile"
+      },
+      {
+        "locale": "zh-Hans",
+        "path": "compiled/interaction/zh-Hans/desktop.json",
+        "sha256": "952c37b04401cc3897fa4eedbe4abf7256bad9dc1d0d240e2c60959de0a79344",
+        "variant": "desktop"
+      },
+      {
+        "locale": "zh-Hans",
+        "path": "compiled/interaction/zh-Hans/mobile.json",
+        "sha256": "66c9fc7d9f87ab20d950b777b0287cea3662627edf863efce522b074875b28f1",
+        "variant": "mobile"
+      }
+    ],
+    "inventory": {
+      "path": "compiled/inventory.json",
+      "sha256": "33dde5f85aa0f5c2c8797a2a44c11fe933edaa6f69e2f4463e38fafdd0d3ff5e"
+    },
+    "scenes": [
+      {
+        "locale": "en",
+        "path": "compiled/scenes/en/desktop.json",
+        "sha256": "442ad6159c0180910fae38e8891dcfdd7f126ca5ae8a3d01ff0a249ac2e1b52f",
+        "variant": "desktop"
+      },
+      {
+        "locale": "en",
+        "path": "compiled/scenes/en/mobile.json",
+        "sha256": "3fcdd98f2e16c7130316f015dba29024519f6fc31a74a316339e4820e05aea2f",
+        "variant": "mobile"
+      },
+      {
+        "locale": "zh-Hans",
+        "path": "compiled/scenes/zh-Hans/desktop.json",
+        "sha256": "39fbeeb6f899e449ae70ec9f39c9aeef2e35e0c49a25ae9affbfee8783903ef9",
+        "variant": "desktop"
+      },
+      {
+        "locale": "zh-Hans",
+        "path": "compiled/scenes/zh-Hans/mobile.json",
+        "sha256": "db004810e173e028bc50fe39ab343902fb090ec2bb813dc6c6342ab81395db33",
+        "variant": "mobile"
+      }
+    ],
+    "spec": {
+      "path": "compiled/visual-spec.json",
+      "sha256": "fa42880c54a3e36bcc7f08c5fe716e39b56f38b9903d733bbc3c11e9b8d629ed"
+    },
+    "svgs": [
+      {
+        "locale": "en",
+        "path": "assets/readme-showcase/en/desktop.svg",
+        "sha256": "d1d7bf5cab622391f65d89291ae63402d813050fcb3dd090458f578206cf72fb",
+        "variant": "desktop"
+      },
+      {
+        "locale": "en",
+        "path": "assets/readme-showcase/en/mobile.svg",
+        "sha256": "51a1c68ea3fd7cd6cd745caf86828b5a44d4417fb2fe91899b371e0e73876aea",
+        "variant": "mobile"
+      },
+      {
+        "locale": "zh-Hans",
+        "path": "assets/readme-showcase/zh-Hans/desktop.svg",
+        "sha256": "b8ad4af2c571b2f40adc7b415c131ae00568cead60dfd8e0a5f41966601c7df8",
+        "variant": "desktop"
+      },
+      {
+        "locale": "zh-Hans",
+        "path": "assets/readme-showcase/zh-Hans/mobile.svg",
+        "sha256": "c20d311ac33e7199eb8932061d194abbd99e1ac18ca7c230633e36e986e3a1b0",
+        "variant": "mobile"
+      }
+    ],
+    "theme": {
+      "path": "compiled/theme.json",
+      "sha256": "1da962434e7e8fb4b4b9454017333d9ec00e58e4a9df625072bb31dd37a58a73"
+    },
+    "timelines": [
+      {
+        "locale": "en",
+        "path": "compiled/timeline/en/desktop.json",
+        "sha256": "572eee88cf925c94d388505b36a8663e539ca9af2b428e44be08966135214449",
+        "variant": "desktop"
+      },
+      {
+        "locale": "en",
+        "path": "compiled/timeline/en/mobile.json",
+        "sha256": "bc429d2e223e5da8e6b7c1321054f67755c6968fee41476811d9da2ccd622f9d",
+        "variant": "mobile"
+      },
+      {
+        "locale": "zh-Hans",
+        "path": "compiled/timeline/zh-Hans/desktop.json",
+        "sha256": "45635ebbacd545a35f028deaf027cd14a5dd2a2ebd43e07a71c6356eab350c10",
+        "variant": "desktop"
+      },
+      {
+        "locale": "zh-Hans",
+        "path": "compiled/timeline/zh-Hans/mobile.json",
+        "sha256": "c47f9193fb46b9eeffc4b11a28844adc04e609d87c6d8be1d5ce067148d59671",
+        "variant": "mobile"
+      }
+    ]
+  },
+  "schema_version": 3
+}
