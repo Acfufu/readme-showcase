@@ -201,6 +201,37 @@ class PreviewReportTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(first_bytes, self.preview_bytes())
 
+    def test_compiled_v3_preview_exposes_safe_viewports_and_static_fallback(self) -> None:
+        stage6 = self.prepare_compiled()
+        rendered = self.cli("preview", "--workspace", str(self.workspace))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        files = self.preview_bytes()
+        expected_assets = {
+            "assets/readme-showcase/en/desktop.svg",
+            "assets/readme-showcase/en/mobile.svg",
+        }
+        self.assertTrue(expected_assets.issubset(files))
+        self.assertNotIn("assets/README.txt", files)
+        for path in expected_assets:
+            self.assertEqual(files[path], (stage6 / path).read_bytes())
+            renderer_module._validate_compiled_svg(files[path])
+
+        index = files["index.html"].decode("utf-8")
+        self.assertIn("Desktop viewport", index)
+        self.assertIn("Mobile viewport", index)
+        self.assertIn("Static interaction fallback", index)
+        self.assertIn("assets/readme-showcase/en/desktop.svg", index)
+        self.assertIn("assets/readme-showcase/en/mobile.svg", index)
+        self.assertNotIn('"layers"', index)
+        self.assertNotIn(str(self.workspace), index)
+        parser = _OfflineHTMLParser()
+        parser.feed(index)
+        self.assertFalse({"script", "iframe", "object", "embed"} & set(parser.tags))
+        self.assertFalse(any(name.lower().startswith("on") for name, _ in parser.attributes))
+        interaction = json.loads((stage6 / "compiled/interaction/en/desktop.json").read_bytes())
+        for identifier in interaction["focus_order"]:
+            self.assertIn(identifier, index)
+
     def test_compiled_artifact_drift_preserves_last_good_preview(self) -> None:
         stage6 = self.prepare_compiled()
         rendered = self.cli("preview", "--workspace", str(self.workspace))
@@ -210,6 +241,7 @@ class PreviewReportTests(unittest.TestCase):
             "assets/readme-showcase/en/desktop.svg",
             "compiled/scenes/en/desktop.json",
             "compiled/gates/en/desktop.json",
+            "compiled/interaction/en/desktop.json",
         ):
             path = stage6 / relative
             original = path.read_bytes()

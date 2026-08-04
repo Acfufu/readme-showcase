@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import html
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -11,19 +13,27 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ...pipeline_contracts import ContractError, canonical_json_bytes, canonical_sha256
+from ..contracts.evidence import validate_evidence_graph
+from ..evidence import adapt_v1_repository_evidence
 from ..orchestration.workspace import RunWorkspace
+from ..visual_kernel.model import validate_visual_spec
+from ..visual_kernel.reader import load_compiled_visual
 from .report import (
     MAX_PREVIEW_INPUT_BYTES,
     PreviewInputSnapshot,
+    _attempt_path,
+    _canonical_object,
     assert_preview_inputs_current,
     build_preview_snapshot,
 )
+from .interaction import project_interaction_preview
 
 
 _ASSET_SUFFIXES = frozenset({".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"})
 _ACTIVE_SVG_ELEMENTS = frozenset({"script", "foreignobject", "iframe", "object", "embed", "audio", "video"})
 _EXTERNAL_REFERENCE = re.compile(r"(?:https?:|//|data:|javascript:)", re.IGNORECASE)
 _ACTIVE_STYLE = re.compile(r"(?:url\s*\(|@import|expression\s*\(|javascript:)", re.IGNORECASE)
+_LOCAL_SVG_REFERENCE = re.compile(rb"url\(\s*#[A-Za-z_][A-Za-z0-9_.:-]*\s*\)", re.IGNORECASE)
 
 
 def _local_name(value: str) -> str:
@@ -50,6 +60,17 @@ def _validate_svg(raw: bytes) -> None:
                 raise ContractError("E_PREVIEW_PATH", "preview SVG contains an external reference")
         if _local_name(element.tag) == "style" and _ACTIVE_STYLE.search(element.text or ""):
             raise ContractError("E_PREVIEW_PATH", "preview SVG contains an active style")
+
+
+def _validate_compiled_svg(raw: bytes) -> None:
+    """Apply the preview SVG gate while allowing bounded local marker refs."""
+
+    # Compiled scenes use SVG's local ``url(#id)`` references for arrow
+    # markers.  The legacy candidate gate intentionally rejects every url()
+    # expression, so normalize only this closed local form before reusing it;
+    # any external/data/javascript URL remains visible to ``_validate_svg``.
+    normalized = _LOCAL_SVG_REFERENCE.sub(b"#local-reference", raw)
+    _validate_svg(normalized)
 
 
 def _collect_assets(
@@ -105,7 +126,13 @@ def _document(title: str, source: str) -> bytes:
     ).encode("utf-8")
 
 
-def _index(report: dict[str, Any], readmes: dict[str, str]) -> bytes:
+def _index(
+    report: dict[str, Any],
+    readmes: dict[str, str],
+    *,
+    extra_css: str = "",
+    extra_sections: str = "",
+) -> bytes:
     primary_path = report["mobile"]["source"]
     primary = readmes[primary_path]
     report_text = canonical_json_bytes(report).decode("utf-8")
@@ -115,17 +142,178 @@ def _index(report: dict[str, Any], readmes: dict[str, str]) -> bytes:
     return (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        f"<title>README preview</title><style>{_CSS}</style></head><body><main>"
+        f"<title>README preview</title><style>{_CSS}{extra_css}</style></head><body><main>"
         "<h1>README offline preview</h1>"
         f"<p class=\"meta\">Fixed run time: {html.escape(report['generated_at'])}</p>"
         f"<section><h2>Rendered README</h2><pre>{html.escape(primary, quote=True)}</pre></section>"
         f"<section><h2>Diff</h2><pre>{html.escape(diff_text, quote=True)}</pre></section>"
         f"<section><h2>Evidence and claims</h2><pre>{html.escape(evidence_text, quote=True)}</pre></section>"
         f"<section><h2>Evaluation</h2><pre>{html.escape(evaluation_text, quote=True)}</pre></section>"
+        f"{extra_sections}"
         f"<section><h2>Mobile / narrow view</h2><div class=\"mobile-preview\"><pre>{html.escape(primary, quote=True)}</pre></div></section>"
         f"<section><h2>Canonical report</h2><pre>{html.escape(report_text, quote=True)}</pre></section>"
         "</main></body></html>\n"
     ).encode("utf-8")
+
+
+def _compiled_preview(
+    workspace: RunWorkspace,
+    manifest: dict[str, Any],
+    snapshot: PreviewInputSnapshot,
+    report: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Load the raw, already-validated v3 artifacts needed by the HTML view."""
+
+    if "compiled" not in report:
+        return None
+    bundle_path = _attempt_path(workspace, manifest, 5, "generated-readme-bundle.json")
+    if bundle_path is None:
+        raise ContractError("E_PREVIEW_STATE", "compiled preview requires a committed generated bundle")
+    bundle = _canonical_object(snapshot, bundle_path)
+    if bundle is None or bundle.get("schema_version") != 3:
+        raise ContractError("E_SCHEMA_VERSION", "compiled preview requires Generated Bundle v3")
+
+    # The report only carries display fingerprints.  Read the committed stage
+    # through the single Task 36 trust boundary before selecting any bytes.
+    loaded = load_compiled_visual(bundle_path.parent, bundle)
+    compiled_spec_raw = loaded.artifacts.get("compiled/visual-spec.json")
+    if compiled_spec_raw is None:
+        raise ContractError("E_VISUAL_PATH", "compiled Visual Spec is unavailable")
+    try:
+        spec_payload = json.loads(compiled_spec_raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ContractError("E_VISUAL_FINGERPRINT", "compiled Visual Spec is not canonical JSON") from exc
+
+    evidence_path = _attempt_path(workspace, manifest, 0, "repository-evidence.json")
+    if evidence_path is None:
+        raise ContractError("E_PREVIEW_STATE", "compiled preview requires repository evidence")
+    evidence_payload = _canonical_object(snapshot, evidence_path)
+    if evidence_payload is None:
+        raise ContractError("E_PREVIEW_PATH", "compiled repository evidence is unavailable")
+    if evidence_payload.get("schema_version") == 1:
+        evidence_graph = adapt_v1_repository_evidence(evidence_payload)
+    elif evidence_payload.get("schema_version") == 2:
+        evidence_graph = validate_evidence_graph(evidence_payload)
+    else:
+        raise ContractError("E_SCHEMA_VERSION", "compiled preview requires Evidence v1 or v2")
+
+    spec = validate_visual_spec(spec_payload, evidence_graph=evidence_graph)
+    if spec.canonical_bytes() != compiled_spec_raw:
+        raise ContractError("E_VISUAL_FINGERPRINT", "compiled Visual Spec bytes are not canonical")
+    labels = {
+        item.id: item.label
+        for item in (*spec.groups, *spec.lanes, *spec.nodes)
+        if item.label is not None
+    }
+
+    svg_entries: list[dict[str, Any]] = []
+    assets: dict[str, bytes] = {}
+    projections: dict[tuple[str, str], dict[str, Any]] = {}
+    for path in sorted(loaded.artifacts, key=lambda item: item.encode("utf-8")):
+        if not path.startswith("assets/readme-showcase/") or not path.endswith(".svg"):
+            continue
+        parts = path.split("/")
+        if len(parts) != 4 or parts[3][:-4] not in {"desktop", "mobile"}:
+            raise ContractError("E_VISUAL_PATH", "compiled SVG path is not a desktop/mobile asset")
+        locale, variant = parts[2], parts[3][:-4]
+        raw = loaded.artifacts[path]
+        # Keep the existing candidate gate in the preview boundary.  Local
+        # marker references are normalized solely so the legacy gate can be
+        # reused; the reader has already applied the authoritative SVG audit.
+        _validate_compiled_svg(raw)
+        assets[path] = raw
+        svg_entries.append({"locale": locale, "variant": variant, "path": path})
+
+        interaction_path = f"compiled/interaction/{locale}/{variant}.json"
+        interaction_raw = loaded.artifacts.get(interaction_path)
+        if interaction_raw is None:
+            raise ContractError("E_VISUAL_PATH", f"compiled interaction is unavailable: {interaction_path}")
+        try:
+            interaction_payload = json.loads(interaction_raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+            raise ContractError("E_VISUAL_FINGERPRINT", "compiled interaction is not canonical JSON") from exc
+        if canonical_json_bytes(interaction_payload) != interaction_raw:
+            raise ContractError("E_VISUAL_FINGERPRINT", "compiled interaction bytes are not canonical")
+        projection = project_interaction_preview(
+            interaction_payload,
+            evidence_graph,
+            labels=labels,
+            expected_interaction_sha256=hashlib.sha256(interaction_raw).hexdigest(),
+        ).as_dict()
+        projections[(locale, variant)] = projection
+
+    if not svg_entries:
+        raise ContractError("E_VISUAL_FINGERPRINT", "compiled preview contains no SVG variants")
+    locales = {entry["locale"] for entry in svg_entries}
+    for locale in locales:
+        variants = {entry["variant"] for entry in svg_entries if entry["locale"] == locale}
+        if variants != {"desktop", "mobile"}:
+            raise ContractError("E_VISUAL_FINGERPRINT", "compiled preview requires desktop and mobile SVGs")
+        if any((locale, variant) not in projections for variant in variants):
+            raise ContractError("E_VISUAL_FINGERPRINT", "compiled preview requires interaction for both viewports")
+
+    return {
+        "assets": assets,
+        "viewports": svg_entries,
+        "projections": projections,
+        "primary_locale": spec.locale,
+    }
+
+
+def _compiled_index(report: dict[str, Any], readmes: dict[str, str], compiled: dict[str, Any]) -> bytes:
+    """Render v3's static compiled surface without script or raw JSON artifacts."""
+
+    viewport_sections: list[str] = []
+    for entry in compiled["viewports"]:
+        variant = entry["variant"]
+        title = "Desktop viewport" if variant == "desktop" else "Mobile viewport"
+        locale_suffix = f" ({entry['locale']})" if len({item['locale'] for item in compiled['viewports']}) > 1 else ""
+        asset_path = entry["path"]
+        viewport_sections.append(
+            f"<section><h2>{title}{locale_suffix}</h2>"
+            f"<p class=\"meta\">Safe compiled SVG asset: {html.escape(asset_path, quote=True)}</p>"
+            f"<img class=\"compiled-svg {'mobile-preview' if variant == 'mobile' else ''}\" src=\"{html.escape(asset_path, quote=True)}\" alt=\"{title}{locale_suffix}\">"
+            f"<h3>Inert interaction projection</h3>"
+            f"<pre>{html.escape(canonical_json_bytes(compiled['projections'][(entry['locale'], variant)]).decode('utf-8'), quote=True)}</pre>"
+            "</section>"
+        )
+
+    primary_entry = None
+    for entry in compiled["viewports"]:
+        if entry["locale"] == compiled["primary_locale"] and entry["variant"] == "desktop":
+            primary_entry = entry
+            break
+    if primary_entry is None:
+        raise ContractError("E_VISUAL_FINGERPRINT", "compiled preview has no primary desktop viewport")
+    projection = compiled["projections"][(primary_entry["locale"], primary_entry["variant"])]
+    evidence_by_id = {item["evidence_id"]: item for item in projection["evidence"]}
+    fallback_rows: list[str] = []
+    for focus in projection["focus"]:
+        evidence_ids = focus["evidence_ids"]
+        evidence_labels = []
+        for evidence_id in evidence_ids:
+            evidence = evidence_by_id.get(evidence_id)
+            source = f" ({evidence['source_path']})" if evidence is not None else ""
+            evidence_labels.append(f"{evidence_id}{source}")
+        fallback_rows.append(
+            f"<li><strong>{html.escape(focus['element_id'], quote=True)}</strong> "
+            f"{html.escape(focus['label'], quote=True)}"
+            f"<span class=\"meta\"> — Evidence: {html.escape(', '.join(evidence_labels), quote=True)}</span></li>"
+        )
+
+    compiled_css = ".compiled-svg{display:block;max-width:100%;height:auto;margin:12px auto;border:1px solid #33466d;background:#080d19}.compiled-svg.mobile-preview{max-width:375px}.fallback-list{margin:0;padding-left:28px}.fallback-list li{margin:8px 0}"
+    compiled_sections = (
+        "<section><h2>Static interaction fallback</h2>"
+        "<p class=\"meta\">This no-script list preserves the compiled focus order and its Evidence links.</p>"
+        f"<ol class=\"fallback-list\">{''.join(fallback_rows)}</ol></section>"
+        + "".join(viewport_sections)
+    )
+    return _index(
+        report,
+        readmes,
+        extra_css=compiled_css,
+        extra_sections=compiled_sections,
+    )
 
 
 def _tree_bytes(root: Path) -> dict[str, bytes] | None:
@@ -160,13 +348,24 @@ def _readme_documents(report: dict[str, Any], readmes: dict[str, str]) -> dict[s
 
 def render_preview(workspace: RunWorkspace, manifest: dict[str, Any]) -> dict[str, object]:
     snapshot = PreviewInputSnapshot()
+    # Keep the legacy input ordering and failure surface stable.  Compiled
+    # candidates do not publish these bytes, but they are still checked before
+    # any v3 projection is accepted.
     assets = _collect_assets(workspace, snapshot)
     report, readmes = build_preview_snapshot(workspace, manifest, snapshot)
-    files = {
-        "index.html": _index(report, readmes),
-        "report.json": canonical_json_bytes(report),
-        **assets,
-    }
+    compiled = _compiled_preview(workspace, manifest, snapshot, report)
+    if compiled is None:
+        files = {
+            "index.html": _index(report, readmes),
+            "report.json": canonical_json_bytes(report),
+            **assets,
+        }
+    else:
+        files = {
+            "index.html": _compiled_index(report, readmes, compiled),
+            "report.json": canonical_json_bytes(report),
+            **compiled["assets"],
+        }
     files.update(_readme_documents(report, readmes))
     output_root = workspace.root / "output"
     output_info = output_root.lstat()
