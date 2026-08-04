@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/visual-gate-report.v1.schema.json",
+  "title": "Visual Gate Report v1",
+  "$comment": "Draft 2020-12 validates the closed report and diagnostic shape, hash formats, enums, and status/error consistency. Python validation additionally enforces canonical diagnostic ordering, sorted unique element IDs, and typed VisualDiagnostic construction.",
+  "x-python-semantic-validation": {
+    "codes": [
+      "E_SCHEMA_VERSION",
+      "E_SCHEMA_TYPE",
+      "E_SCHEMA_UNKNOWN_FIELD",
+      "E_SCHEMA_MISSING_FIELD",
+      "E_SCHEMA_VALUE",
+      "E_VISUAL_FINGERPRINT"
+    ],
+    "validator": "skill.scripts.readme_showcase.visual_kernel.gates.validate_visual_gate_report"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "spec_sha256",
+    "scene_sha256",
+    "svg_sha256",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {"enum": ["pass", "fail"]},
+    "spec_sha256": {"$ref": "#/$defs/sha256"},
+    "scene_sha256": {"$ref": "#/$defs/sha256"},
+    "svg_sha256": {"$ref": "#/$defs/sha256"},
+    "diagnostics": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/diagnostic"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "pass"}}},
+      "then": {
+        "properties": {
+          "diagnostics": {
+            "not": {
+              "contains": {
+                "required": ["severity"],
+                "properties": {"severity": {"const": "error"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "fail"}}},
+      "then": {
+        "properties": {
+          "diagnostics": {
+            "contains": {
+              "required": ["severity"],
+              "properties": {"severity": {"const": "error"}}
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "path", "element_ids", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "E_VISUAL_SPEC_SIZE",
+            "E_VISUAL_SPEC_ID",
+            "E_VISUAL_SPEC_EDGE",
+            "E_VISUAL_SPEC_EVIDENCE",
+            "E_VISUAL_RESOURCE",
+            "E_VISUAL_PATH",
+            "E_VISUAL_GEOMETRY",
+            "E_VISUAL_OVERLAP",
+            "E_VISUAL_EDGE_INTERSECTION",
+            "E_VISUAL_TEXT_FIT",
+            "E_VISUAL_SVG_SECURITY",
+            "E_VISUAL_DETERMINISM",
+            "E_VISUAL_FINGERPRINT"
+          ]
+        },
+        "severity": {"enum": ["error", "warning", "info"]},
+        "path": {"type": ["string", "null"]},
+        "element_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "message": {"type": "string"}
+      }
+    }
+  }
+}
