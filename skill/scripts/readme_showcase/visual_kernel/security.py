@@ -208,7 +208,9 @@ def _canonical_artifact(
             canonical = normalized.canonical_bytes()
         except ContractError:
             raise
-        except (AttributeError, TypeError, ValueError, RecursionError):
+        except RecursionError:
+            raise _fail("E_VISUAL_RESOURCE", f"{name} exceeds its structural limit") from None
+        except (AttributeError, TypeError, ValueError):
             raise _fail("E_SCHEMA_TYPE", f"{name} cannot be canonicalized") from None
         if canonical != value:
             raise _fail("E_VISUAL_DETERMINISM", f"{name} is not the current canonical projection")
@@ -218,7 +220,9 @@ def _canonical_artifact(
             canonical = normalized.canonical_bytes()
         except ContractError:
             raise
-        except (AttributeError, TypeError, ValueError, RecursionError):
+        except RecursionError:
+            raise _fail("E_VISUAL_RESOURCE", f"{name} exceeds its structural limit") from None
+        except (AttributeError, TypeError, ValueError):
             raise _fail("E_SCHEMA_TYPE", f"{name} cannot be canonicalized") from None
     if len(canonical) > maximum:
         raise _fail(size_code, f"{name} exceeds its byte limit")
