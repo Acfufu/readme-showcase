@@ -34,6 +34,7 @@ _INTENT_KEY = "__scene_intent__"
 _LAYER_INDEX = {name: index for index, name in enumerate(SCENE_LAYERS)}
 _VARIANTS = frozenset({"desktop", "mobile"})
 _PRIMITIVE_KINDS = frozenset({"group", "rect", "line", "path", "text"})
+_PRIMITIVE_LAYERS = {"group": "containers", "line": "edges", "path": "edges", "rect": "nodes", "text": "labels"}
 _TEXT_ROLES = frozenset({"core", "title", "node", "label", "edge", "group", "lane", "caption", "description"})
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _EVIDENCE_ID = re.compile(r"[a-z]+:[0-9a-f]{64}\Z")
@@ -187,6 +188,8 @@ def _primitive_projection(value: "ScenePrimitive") -> dict[str, Any]:
     evidence_ids = _evidence(value.evidence_ids, f"primitive {identifier}.evidence_ids")
     if not isinstance(value.layer, str) or value.layer not in _LAYER_INDEX:
         raise _fail("E_SCHEMA_VALUE", f"primitive {identifier}.layer is unsupported")
+    if value.layer != _PRIMITIVE_LAYERS[kind]:
+        raise _fail("E_SCHEMA_VALUE", f"primitive {identifier}.layer is invalid for {kind}")
     z = _integer(value.z, f"primitive {identifier}.z")
     inactive_defaults = {
         "x": None,

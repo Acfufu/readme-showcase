@@ -280,6 +280,25 @@ class SceneTests(unittest.TestCase):
             validate_visual_scene(raw)
         self.assertEqual(raised.exception.code, "E_VISUAL_GEOMETRY")
 
+    def test_primitive_kinds_are_bound_to_layers_at_both_boundaries(self) -> None:
+        scene = _build("flow", "desktop")
+        expected_layers = {"group": "containers", "line": "edges", "path": "edges", "rect": "nodes", "text": "labels"}
+        for kind, expected_layer in expected_layers.items():
+            wrong_layer = next(layer for layer in SCENE_LAYERS if layer != expected_layer)
+            primitive = next(item for item in scene.primitives if item.kind == kind)
+            with self.subTest(boundary="direct", kind=kind):
+                with self.assertRaises(ContractError) as raised:
+                    replace(primitive, layer=wrong_layer)
+                self.assertEqual(raised.exception.code, "E_SCHEMA_VALUE")
+
+            raw = scene.as_dict()
+            raw_primitive = next(item for item in raw["primitives"] if item["kind"] == kind)
+            raw_primitive["layer"] = wrong_layer
+            with self.subTest(boundary="json", kind=kind):
+                with self.assertRaises(ContractError) as raised:
+                    validate_visual_scene(raw)
+                self.assertEqual(raised.exception.code, "E_SCHEMA_VALUE")
+
 
 if __name__ == "__main__":
     unittest.main()
