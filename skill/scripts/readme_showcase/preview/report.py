@@ -13,7 +13,6 @@ from typing import Any
 from ...pipeline_contracts import (
     ContractError,
     canonical_json_bytes,
-    canonical_sha256,
     read_regular_bytes,
 )
 from ..orchestration.stages import CandidateImportStage, RunContext
@@ -129,16 +128,17 @@ def _assert_stage_outputs_current(
             continue
         root = workspace.root / "stages" / f"{index + 1:02d}-{stage['name']}" / "attempts" / str(stage["attempt"])
         try:
-            entries = sorted(root.iterdir(), key=lambda item: os.fsencode(item.name))
+            info = root.lstat()
         except OSError as exc:
             raise ContractError("E_PREVIEW_STALE", f"preview stage output is unavailable: {stage['name']}") from exc
-        if not entries or any(path.is_symlink() or not path.is_file() for path in entries):
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
             raise ContractError("E_PREVIEW_PATH", f"preview stage output is unsafe: {stage['name']}")
-        projection = []
-        for path in entries:
-            raw = snapshot.read(path) if snapshot is not None else _regular_bytes(path)
-            projection.append({"path": path.name, "sha256": hashlib.sha256(raw or b"").hexdigest()})
-        if canonical_sha256(projection) != stage["output_sha256"]:
+
+        # RunWorkspace owns the immutable-attempt hashing trust boundary.  In
+        # particular, compiled Bundle v3 attempts contain nested directories;
+        # preview must not maintain a second flat/recursive traversal here.
+        observed = workspace.attempt_output_sha256(index, stage["attempt"])
+        if observed is None or observed != stage["output_sha256"]:
             raise ContractError("E_PREVIEW_STALE", f"preview stage output hash is stale: {stage['name']}")
 
 

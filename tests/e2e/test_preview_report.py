@@ -18,6 +18,7 @@ from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes
 from skill.scripts.readme_showcase.orchestration import runner as runner_module
 from skill.scripts.readme_showcase.preview import report as report_module
 from skill.scripts.readme_showcase.preview import renderer as renderer_module
+from tests import test_pipeline_contracts as pipeline_contracts
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -129,6 +130,37 @@ class PreviewReportTests(unittest.TestCase):
         for marker in ("Rendered README", "Diff", "Evidence and claims", "Evaluation", "Mobile / narrow view"):
             self.assertIn(marker, index)
 
+        second = self.cli("preview", "--workspace", str(self.workspace))
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(first_bytes, self.preview_bytes())
+
+    def test_compiled_v3_preview_accepts_nested_stage_outputs(self) -> None:
+        plan, candidate, _, _ = pipeline_contracts.BundleAssembleStageTests._compiled_inputs_with_v1_evidence()
+        plan_path = self.root / "readme-plan-v3.json"
+        plan_path.write_bytes(canonical_json_bytes(plan))
+
+        started = self.cli(
+            "run", "--root", str(self.target), "--workspace", str(self.workspace),
+            "--mode", "readme", "--project-type", "developer-tool", "--locale", "en",
+            "--plan", str(plan_path),
+        )
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(json.loads(started.stdout)["status"], "waiting-for-candidate")
+        candidate_root = self.workspace / "stages/05-candidate"
+        for relative, raw in candidate.items():
+            destination = candidate_root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(raw)
+
+        resumed = self.cli("resume", "--workspace", str(self.workspace))
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        stage6 = self.workspace / "stages/06-bundle-assemble/attempts/1"
+        self.assertTrue((stage6 / "compiled/scenes/en/desktop.json").is_file())
+
+        first = self.cli("preview", "--workspace", str(self.workspace))
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertNotIn("E_PREVIEW_PATH", first.stderr)
+        first_bytes = self.preview_bytes()
         second = self.cli("preview", "--workspace", str(self.workspace))
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(first_bytes, self.preview_bytes())
