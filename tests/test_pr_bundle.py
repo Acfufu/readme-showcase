@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -12,10 +14,13 @@ from typing import Any
 
 from skill.scripts.pipeline_contracts import (
     ContractError,
+    canonical_json_bytes,
     canonical_sha256,
     write_canonical_json_atomic,
 )
+from skill.scripts.readme_showcase.delivery.legacy import validate_pr_bundle
 from tests import test_claim_coverage as claim_coverage
+from tests.contract import test_bundle_v3 as _bundle_v3
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -139,6 +144,177 @@ class PrBundleTests(unittest.TestCase):
             build_pr_bundle(bundle, evaluation, run_root, target_root)
         self.assertEqual(raised.exception.code, code)
 
+    def run_compiled_bundle(
+        self,
+        root: Path,
+    ) -> tuple[Path, str, Path, dict[str, Any], dict[str, Any]]:
+        root.mkdir(parents=True, exist_ok=True)
+        target, _ = self.target(root)
+        for index in range(1, 8):
+            (target / f"scene-evidence-{index}.md").write_bytes(
+                f"scene-evidence-{index}".encode()
+            )
+        self.git(target, "add", ".")
+        self.git(target, "commit", "-m", "compiled evidence")
+        base_sha = self.git(target, "rev-parse", "HEAD")
+        run_root = root / "compiled-run"
+        run_root.mkdir()
+        bundle = _bundle_v3.BundleV3ContractTests(methodName="runTest").make_bundle(run_root)
+        bundle["target"] = {
+            "repository": "owner/target",
+            "base_sha": base_sha,
+        }
+        evaluation = evaluate_generated_bundle(bundle, run_root)
+        self.assertEqual(evaluation["status"], "pass")
+        return target, base_sha, run_root, bundle, evaluation
+
+    def test_compiled_bundle_builds_deterministic_v2_with_only_readme_and_svg_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target, base_sha, run_root, bundle, evaluation = self.run_compiled_bundle(root)
+            index_before = hashlib.sha256((target / ".git/index").read_bytes()).hexdigest()
+
+            first = build_pr_bundle(bundle, evaluation, run_root, target)
+            second = build_pr_bundle(bundle, evaluation, run_root, target)
+
+            self.assertEqual(first, second)
+            self.assertEqual(canonical_json_bytes(first), canonical_json_bytes(second))
+            self.assertEqual(first["schema_version"], 2)
+            self.assertEqual(first["target"]["base_sha"], base_sha)
+            self.assertEqual(first["semantic_sources"], [])
+            self.assertEqual(
+                [item["path"] for item in first["candidate_files"]],
+                [
+                    "README.md",
+                    "README_zh.md",
+                    "assets/readme-showcase/en/desktop.svg",
+                    "assets/readme-showcase/en/mobile.svg",
+                ],
+            )
+            self.assertEqual(
+                first["compiled"]["fingerprint"],
+                bundle["compiled"]["fingerprint"],
+            )
+            self.assertEqual(validate_pr_bundle(first), first)
+            self.assertEqual(
+                first["fingerprint"],
+                canonical_sha256({
+                    key: value
+                    for key, value in first.items()
+                    if key not in {"fingerprint", "status"}
+                }),
+            )
+            self.assertEqual(
+                hashlib.sha256((target / ".git/index").read_bytes()).hexdigest(),
+                index_before,
+            )
+
+    def test_compiled_bundle_rejects_drift_internal_publish_paths_and_target_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target, base_sha, run_root, bundle, evaluation = self.run_compiled_bundle(root)
+            index_before = (target / ".git/index").read_bytes()
+
+            (run_root / "compiled/inventory.json").write_bytes(
+                (run_root / "compiled/inventory.json").read_bytes() + b" "
+            )
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, evaluation, run_root, target)
+            self.assertEqual(raised.exception.code, "E_BUNDLE_HASH")
+            self.assertEqual((target / ".git/index").read_bytes(), index_before)
+
+            target, base_sha, run_root, bundle, evaluation = self.run_compiled_bundle(root / "internal")
+            internal = run_root / "compiled/scenes/en/desktop.json"
+            bundle["candidate"]["assets"][0] = {
+                "path": "compiled/scenes/en/desktop.json",
+                "sha256": hashlib.sha256(internal.read_bytes()).hexdigest(),
+            }
+            bundle["candidate"]["candidate_sha256"] = canonical_sha256({
+                "readmes": bundle["candidate"]["readmes"],
+                "assets": bundle["candidate"]["assets"],
+            })
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, evaluation, run_root, target)
+            self.assertEqual(raised.exception.code, "E_BUNDLE_ASSET")
+
+            target, base_sha, run_root, bundle, evaluation = self.run_compiled_bundle(root / "state")
+            state_index_before = (target / ".git/index").read_bytes()
+            (target / "dirty.txt").write_text("dirty\n", encoding="utf-8")
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, evaluation, run_root, target)
+            self.assertEqual(raised.exception.code, "E_PR_WORKTREE")
+            (target / "dirty.txt").unlink()
+
+            bundle["target"]["base_sha"] = "0" * 40
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, evaluation, run_root, target)
+            self.assertEqual(raised.exception.code, "E_PR_BASE")
+            self.assertEqual((target / ".git/index").read_bytes(), state_index_before)
+
+            target, base_sha, run_root, bundle, evaluation = self.run_compiled_bundle(root / "origin")
+            self.git(target, "remote", "set-url", "origin", "https://github.com/owner/other.git")
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, evaluation, run_root, target)
+            self.assertEqual(raised.exception.code, "E_PR_TARGET")
+
+            target, base_sha, run_root, bundle, evaluation = self.run_compiled_bundle(root / "evaluation")
+            stale_fingerprint = dict(evaluation)
+            stale_fingerprint["compiled_fingerprint"] = "0" * 64
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, stale_fingerprint, run_root, target)
+            self.assertEqual(raised.exception.code, "E_PR_EVALUATION")
+            stale_bundle_hash = dict(evaluation)
+            stale_bundle_hash["bundle_sha256"] = "0" * 64
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, stale_bundle_hash, run_root, target)
+            self.assertEqual(raised.exception.code, "E_PR_EVALUATION")
+
+    def test_compiled_bundle_rejects_excluded_path_and_no_change_without_index_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target, _, run_root, bundle, evaluation = self.run_compiled_bundle(root)
+            source = run_root / "README.md"
+            excluded = run_root / ".omo/README.md"
+            excluded.parent.mkdir()
+            shutil.copyfile(source, excluded)
+            bundle["candidate"]["readmes"][0] = {
+                "path": ".omo/README.md",
+                "sha256": hashlib.sha256(excluded.read_bytes()).hexdigest(),
+            }
+            with self.assertRaises(ContractError):
+                build_pr_bundle(bundle, evaluation, run_root, target)
+
+            target, _, run_root, bundle, evaluation = self.run_compiled_bundle(root / "pr-path")
+            valid_pr = build_pr_bundle(bundle, evaluation, run_root, target)
+            path_index_before = (target / ".git/index").read_bytes()
+            invalid_pr = copy.deepcopy(valid_pr)
+            invalid_pr["candidate_files"][0]["path"] = ".omo/README.md"
+            projection = {
+                key: value
+                for key, value in invalid_pr.items()
+                if key not in {"fingerprint", "status"}
+            }
+            invalid_pr["fingerprint"] = canonical_sha256(projection)
+            with self.assertRaises(ContractError) as raised:
+                validate_pr_bundle(invalid_pr)
+            self.assertEqual(raised.exception.code, "E_PR_PATH")
+            self.assertEqual((target / ".git/index").read_bytes(), path_index_before)
+
+            target, base_sha, run_root, bundle, evaluation = self.run_compiled_bundle(root / "unchanged")
+            for reference in [*bundle["candidate"]["readmes"], *bundle["candidate"]["assets"]]:
+                destination = target / reference["path"]
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(run_root / reference["path"], destination)
+            self.git(target, "add", ".")
+            self.git(target, "commit", "-m", "candidate baseline")
+            bundle["target"]["base_sha"] = self.git(target, "rev-parse", "HEAD")
+            evaluation = evaluate_generated_bundle(bundle, run_root)
+            unchanged_index_before = (target / ".git/index").read_bytes()
+            with self.assertRaises(ContractError) as raised:
+                build_pr_bundle(bundle, evaluation, run_root, target)
+            self.assertEqual(raised.exception.code, "E_PR_NO_CHANGES")
+            self.assertEqual((target / ".git/index").read_bytes(), unchanged_index_before)
+
     def test_deterministic_fingerprint_binds_candidate_and_semantic_source(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
@@ -151,6 +327,7 @@ class PrBundleTests(unittest.TestCase):
             first = build_pr_bundle(bundle, evaluation, run_root, target)
             second = build_pr_bundle(bundle, evaluation, run_root, target)
 
+            self.assertEqual(first["schema_version"], 1)
             self.assertEqual(first, second)
             self.assertEqual(
                 first["fingerprint"],

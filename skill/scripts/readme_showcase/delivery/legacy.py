@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from ..evaluation import legacy as _EVALUATION_LEGACY
 from ..validation import legacy as _BUNDLE
+from ..visual_kernel.reader import load_compiled_visual
 
 ContractError = _BUNDLE.ContractError
 canonical_sha256 = _BUNDLE.canonical_sha256
@@ -32,6 +33,8 @@ _PR_EXCLUDED_PARTS = _BUNDLE._PR_EXCLUDED_PARTS
 _PR_EXCLUSIONS = _BUNDLE._PR_EXCLUSIONS
 _PR_METADATA_FIELDS = _BUNDLE._PR_METADATA_FIELDS
 _PR_TARGET_FIELDS = _BUNDLE._PR_TARGET_FIELDS
+_PR_BUNDLE_V2_FIELDS = _PR_BUNDLE_FIELDS | {"compiled"}
+_PR_COMPILED_FIELDS = {"inventory", "fingerprint"}
 _REMOTE_PERMISSION_FIELDS = _BUNDLE._REMOTE_PERMISSION_FIELDS
 _REMOTE_STATE_FIELDS = _BUNDLE._REMOTE_STATE_FIELDS
 _APPROVAL_CANDIDATE_FIELDS = _BUNDLE._APPROVAL_CANDIDATE_FIELDS
@@ -46,6 +49,12 @@ _artifact_json = _BUNDLE._artifact_json
 _validate_evidence_checkout = _BUNDLE._validate_evidence_checkout
 validate_generated_bundle = _BUNDLE.validate_generated_bundle
 _validate_evaluation_report = _EVALUATION_LEGACY._validate_evaluation_report
+_validate_evaluation_report_v3 = _EVALUATION_LEGACY.validate_evaluation_report_v3
+
+_V3_SVG_PATH = re.compile(
+    r"assets/readme-showcase/[^/]+/(?:desktop|mobile)\.svg\Z"
+)
+
 
 def _git_output(root: Path, *arguments: str) -> bytes:
     environment = {
@@ -120,6 +129,8 @@ def _publish_path(value: str, kind: str) -> PurePosixPath:
         _fail("E_PR_PATH", "README candidate must target README.md or README_zh.md")
     if kind in {"asset", "semantic"} and path.parts[:2] != ("assets", "readme"):
         _fail("E_PR_PATH", f"{kind} candidate must stay under assets/readme")
+    if kind == "compiled-asset" and path.parts[:2] != ("assets", "readme-showcase"):
+        _fail("E_PR_PATH", "compiled-asset candidate must stay under assets/readme-showcase")
     if kind == "semantic" and not path.name.endswith(".diagram.json"):
         _fail("E_PR_PATH", "ELK semantic source must use .diagram.json")
     return path
@@ -176,12 +187,64 @@ def _candidate_change(
     }
 
 
-def build_pr_bundle(
-    payload: Any,
+def _v3_candidate_path(value: Any, kind: str) -> PurePosixPath:
+    path = _publish_path(value, kind)
+    if kind == "compiled-asset" and _V3_SVG_PATH.fullmatch(path.as_posix()) is None:
+        _fail("E_PR_PATH", "compiled PR asset must be a stage-6 SVG candidate")
+    return path
+
+
+def _v3_compiled_projection(
+    bundle: dict[str, Any],
+    artifact_root: Path,
+) -> dict[str, object]:
+    compiled = _object(
+        bundle["compiled"],
+        {"inventory", "fingerprint", "retention"},
+        "generated bundle.compiled",
+    )
+    if compiled["retention"] != "manual":
+        _fail("E_PR_EVALUATION", "compiled artifact retention must be manual")
+    inventory = _reference(
+        compiled["inventory"],
+        "generated bundle.compiled.inventory",
+    )
+    if inventory["path"] != "compiled/inventory.json":
+        _fail("E_PR_PATH", "compiled inventory must stay at compiled/inventory.json")
+    loaded = load_compiled_visual(artifact_root, bundle)
+    fingerprint = _sha256(
+        compiled["fingerprint"],
+        "generated bundle.compiled.fingerprint",
+    )
+    if loaded.inventory_sha256 != fingerprint:
+        _fail("E_PR_EVALUATION", "compiled inventory fingerprint differs from bundle")
+    return {"inventory": inventory, "fingerprint": fingerprint}
+
+
+def _validate_v3_evaluation(
     evaluation: Any,
+    *,
+    bundle: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        report = _validate_evaluation_report_v3(evaluation)
+    except ContractError as exc:
+        raise ContractError("E_PR_EVALUATION", str(exc)) from exc
+    if report["status"] != "pass":
+        _fail("E_PR_EVALUATION", "PR bundle evaluation must pass")
+    if report["bundle_sha256"] != canonical_sha256(bundle):
+        _fail("E_PR_EVALUATION", "evaluation bundle hash differs from Generated Bundle v3")
+    compiled = cast(dict[str, Any], bundle["compiled"])
+    if report["compiled_fingerprint"] != compiled["fingerprint"]:
+        _fail("E_PR_EVALUATION", "evaluation compiled fingerprint differs from Generated Bundle v3")
+    return report
+
+
+def _prepare_pr_target(
+    payload: Any,
     artifact_root: Path,
     target_root: Path,
-) -> dict[str, object]:
+) -> tuple[Path, Path, dict[str, Any], str, str, bytes]:
     artifact_root = artifact_root.resolve(strict=True)
     try:
         target_info = target_root.lstat()
@@ -197,7 +260,9 @@ def build_pr_bundle(
     else:
         _fail("E_PR_PATH", "pipeline run directory must stay outside target repository")
 
-    if isinstance(payload, dict) and payload.get("schema_version") == 2:
+    if isinstance(payload, dict) and payload.get("schema_version") == 3:
+        bundle = cast(dict[str, Any], payload)
+    elif isinstance(payload, dict) and payload.get("schema_version") == 2:
         bundle = _object(payload, _BUNDLE_FIELDS, "generated README bundle")
     else:
         bundle = validate_contract(
@@ -243,38 +308,104 @@ def build_pr_bundle(
     )
     if worktree:
         _fail("E_PR_WORKTREE", "target worktree and index must be clean")
+    return artifact_root, target_root, bundle, repository, base_sha, cached_before
 
-    validation = validate_generated_bundle(bundle, artifact_root)
-    _validate_evidence_checkout(
+def build_pr_bundle(
+    payload: Any,
+    evaluation: Any,
+    artifact_root: Path,
+    target_root: Path,
+) -> dict[str, object]:
+    compiled = isinstance(payload, dict) and payload.get("schema_version") == 3
+    (
         artifact_root,
         target_root,
-        cast(str, validation["evidence_sha256"]),
-        bundle=bundle,
-    )
+        bundle,
+        repository,
+        base_sha,
+        cached_before,
+    ) = _prepare_pr_target(payload, artifact_root, target_root)
+    validation = validate_generated_bundle(bundle, artifact_root)
     bundle_sha256 = canonical_sha256(bundle)
-    _validate_evaluation_report(
-        evaluation,
-        bundle_sha256=bundle_sha256,
-        bundle_schema_version=cast(int, bundle["schema_version"]),
-        expected_advisory=(
-            _EVALUATION.evaluate_v2_advisory(bundle, artifact_root)
-            if bundle["schema_version"] == 2
-            else None
-        ),
-    )
-    candidate = cast(dict[str, Any], bundle["candidate"])
-    references: list[tuple[dict[str, str], str]] = []
-    if candidate["readme"] is not None:
-        references.append(
-            (_reference(candidate["readme"], "bundle candidate.readme"), "readme")
+    if compiled:
+        evidence_bundle = dict(bundle)
+        evidence_bundle["schema_version"] = 2
+        _validate_evidence_checkout(
+            artifact_root,
+            target_root,
+            cast(str, validation["evidence_sha256"]),
+            bundle=evidence_bundle,
         )
-    references.extend(
-        (
-            _reference(value, f"bundle candidate.assets[{index}]"),
-            "asset",
+        _validate_v3_evaluation(evaluation, bundle=bundle)
+        compiled_projection = _v3_compiled_projection(bundle, artifact_root)
+        candidate = cast(dict[str, Any], bundle["candidate"])
+        references = []
+        for index, value in enumerate(cast(list[Any], candidate["readmes"])):
+            reference = _reference(value, f"bundle candidate.readmes[{index}]")
+            _v3_candidate_path(reference["path"], "readme")
+            references.append((reference, "readme"))
+        for index, value in enumerate(cast(list[Any], candidate["assets"])):
+            reference = _reference(value, f"bundle candidate.assets[{index}]")
+            _v3_candidate_path(reference["path"], "compiled-asset")
+            references.append((reference, "compiled-asset"))
+        semantic_sources = []
+        report_sha256 = canonical_sha256(evaluation)
+        output_schema = 2
+    else:
+        _validate_evidence_checkout(
+            artifact_root,
+            target_root,
+            cast(str, validation["evidence_sha256"]),
+            bundle=bundle,
         )
-        for index, value in enumerate(cast(list[Any], candidate["assets"]))
-    )
+        _validate_evaluation_report(
+            evaluation,
+            bundle_sha256=bundle_sha256,
+            bundle_schema_version=cast(int, bundle["schema_version"]),
+            expected_advisory=(
+                _EVALUATION.evaluate_v2_advisory(bundle, artifact_root)
+                if bundle["schema_version"] == 2
+                else None
+            ),
+        )
+        candidate = cast(dict[str, Any], bundle["candidate"])
+        references = []
+        if candidate["readme"] is not None:
+            references.append(
+                (_reference(candidate["readme"], "bundle candidate.readme"), "readme")
+            )
+        references.extend(
+            (
+                _reference(value, f"bundle candidate.assets[{index}]"),
+                "asset",
+            )
+            for index, value in enumerate(cast(list[Any], candidate["assets"]))
+        )
+        artifacts = cast(dict[str, Any], bundle["artifacts"])
+        asset_manifest, _ = _artifact_json(
+            artifact_root,
+            artifacts["asset_manifest"],
+            "bundle artifacts.asset_manifest",
+        )
+        semantic_references = [
+            _reference(asset["semantic"], f"asset manifest.assets[{index}].semantic")
+            for index, asset in enumerate(cast(list[dict[str, Any]], asset_manifest["assets"]))
+            if asset.get("engine_kind") == "elk"
+        ]
+        semantic_sources = sorted(
+            (
+                _candidate_change(
+                    artifact_root=artifact_root,
+                    target_root=target_root,
+                    reference=reference,
+                    kind="semantic",
+                )
+                for reference in semantic_references
+            ),
+            key=lambda item: cast(str, item["path"]),
+        )
+        report_sha256 = canonical_sha256(evaluation)
+        output_schema = 1
     candidate_files = sorted(
         (
             _candidate_change(
@@ -288,29 +419,6 @@ def build_pr_bundle(
         key=lambda item: cast(str, item["path"]),
     )
 
-    artifacts = cast(dict[str, Any], bundle["artifacts"])
-    asset_manifest, _ = _artifact_json(
-        artifact_root,
-        artifacts["asset_manifest"],
-        "bundle artifacts.asset_manifest",
-    )
-    semantic_references = [
-        _reference(asset["semantic"], f"asset manifest.assets[{index}].semantic")
-        for index, asset in enumerate(cast(list[dict[str, Any]], asset_manifest["assets"]))
-        if asset.get("engine_kind") == "elk"
-    ]
-    semantic_sources = sorted(
-        (
-            _candidate_change(
-                artifact_root=artifact_root,
-                target_root=target_root,
-                reference=reference,
-                kind="semantic",
-            )
-            for reference in semantic_references
-        ),
-        key=lambda item: cast(str, item["path"]),
-    )
     paths = [
         cast(str, item["path"])
         for item in [*candidate_files, *semantic_sources]
@@ -352,7 +460,7 @@ def build_pr_bundle(
         ),
     }
     projection: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": output_schema,
         "mode": mode,
         "target": {
             "repository": repository,
@@ -364,8 +472,9 @@ def build_pr_bundle(
         "evaluation": {
             "status": "pass",
             "bundle_sha256": bundle_sha256,
-            "report_sha256": canonical_sha256(evaluation),
+            "report_sha256": report_sha256,
         },
+        **({"compiled": compiled_projection} if compiled else {}),
         "metadata": metadata,
         "exclusions": _PR_EXCLUSIONS,
     }
@@ -399,6 +508,7 @@ def _validate_pr_candidate_list(
     context: str,
     *,
     semantic: bool,
+    compiled: bool = False,
 ) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         _fail("E_SCHEMA_TYPE", f"{context} must be a list")
@@ -416,7 +526,7 @@ def _validate_pr_candidate_list(
             if semantic
             else "readme"
             if normalized.name in {"README.md", "README_zh.md"}
-            else "asset"
+            else "compiled-asset" if compiled else "asset"
         )
         path = _publish_path(raw_path, kind).as_posix()
         before = candidate["before_sha256"]
@@ -518,6 +628,102 @@ def _validate_pr_bundle(payload: Any) -> dict[str, Any]:
     if canonical_sha256(projection) != fingerprint:
         _fail("E_PR_FINGERPRINT", "PR bundle fingerprint does not match contents")
     return pr
+
+
+def _validate_pr_bundle_v2(payload: Any) -> dict[str, Any]:
+    # ``validate_contract`` intentionally hard-codes the legacy schema
+    # version.  Reuse its closed-object semantics through the shared helper,
+    # then apply the explicit v2 version check below.
+    pr = _object(payload, _PR_BUNDLE_V2_FIELDS, "PR bundle v2")
+    if pr["schema_version"] != 2:
+        _fail("E_SCHEMA_VERSION", "PR bundle requires schema_version 2")
+    if pr["status"] != "ready" or pr["mode"] not in {"readme", "asset-only"}:
+        _fail("E_PR_BUNDLE", "PR bundle must be ready in a writable mode")
+
+    target = _object(pr["target"], _PR_TARGET_FIELDS, "PR bundle.target")
+    repository = _text(target["repository"], "PR bundle.target.repository")
+    if not _GITHUB_REPOSITORY.fullmatch(repository):
+        _fail("E_PR_TARGET", "PR bundle repository must be owner/name")
+    if not isinstance(target["base_sha"], str) or not _COMMIT.fullmatch(target["base_sha"]):
+        _fail("E_PR_BASE", "PR bundle base SHA must be immutable")
+    _branch(target["branch"], "PR bundle.target.branch")
+
+    candidate_files = _validate_pr_candidate_list(
+        pr["candidate_files"],
+        "PR bundle.candidate_files",
+        semantic=False,
+        compiled=True,
+    )
+    for index, candidate in enumerate(candidate_files):
+        path = cast(str, candidate["path"])
+        if (
+            PurePosixPath(path).name not in {"README.md", "README_zh.md"}
+            and _V3_SVG_PATH.fullmatch(path) is None
+        ):
+            _fail(
+                "E_PR_PATH",
+                f"PR bundle.candidate_files[{index}] must be a README or compiled SVG",
+            )
+    semantic_sources = _validate_pr_candidate_list(
+        pr["semantic_sources"],
+        "PR bundle.semantic_sources",
+        semantic=True,
+    )
+    if semantic_sources:
+        _fail(
+            "E_PR_BUNDLE",
+            "PR Bundle v2 must not publish internal compiled semantic artifacts",
+        )
+
+    evaluation = _object(
+        pr["evaluation"],
+        _PR_EVALUATION_FIELDS,
+        "PR bundle.evaluation",
+    )
+    if evaluation["status"] != "pass":
+        _fail("E_PR_EVALUATION", "PR bundle evaluation must pass")
+    _sha256(evaluation["bundle_sha256"], "PR bundle.evaluation.bundle_sha256")
+    _sha256(evaluation["report_sha256"], "PR bundle.evaluation.report_sha256")
+
+    compiled = _object(
+        pr["compiled"],
+        _PR_COMPILED_FIELDS,
+        "PR bundle.compiled",
+    )
+    inventory = _reference(compiled["inventory"], "PR bundle.compiled.inventory")
+    if inventory["path"] != "compiled/inventory.json":
+        _fail("E_PR_PATH", "PR bundle compiled inventory must stay at compiled/inventory.json")
+    _sha256(compiled["fingerprint"], "PR bundle.compiled.fingerprint")
+
+    metadata = _object(
+        pr["metadata"],
+        _PR_METADATA_FIELDS,
+        "PR bundle.metadata",
+    )
+    for field in ("commit_message", "pull_request_title"):
+        _text(metadata[field], f"PR bundle.metadata.{field}", limit=240)
+    body = metadata["pull_request_body"]
+    if not isinstance(body, str) or not body.strip() or len(body) > 1200 or "\0" in body:
+        _fail("E_PR_BUNDLE", "PR bundle pull_request_body must be bounded text")
+    if pr["exclusions"] != _PR_EXCLUSIONS:
+        _fail("E_PR_BUNDLE", "PR bundle exclusions differ from fixed policy")
+    fingerprint = _sha256(pr["fingerprint"], "PR bundle.fingerprint")
+    projection = {
+        key: value
+        for key, value in pr.items()
+        if key not in {"fingerprint", "status"}
+    }
+    if canonical_sha256(projection) != fingerprint:
+        _fail("E_PR_FINGERPRINT", "PR bundle fingerprint does not match contents")
+    return pr
+
+
+def validate_pr_bundle(payload: Any) -> dict[str, Any]:
+    """Validate either the legacy PR Bundle v1 or compiled PR Bundle v2."""
+
+    if isinstance(payload, dict) and payload.get("schema_version") == 2:
+        return _validate_pr_bundle_v2(payload)
+    return _validate_pr_bundle(payload)
 
 
 def _approval_candidate_hashes(pr: dict[str, Any]) -> list[dict[str, str]]:
@@ -672,7 +878,7 @@ def check_publish_gate(
     approval_payload: Any,
     candidate_root: Path,
 ) -> dict[str, object]:
-    pr = _validate_pr_bundle(pr_payload)
+    pr = validate_pr_bundle(pr_payload)
     remote = _validate_remote_state(remote_payload)
     approval = _validate_approval(approval_payload)
     target = cast(dict[str, Any], pr["target"])
