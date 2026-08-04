@@ -65,8 +65,12 @@ _FONT_NAMES = {
 }
 _CONTRACTS = importlib.import_module(
     "pipeline_contracts"
-    if __package__ in (None, "")
-    else "skill.scripts.pipeline_contracts"
+    if not __package__
+    else (
+        "skill.scripts.pipeline_contracts"
+        if __package__.startswith("skill.scripts")
+        else f"{__package__}.pipeline_contracts"
+    )
 )
 ContractError = _CONTRACTS.ContractError
 read_regular_bytes = _CONTRACTS.read_regular_bytes

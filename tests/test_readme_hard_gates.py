@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -52,6 +54,36 @@ class ReadmeHardGateTests(unittest.TestCase):
 
             result = self.run_audit(readme)
 
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_visual_kernel_imports_from_installed_scripts_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            installed = Path(temporary) / "scripts"
+            installed.mkdir()
+            shutil.copy2(REPO_ROOT / "skill/scripts/__init__.py", installed / "__init__.py")
+            shutil.copy2(REPO_ROOT / "skill/scripts/pipeline_contracts.py", installed / "pipeline_contracts.py")
+            shutil.copy2(REPO_ROOT / "skill/scripts/audit_readme.py", installed / "audit_readme.py")
+            shutil.copytree(
+                REPO_ROOT / "skill/scripts/readme_showcase",
+                installed / "readme_showcase",
+            )
+            environment = dict(os.environ)
+            environment["PYTHONPATH"] = str(Path(temporary))
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import importlib, sys; "
+                    "sys.modules['pipeline_contracts'] = importlib.import_module('scripts.pipeline_contracts'); "
+                    "import scripts.readme_showcase.visual_kernel.model as model; "
+                    "assert model.VISUAL_SPEC_SCHEMA_VERSION == 1",
+                ],
+                cwd=Path(temporary),
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_localized_readme_rejects_unlocalized_text_svg(self) -> None:
