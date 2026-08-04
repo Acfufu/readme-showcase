@@ -7,6 +7,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = REPO_ROOT / ".github/workflows/ci.yml"
+README = REPO_ROOT / "README.md"
+README_ZH = REPO_ROOT / "README_zh.md"
 
 
 class CiContractTests(unittest.TestCase):
@@ -19,8 +21,13 @@ class CiContractTests(unittest.TestCase):
         self.assertIn("legacy-all:", self.workflow)
         self.assertIn("timeout-minutes: 15", self.workflow)
         self.assertIn("time python -m unittest discover -s tests -v", self.workflow)
-        for version in ("3.10", "3.11", "3.12", "3.13"):
+        for version in ("3.11", "3.12", "3.13"):
             self.assertIn(f'"{version}"', self.workflow)
+        self.assertNotIn('"3.10"', self.workflow)
+        self.assertIn("Python 3.11+", README.read_text(encoding="utf-8"))
+        self.assertIn("Python 3.11+", README_ZH.read_text(encoding="utf-8"))
+        self.assertNotIn("Python 3.10+", README.read_text(encoding="utf-8"))
+        self.assertNotIn("Python 3.10+", README_ZH.read_text(encoding="utf-8"))
         self.assertIn('README_SHOWCASE_SKIP_NODE: "1"', self.workflow)
         self.assertIn("validate-dataset", self.workflow)
         self.assertIn("audit_readme.py README.md", self.workflow)

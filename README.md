@@ -43,7 +43,7 @@ target repository.
 
 ## Quick start
 
-Requirements: macOS or Linux, Python 3.10+, and Codex. The default path has no
+Requirements: macOS or Linux, Python 3.11+, and Codex. The default path has no
 third-party Python dependency.
 
 ```bash

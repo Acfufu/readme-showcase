@@ -39,7 +39,7 @@ _ELK 负责图布局，项目代码负责序列化并验证 SVG。Skill 仍负�
 
 ## 快速开始
 
-环境要求：macOS 或 Linux、Python 3.10+ 与 Codex。默认路径不需要第三方
+环境要求：macOS 或 Linux、Python 3.11+ 与 Codex。默认路径不需要第三方
 Python 依赖。
 
 ```bash
