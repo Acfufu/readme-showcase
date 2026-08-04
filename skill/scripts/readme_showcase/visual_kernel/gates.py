@@ -266,7 +266,11 @@ def _check_determinism(
                 (),
                 f"{name} bytes are not the current canonical projection",
             )
-    if serialize_svg(normalized[1], normalized[2]) != artifacts["svg"]:
+    try:
+        deterministic_svg = serialize_svg(normalized[1], normalized[2])
+    except ContractError as error:
+        return _diagnostic_from_error(error, path="$.svg", fallback_code="E_VISUAL_TEXT_FIT")
+    if deterministic_svg != artifacts["svg"]:
         return VisualDiagnostic(
             "E_VISUAL_DETERMINISM",
             "error",
