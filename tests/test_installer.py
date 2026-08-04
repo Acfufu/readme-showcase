@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,13 @@ from typing import Protocol, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = REPO_ROOT / "scripts" / "install_skill.py"
+_PACKAGED_SUFFIXES = {".py", ".json", ".md", ".mjs"}
+_PACKAGED_ROOTS = (
+    REPO_ROOT / "skill/scripts/readme_showcase/visual_kernel",
+    REPO_ROOT / "skill/scripts/readme_showcase/contracts",
+    REPO_ROOT / "skill/schemas",
+    REPO_ROOT / "skill/references",
+)
 
 
 class InstallerModule(Protocol):
@@ -76,6 +84,35 @@ def schema_bytes(root: Path) -> dict[str, bytes]:
         path.name: path.read_bytes()
         for path in sorted((root / "schemas").glob("*.schema.json"))
     }
+
+
+def expected_kernel_package_paths() -> set[str]:
+    """Return the source paths that the npm package must preserve."""
+
+    expected: set[str] = set()
+    for root in _PACKAGED_ROOTS:
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and path.suffix in _PACKAGED_SUFFIXES:
+                expected.add(path.relative_to(REPO_ROOT).as_posix())
+    return expected
+
+
+def assert_kernel_package_paths(paths: set[str]) -> None:
+    expected = expected_kernel_package_paths()
+    missing = sorted(expected - paths)
+    if missing:
+        raise AssertionError(f"npm package omitted kernel contract files: {missing[:3]}")
+    forbidden = sorted(
+        path
+        for path in paths
+        if (
+            "__pycache__" in path
+            or path.endswith((".pyc", ".pyo", ".svg"))
+            or "archscribe" in path.casefold()
+        )
+    )
+    if forbidden:
+        raise AssertionError(f"npm package contains forbidden kernel payloads: {forbidden[:3]}")
 
 
 class InstallerTests(unittest.TestCase):
@@ -186,6 +223,7 @@ class InstallerTests(unittest.TestCase):
                 [
                     "npm",
                     "install",
+                    "--offline",
                     "--ignore-scripts",
                     "--no-audit",
                     "--no-fund",
@@ -221,6 +259,44 @@ class InstallerTests(unittest.TestCase):
             target = codex_home / "skills" / "readme-showcase"
             self.assertEqual(schema_bytes(target), schema_bytes(REPO_ROOT / "skill"))
 
+            compile_fixture = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    """
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+from scripts.readme_showcase import visual_kernel
+from scripts.readme_showcase.contracts.evidence import validate_evidence_graph
+
+fixture = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+evidence = validate_evidence_graph(fixture["evidence"])
+case = next(item for item in fixture["cases"] if item["id"] == fixture["primary_case"])
+compiled = visual_kernel.compile_visual(case["spec"], evidence)
+assert compiled.artifacts["compiled/inventory.json"]
+svg = compiled.artifacts["assets/readme-showcase/zh-Hans/desktop.svg"]
+assert hashlib.sha256(svg).hexdigest()
+print(f"inventory={compiled.inventory_sha256} svg_sha256={hashlib.sha256(svg).hexdigest()}")
+""",
+                    str(REPO_ROOT / "tests/fixtures/visual-kernel/qa-cases.v1.json"),
+                ],
+                cwd=target,
+                env={
+                    **os.environ,
+                    "CODEX_HOME": str(codex_home),
+                    "PYTHONPATH": os.pathsep.join((str(target), str(target / "scripts"))),
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(compile_fixture.returncode, 0, compile_fixture.stderr)
+            self.assertIn("inventory=", compile_fixture.stdout)
+
             dry_run = subprocess.run(
                 ["npm", "pack", "--dry-run", "--json"],
                 cwd=REPO_ROOT,
@@ -237,6 +313,31 @@ class InstallerTests(unittest.TestCase):
                 for path in (REPO_ROOT / "skill" / "schemas").glob("*.schema.json")
             }
             self.assertEqual(listed & expected, expected)
+            assert_kernel_package_paths(listed)
+
+    def test_npm_package_allowlist_rejects_forbidden_temp_payloads(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="npm-package-clean-room-") as temporary:
+            copied = Path(temporary) / "package"
+            shutil.copytree(REPO_ROOT / "skill", copied / "skill")
+            valid = {
+                path.relative_to(copied).as_posix()
+                for path in (copied / "skill").rglob("*")
+                if path.is_file() and path.suffix in _PACKAGED_SUFFIXES
+            }
+            assert_kernel_package_paths(valid)
+            for relative in (
+                "skill/scripts/readme_showcase/visual_kernel/generated.svg",
+                "skill/scripts/readme_showcase/visual_kernel/__pycache__/payload.pyc",
+                "skill/scripts/readme_showcase/visual_kernel/archscribe-payload.json",
+            ):
+                candidate = copied.parent / relative
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                candidate.write_bytes(b"forbidden")
+                valid.add(relative)
+                with self.assertRaises(AssertionError):
+                    assert_kernel_package_paths(valid)
+                valid.remove(relative)
+                candidate.unlink()
 
     def test_stage_hash_mismatch_and_backup_failure_restore_old_target(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

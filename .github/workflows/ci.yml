@@ -50,6 +50,77 @@ jobs:
       - run: python -m unittest tests.test_installer.InstallerTests.test_packed_npm_binary_installs_and_checks_skill -v
       - run: npm pack --dry-run
 
+  visual-kernel:
+    name: visual-kernel / py${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    env:
+      VISUAL_QA_EVIDENCE_DIR: ${{ runner.temp }}/visual-kernel-evidence
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22.22.3"
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends librsvg2-bin
+      - run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - run: npm ci --ignore-scripts
+      - name: Verify pinned offline visual kernel inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmp node_modules/elkjs/lib/elk.bundled.js skill/vendor/elkjs/lib/elk.bundled.js
+          cmp node_modules/elkjs/package.json skill/vendor/elkjs/package.json
+          cmp node_modules/elkjs/LICENSE.md skill/vendor/elkjs/LICENSE.md
+          test "$(node -p 'require("./node_modules/elkjs/package.json").version')" = "0.9.3"
+          test "$(sha256sum skill/vendor/elkjs/lib/elk.bundled.js | cut -d' ' -f1)" = "b0745abd7f23cd91690a1587e377edbe19fd7233c783300290936720546216d4"
+          node --check skill/scripts/render_elk.mjs
+          test "$(rsvg-convert --version | head -n 1)" != ""
+      - name: Run schema, clean-room, geometry, and raster checks offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHON_BIN="$(command -v python)"
+          sudo unshare --net --setuid "$(id -u)" --setgid "$(id -g)" -- \
+            env PATH="${PATH}" VISUAL_QA_EVIDENCE_DIR="${VISUAL_QA_EVIDENCE_DIR}" \
+            PYTHONDONTWRITEBYTECODE=1 "${PYTHON_BIN}" -m unittest -v \
+              tests.test_schema_parity \
+              tests.test_documentation_contract \
+              tests.test_elk_adapter \
+              tests.unit.visual_kernel.test_elk_backend \
+              tests.e2e.test_compiled_visual_qa
+      - name: Pack and install the skill without network
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACK_ROOT="${RUNNER_TEMP}/readme-showcase-pack"
+          PROJECT_ROOT="${RUNNER_TEMP}/readme-showcase-packed-project"
+          mkdir -p "${PACK_ROOT}" "${PROJECT_ROOT}"
+          npm pack --pack-destination "${PACK_ROOT}"
+          TARBALL="$(find "${PACK_ROOT}" -maxdepth 1 -name '*.tgz' -print -quit)"
+          test -n "${TARBALL}"
+          (cd "${PROJECT_ROOT}" && npm install --offline --ignore-scripts --no-audit --no-fund "${TARBALL}")
+          test -x "${PROJECT_ROOT}/node_modules/.bin/readme-showcase"
+      - name: Exercise isolated packed install and compiled fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHON_BIN="$(command -v python)"
+          sudo unshare --net --setuid "$(id -u)" --setgid "$(id -g)" -- \
+            env PATH="${PATH}" NPM_CONFIG_OFFLINE=true PYTHONDONTWRITEBYTECODE=1 \
+            "${PYTHON_BIN}" -m unittest -v \
+              tests.test_installer.InstallerTests.test_packed_npm_binary_installs_and_checks_skill
+      - run: npm pack --dry-run
+
   elk-unit:
     runs-on: ubuntu-latest
     steps:

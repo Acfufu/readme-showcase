@@ -91,6 +91,28 @@ class CiContractTests(unittest.TestCase):
         self.assertEqual(lock["packages"]["node_modules/elkjs"]["version"], "0.9.3")
         self.assertTrue((REPO_ROOT / "skill/vendor/elkjs/LICENSE.md").is_file())
 
+    def test_compiled_visual_kernel_lane_is_matrix_pinned_and_offline(self) -> None:
+        self.assertIn("visual-kernel:", self.workflow)
+        self.assertIn("name: visual-kernel / py${{ matrix.python-version }}", self.workflow)
+        self.assertIn("timeout-minutes: 20", self.workflow)
+        self.assertIn('python-version: ["3.11", "3.12", "3.13"]', self.workflow)
+        for version in ("3.11", "3.12", "3.13"):
+            self.assertIn(f'"{version}"', self.workflow)
+        self.assertIn('node-version: "22.22.3"', self.workflow)
+        self.assertIn("librsvg2-bin", self.workflow)
+        self.assertIn("npm ci --ignore-scripts", self.workflow)
+        self.assertIn("npm install --offline --ignore-scripts", self.workflow)
+        self.assertIn("sudo unshare --net", self.workflow)
+        self.assertIn("tests.test_schema_parity", self.workflow)
+        self.assertIn("tests.test_documentation_contract", self.workflow)
+        self.assertIn("tests.test_elk_adapter", self.workflow)
+        self.assertIn("tests.unit.visual_kernel.test_elk_backend", self.workflow)
+        self.assertIn("tests.e2e.test_compiled_visual_qa", self.workflow)
+        self.assertIn("VISUAL_QA_EVIDENCE_DIR", self.workflow)
+        self.assertIn("rsvg-convert", self.workflow)
+        self.assertIn("npm pack --dry-run", self.workflow)
+        self.assertIn("persist-credentials: false", self.workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
