@@ -17,6 +17,8 @@ from typing import Any, Iterator
 
 from ...pipeline_contracts import (
     ContractError,
+    _absolute,
+    _open_directory,
     canonical_json_bytes,
     canonical_sha256,
     read_json_object_bytes,
@@ -37,6 +39,10 @@ from ..preview.renderer import render_preview
 from .logging import StageLogger
 from .stages import STAGES, CandidateImportStage, RunContext, candidate_files
 from .workspace import RunWorkspace
+
+
+_DEFAULT_STATE_DIRECTORY = ("state", "readme-showcase")
+_DEFAULT_RUN_NAME = re.compile(r"run-[0-9a-f]{32}\Z")
 
 
 def utc_now() -> str:
@@ -75,6 +81,10 @@ def _repository(root: Path) -> str:
     return "local/repository"
 
 
+def _target_root(path: Path) -> Path:
+    return Path(_git(path.resolve(), "rev-parse", "--show-toplevel")).resolve()
+
+
 def _workspace(path: Path) -> RunWorkspace:
     raw, manifest = read_json_object_bytes(path / "run-manifest.json")
     if raw != canonical_json_bytes(manifest):
@@ -83,6 +93,95 @@ def _workspace(path: Path) -> RunWorkspace:
     if not isinstance(target, dict) or not isinstance(target.get("root"), str):
         raise ContractError("E_RUN_TARGET", "run manifest target is invalid")
     return RunWorkspace(path, Path(target["root"]))
+
+
+def _default_runs_root(target: Path, *, create: bool) -> Path:
+    raw_home = os.environ.get("CODEX_HOME")
+    codex_home = Path(raw_home).expanduser() if raw_home else Path.home() / ".codex"
+    if not codex_home.is_absolute():
+        raise ContractError("E_RUN_STATE_ROOT", "CODEX_HOME must be an absolute path")
+    target = _absolute(target)
+    state_root = _absolute(codex_home.joinpath(*_DEFAULT_STATE_DIRECTORY))
+    if os.path.commonpath((state_root, target)) == os.fspath(target):
+        raise ContractError("E_RUN_PATH", "default run state must stay outside target repository")
+    repository_key = hashlib.sha256(os.fsencode(target)).hexdigest()
+    runs = state_root / repository_key / "runs"
+    try:
+        descriptor = _open_directory(runs, create=create, code="E_RUN_STATE_ROOT")
+    except ContractError as exc:
+        if not create:
+            raise ContractError("E_RUN_NOT_FOUND", "no centralized run exists for target repository") from exc
+        raise
+    try:
+        os.fchmod(descriptor, 0o700)
+    finally:
+        os.close(descriptor)
+    return runs
+
+
+def create_default_workspace(target: Path) -> Path:
+    runs = _default_runs_root(target, create=True)
+    descriptor = _open_directory(runs, create=False, code="E_RUN_STATE_ROOT")
+    try:
+        for _ in range(16):
+            name = f"run-{secrets.token_hex(16)}"
+            try:
+                os.mkdir(name, mode=0o700, dir_fd=descriptor)
+            except FileExistsError:
+                continue
+            os.fsync(descriptor)
+            return runs / name
+    finally:
+        os.close(descriptor)
+    raise ContractError("E_RUN_STATE_ROOT", "cannot allocate a unique centralized run directory")
+
+
+def latest_default_workspace(target: Path) -> Path:
+    target = _absolute(target)
+    runs = _default_runs_root(target, create=False)
+    descriptor = _open_directory(runs, create=False, code="E_RUN_STATE_ROOT")
+    try:
+        names = sorted(os.listdir(descriptor))
+        for name in names:
+            if not _DEFAULT_RUN_NAME.fullmatch(name):
+                continue
+            info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if not stat.S_ISDIR(info.st_mode):
+                raise ContractError("E_RUN_STATE_ROOT", "centralized run entry must be a real directory")
+    finally:
+        os.close(descriptor)
+
+    candidates: list[tuple[str, str, Path]] = []
+    for name in names:
+        if not _DEFAULT_RUN_NAME.fullmatch(name):
+            continue
+        path = runs / name
+        workspace = _workspace(path)
+        manifest = workspace.read_manifest()
+        if manifest["target"]["root"] != os.fspath(target):
+            raise ContractError("E_RUN_TARGET", "centralized run target does not match repository")
+        candidates.append((manifest["updated_at"], name, path))
+    if not candidates:
+        raise ContractError("E_RUN_NOT_FOUND", "no centralized run exists for target repository")
+    return max(candidates)[2]
+
+
+def _resolved_workspace(workspace_path: Path | None, target: Path | None) -> RunWorkspace:
+    if workspace_path is not None:
+        return _workspace(workspace_path)
+    if target is None:
+        raise ContractError("E_RUN_TARGET", "target repository is required when workspace is omitted")
+    return _workspace(latest_default_workspace(_target_root(target)))
+
+
+def _debug_summary(
+    summary: dict[str, object],
+    workspace: RunWorkspace,
+    logger: StageLogger,
+) -> dict[str, object]:
+    if logger.verbosity == "debug":
+        summary["workspace"] = os.fspath(workspace.root)
+    return summary
 
 
 @contextmanager
@@ -657,7 +756,7 @@ def _drive(workspace: RunWorkspace, logger: StageLogger, stop_after: str | None)
 def start_run(
     *,
     root: Path,
-    workspace_path: Path,
+    workspace_path: Path | None,
     mode: str,
     project_type: str,
     locales: list[str],
@@ -666,36 +765,56 @@ def start_run(
     stop_after: str | None,
     logger: StageLogger,
 ) -> dict[str, object]:
-    target = root.resolve()
+    target = _target_root(root)
+    repository = _repository(target)
+    base_sha = _git(target, "rev-parse", "HEAD")
+    workspace_path = workspace_path or create_default_workspace(target)
     workspace = RunWorkspace(workspace_path, target)
     workspace.initialize(
-        repository=_repository(target),
-        base_sha=_git(target, "rev-parse", "HEAD"),
+        repository=repository,
+        base_sha=base_sha,
         configuration={"mode": mode, "project_type": project_type, "locales": locales, "scanner_profile": scanner_profile},
         clock=utc_now,
     )
     with _runner_lock(workspace):
         _copy_plan(workspace, plan)
-        return _drive(workspace, logger, stop_after)
+        return _debug_summary(_drive(workspace, logger, stop_after), workspace, logger)
 
 
-def resume_run(*, workspace_path: Path, plan: Path | None, stop_after: str | None, logger: StageLogger) -> dict[str, object]:
-    workspace = _workspace(workspace_path)
+def resume_run(
+    *,
+    workspace_path: Path | None,
+    plan: Path | None,
+    stop_after: str | None,
+    logger: StageLogger,
+    root: Path | None = None,
+) -> dict[str, object]:
+    workspace = _resolved_workspace(workspace_path, root)
     with _runner_lock(workspace):
         _copy_plan(workspace, plan)
-        return _drive(workspace, logger, stop_after)
+        return _debug_summary(_drive(workspace, logger, stop_after), workspace, logger)
 
 
-def run_status(workspace_path: Path) -> dict[str, object]:
-    return _summary(_workspace(workspace_path).read_manifest())
+def run_status(
+    workspace_path: Path | None,
+    root: Path | None = None,
+    *,
+    debug: bool = False,
+) -> dict[str, object]:
+    workspace = _resolved_workspace(workspace_path, root)
+    summary = _summary(workspace.read_manifest())
+    if debug:
+        summary["workspace"] = os.fspath(workspace.root)
+    return summary
 
 
-def explain_run(workspace_path: Path) -> dict[str, Any]:
-    return deepcopy(_workspace(workspace_path).read_manifest())
+def explain_run(workspace_path: Path | None, root: Path | None = None) -> dict[str, Any]:
+    workspace = _resolved_workspace(workspace_path, root)
+    return deepcopy(workspace.read_manifest())
 
 
-def preview_run(workspace_path: Path) -> dict[str, object]:
-    workspace = _workspace(workspace_path)
+def preview_run(workspace_path: Path | None, root: Path | None = None) -> dict[str, object]:
+    workspace = _resolved_workspace(workspace_path, root)
     with _runner_lock(workspace):
         manifest = workspace.read_manifest()
         if manifest.get("current_revision") is not None:

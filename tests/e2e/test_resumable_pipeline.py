@@ -42,9 +42,18 @@ class ResumablePipelineTests(unittest.TestCase):
         return result.stdout.strip()
 
     def cli(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return self.cli_at(REPO_ROOT, *arguments)
+
+    def cli_at(
+        self,
+        cwd: Path,
+        *arguments: str,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(PIPELINE), *arguments],
-            cwd=REPO_ROOT,
+            cwd=cwd,
+            env=env,
             capture_output=True,
             text=True,
             check=False,
@@ -174,6 +183,105 @@ class ResumablePipelineTests(unittest.TestCase):
         linked = self.cli("resume", "--workspace", str(self.workspace))
         self.assertEqual(linked.returncode, 2)
         self.assertEqual(outside.read_bytes(), (FIXTURES / "v1-candidate/claim-map.json").read_bytes())
+
+    def test_default_state_is_central_resumable_and_leaves_target_clean(self) -> None:
+        codex_home = self.root / "codex-home"
+        temp_root = self.root / "tmp"
+        codex_home.mkdir()
+        temp_root.mkdir()
+        codex_home = codex_home.resolve()
+        temp_root = temp_root.resolve()
+        environment = os.environ.copy()
+        environment.update({"CODEX_HOME": str(codex_home), "TMPDIR": str(temp_root)})
+        parent_before = sorted(path.name for path in self.root.iterdir())
+        status_before = self.git("status", "--porcelain")
+
+        started = self.cli_at(
+            self.target,
+            "run",
+            "--root",
+            str(self.target),
+            "--mode",
+            "readme",
+            "--project-type",
+            "developer-tool",
+            "--locale",
+            "en",
+            "--plan",
+            str(FIXTURES / "v1-plan.json"),
+            "--stop-after",
+            "generation-request",
+            "--verbosity",
+            "debug",
+            env=environment,
+        )
+        self.assertEqual(started.returncode, 0, started.stderr)
+        started_payload = json.loads(started.stdout)
+        workspace = Path(started_payload["workspace"])
+        self.assertTrue(workspace.is_relative_to(codex_home / "state/readme-showcase"))
+        self.assertEqual(started_payload["status"], "running")
+        self.assertEqual(parent_before, sorted(path.name for path in self.root.iterdir()))
+        self.assertFalse(any(path.name.startswith(".readme-showcase-run-") for path in self.root.iterdir()))
+        self.assertEqual(status_before, self.git("status", "--porcelain"))
+
+        destination = workspace / "stages/05-candidate"
+        shutil.copytree(FIXTURES / "v1-candidate", destination, dirs_exist_ok=True)
+        nested = self.target / "nested"
+        nested.mkdir()
+        completed = self.cli_at(nested, "resume", env=environment)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout)["status"], "complete")
+        self.assertNotIn(str(codex_home), completed.stdout)
+
+        status = self.cli_at(nested, "status", env=environment)
+        root_status = self.cli_at(self.root, "status", "--root", str(self.target), env=environment)
+        explained = self.cli_at(nested, "explain", "--format", "json", env=environment)
+        previewed = self.cli_at(nested, "preview", env=environment)
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertEqual(root_status.returncode, 0, root_status.stderr)
+        self.assertEqual(explained.returncode, 0, explained.stderr)
+        self.assertEqual(previewed.returncode, 0, previewed.stderr)
+        status_payload = json.loads(status.stdout)
+        explained_payload = json.loads(explained.stdout)
+        self.assertEqual(status_payload["run_id"], explained_payload["run_id"])
+        self.assertEqual(status_payload, json.loads(root_status.stdout))
+        self.assertNotIn("workspace", status_payload)
+        self.assertNotIn(str(codex_home), status.stdout)
+        self.assertNotIn(str(codex_home), explained.stdout)
+        self.assertNotIn(str(codex_home), previewed.stdout)
+        self.assertTrue((workspace / "output/preview/index.html").is_file())
+
+        debug = self.cli_at(nested, "status", "--verbosity", "debug", env=environment)
+        self.assertEqual(debug.returncode, 0, debug.stderr)
+        self.assertEqual(json.loads(debug.stdout)["workspace"], str(workspace))
+        self.assertEqual(status_before, self.git("status", "--porcelain"))
+        self.assertFalse(any(path.name == "venv" for path in workspace.rglob("*")))
+        self.assertEqual(list(temp_root.iterdir()), [])
+        self.assertEqual(list((workspace / "output").glob(".preview.*.tmp")), [])
+        for marker in (workspace / ".lock", workspace / ".runner.lock"):
+            if not marker.exists():
+                continue
+            descriptor = os.open(marker, os.O_RDWR)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
+    def test_default_state_rejects_unsafe_codex_home(self) -> None:
+        arguments = (
+            "run", "--root", str(self.target), "--mode", "readme",
+            "--project-type", "developer-tool", "--locale", "en",
+        )
+        for value, code in (("relative", "E_RUN_STATE_ROOT"), (str(self.target / "state-home"), "E_RUN_PATH")):
+            with self.subTest(codex_home=value):
+                environment = os.environ.copy()
+                environment["CODEX_HOME"] = value
+                result = self.cli_at(self.target, *arguments, env=environment)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(code, result.stderr)
+                self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertFalse((self.target / "state-home").exists())
 
 
 if __name__ == "__main__":

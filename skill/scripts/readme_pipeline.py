@@ -275,6 +275,7 @@ def _run(arguments: argparse.Namespace) -> dict[str, object]:
 def _resume(arguments: argparse.Namespace) -> dict[str, object]:
     return _RUNNER.resume_run(
         workspace_path=arguments.workspace,
+        root=arguments.root or Path.cwd(),
         plan=arguments.plan,
         stop_after=arguments.stop_after,
         logger=_stage_logger(arguments),
@@ -282,15 +283,19 @@ def _resume(arguments: argparse.Namespace) -> dict[str, object]:
 
 
 def _status(arguments: argparse.Namespace) -> dict[str, object]:
-    return _RUNNER.run_status(arguments.workspace)
+    return _RUNNER.run_status(
+        arguments.workspace,
+        arguments.root or Path.cwd(),
+        debug=arguments.verbosity == "debug",
+    )
 
 
 def _explain(arguments: argparse.Namespace) -> dict[str, object]:
-    return _RUNNER.explain_run(arguments.workspace)
+    return _RUNNER.explain_run(arguments.workspace, arguments.root or Path.cwd())
 
 
 def _preview(arguments: argparse.Namespace) -> dict[str, object]:
-    return _RUNNER.preview_run(arguments.workspace)
+    return _RUNNER.preview_run(arguments.workspace, arguments.root or Path.cwd())
 
 
 def _path_argument(
@@ -374,7 +379,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subcommands.add_parser("run")
     _path_argument(run, "--root")
-    _path_argument(run, "--workspace")
+    _path_argument(run, "--workspace", required=False)
     run.add_argument("--mode", choices=("readme", "asset-only", "audit-only"), required=True)
     run.add_argument(
         "--project-type",
@@ -389,25 +394,29 @@ def build_parser() -> argparse.ArgumentParser:
     run.set_defaults(handler=_run)
 
     resume = subcommands.add_parser("resume")
-    _path_argument(resume, "--workspace")
+    _path_argument(resume, "--workspace", required=False)
+    _path_argument(resume, "--root", required=False)
     _path_argument(resume, "--plan", required=False)
     resume.add_argument("--stop-after", choices=STAGE_NAMES)
     _run_observability(resume)
     resume.set_defaults(handler=_resume)
 
     status = subcommands.add_parser("status")
-    _path_argument(status, "--workspace")
+    _path_argument(status, "--workspace", required=False)
+    _path_argument(status, "--root", required=False)
     _run_observability(status)
     status.set_defaults(handler=_status)
 
     explain = subcommands.add_parser("explain")
-    _path_argument(explain, "--workspace")
+    _path_argument(explain, "--workspace", required=False)
+    _path_argument(explain, "--root", required=False)
     explain.add_argument("--format", choices=("text", "json"), default="text")
     _run_observability(explain)
     explain.set_defaults(handler=_explain)
 
     preview = subcommands.add_parser("preview")
-    _path_argument(preview, "--workspace")
+    _path_argument(preview, "--workspace", required=False)
+    _path_argument(preview, "--root", required=False)
     preview.set_defaults(handler=_preview)
 
     return parser
