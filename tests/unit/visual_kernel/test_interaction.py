@@ -123,6 +123,48 @@ class InteractionGraphTests(unittest.TestCase):
         result = derive_interaction(replace(plan, edges=(plan.edges[0], self_loop)))
         self.assertEqual(result.adjacency["b"], ("a", "b"))
 
+    def test_reverse_edges_deduplicate_neighbors_and_preserve_edge_evidence(self) -> None:
+        plan = normalize_visual_spec(_spec(), EVIDENCE)
+        reverse = replace(
+            plan.edges[0],
+            id="b-a",
+            kind="back",
+            source="b",
+            target="a",
+            is_back_edge=True,
+            label="return",
+            evidence_ids=(EVIDENCE_IDS[5],),
+        )
+        with_reverse = replace(plan, edges=(reverse, plan.edges[1], plan.edges[0]))
+        result = derive_interaction(with_reverse)
+
+        self.assertEqual(result.adjacency["a"], ("b",))
+        self.assertEqual(result.adjacency["b"], ("a", "c"))
+        self.assertEqual(result.evidence_links["a-b"], (EVIDENCE_IDS[3],))
+        self.assertEqual(result.evidence_links["b-a"], (EVIDENCE_IDS[5],))
+
+        expected = result.canonical_bytes()
+        for seed in range(12):
+            shuffled_edges = list(with_reverse.edges)
+            random.Random(seed).shuffle(shuffled_edges)
+            candidate = replace(with_reverse, edges=tuple(shuffled_edges))
+            self.assertEqual(derive_interaction(candidate).canonical_bytes(), expected)
+        fresh = normalize_visual_spec(copy.deepcopy(_spec()), EVIDENCE)
+        fresh_reverse = replace(
+            fresh.edges[0],
+            id="b-a",
+            kind="back",
+            source="b",
+            target="a",
+            is_back_edge=True,
+            label="return",
+            evidence_ids=(EVIDENCE_IDS[5],),
+        )
+        self.assertEqual(
+            derive_interaction(replace(fresh, edges=(fresh_reverse, *fresh.edges))).canonical_bytes(),
+            expected,
+        )
+
     def test_mapping_and_plan_order_permutations_are_byte_identical(self) -> None:
         expected = derive_interaction(normalize_visual_spec(_spec(), EVIDENCE)).canonical_bytes()
         for seed in range(12):

@@ -344,11 +344,11 @@ def derive_interaction(plan: Plan) -> InteractionGraph:
     for element in (*groups, *lanes, *nodes, *edges):
         evidence_links[element.id] = element.evidence_ids
 
-    adjacency: dict[str, list[str]] = {identifier: [] for identifier in node_ids}
+    adjacency: dict[str, set[str]] = {identifier: set() for identifier in node_ids}
     for edge in edges:
-        adjacency[edge.source].append(edge.target)
+        adjacency[edge.source].add(edge.target)
         if edge.source != edge.target:
-            adjacency[edge.target].append(edge.source)
+            adjacency[edge.target].add(edge.source)
 
     group_navigation = {
         group.id: tuple(sorted((node.id for node in nodes if node.group is not None and node.group.id == group.id), key=_id_key))
