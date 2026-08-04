@@ -24,10 +24,18 @@ validate_generated_bundle = _CORE.validate_generated_bundle
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 from skill.scripts.readme_showcase.contracts.assets import (
+    ASSET_MANIFEST_SCHEMA_VERSION,
     canonical_asset_manifest_bytes,
     read_asset_manifest,
     validate_asset_manifest,
 )
+from skill.scripts.readme_showcase.contracts.claims import (
+    CLAIM_MAP_SCHEMA_VERSION,
+    adapt_v1_claim_map,
+    canonical_claim_map_bytes,
+)
+from skill.scripts.readme_showcase.contracts.plan import README_PLAN_V2_SCHEMA_VERSION
+from skill.scripts.readme_showcase.generation.assembler import GENERATED_BUNDLE_SCHEMA_VERSION
 from skill.scripts.readme_showcase.visual_kernel.artifacts import build_compiled_artifacts
 from skill.scripts.readme_showcase.visual_kernel.diagnostics import VisualGateReport
 from skill.scripts.readme_showcase.visual_kernel.interaction import derive_interaction
@@ -200,6 +208,7 @@ class BundleContractTests(unittest.TestCase):
         *,
         elk: bool = False,
         production_kind: str = "static",
+        diagram_route: str | None = None,
     ) -> tuple[dict[str, Any], Path]:
         plan = self.write_json(
             root,
@@ -210,7 +219,7 @@ class BundleContractTests(unittest.TestCase):
                 "languages": ["en"],
                 "sections": ["overview"],
                 "visual_intent": "project-structure",
-                "diagram_route": "elk" if elk else "static",
+                "diagram_route": diagram_route or ("elk" if elk else "static"),
                 "commands": [],
                 "evidence_ids": ["file:README.md"],
             },
@@ -827,6 +836,116 @@ class BundleContractTests(unittest.TestCase):
         )
         legacy = {"schema_version": 1, "assets": []}
         self.assertEqual(read_asset_manifest(legacy), legacy)
+
+    def test_legacy_claim_asset_bundle_canonical_bytes_and_default_producers_are_pinned(self) -> None:
+        fixture_hashes = {
+            "claim-map-v2.valid.json": "8a8e46f5eb19ebce7934d3320d9a496c5ad3c36884335710abcfdffacb02cc4d",
+            "claim-map-v2.invalid.json": "1d5fbf165d55603d879791918ea6b2990c499382c26dddabdb96b0216c0699c5",
+            "asset-manifest-v2.valid.json": "f6e3cac29897085f0541420bf66d54aadaa8df509e90841af185fe52b5c244ae",
+            "asset-manifest-v2.invalid.json": "75f7b4c3439942e0b4c53fb70367c21e1af065d0da72e394acbd59bd381c1f0c",
+            "generated-bundle-v2.valid.json": "a0504bf5023b732464e4dc999665e4a3a264a7fd99e3c3b0ad0dc9ccca4788bb",
+            "generated-bundle-v2.invalid.json": "9eb5c7b9a129a8ddfcb955a9ed85b7bba749829c82fe4b31c094983426f38791",
+        }
+        for name, expected in fixture_hashes.items():
+            with self.subTest(fixture=name):
+                raw = (REPO_ROOT / "tests/fixtures/contracts" / name).read_bytes()
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), expected)
+
+        evidence_token = b"file:" + b"a" * 64
+        claim_fixture = (
+            REPO_ROOT / "tests/fixtures/contracts/claim-map-v2.valid.json"
+        ).read_bytes()
+        claim_v2 = json.loads(claim_fixture)
+        claim_v2["markdown_blocks"][0]["evidence_ids"] = [evidence_token.decode()]
+        claim_v2_bytes = canonical_claim_map_bytes(claim_v2)
+        self.assertEqual(claim_v2_bytes, claim_fixture.replace(b"FACT_ID", evidence_token))
+        self.assertEqual(
+            hashlib.sha256(claim_v2_bytes).hexdigest(),
+            "442207910324c8532c454ce8e226bf01dad16cacf104d14fb25e240ab96289d0",
+        )
+
+        legacy_claim = {
+            "schema_version": 1,
+            "markdown_blocks": [
+                {
+                    "claim_id": "markdown:en:overview",
+                    "content_sha256": "d4b1ea5708dd532930a85188b45aff6f0a3ed458500c7577e0127a538eb0d100",
+                    "claim_kind": "factual",
+                    "truth_id": "file:README.md",
+                    "evidence_sha256": "b" * 64,
+                    "language_pair_id": None,
+                }
+            ],
+            "diagram_labels": [],
+        }
+        legacy_claim_bytes = canonical_json_bytes(legacy_claim)
+        self.assertEqual(
+            legacy_claim_bytes,
+            (
+                '{"diagram_labels":[],"markdown_blocks":[{"claim_id":"markdown:en:overview",'
+                '"claim_kind":"factual","content_sha256":"d4b1ea5708dd532930a85188b45aff6f0a3ed458500c7577e0127a538eb0d100",'
+                '"evidence_sha256":"' + "b" * 64 + '","language_pair_id":null,"truth_id":"file:README.md"}],'
+                '"schema_version":1}\n'
+            ).encode("utf-8"),
+        )
+        self.assertEqual(
+            hashlib.sha256(legacy_claim_bytes).hexdigest(),
+            "f912db0de2f0e7dad37e9df9fa959bc5efb5001d78a6b7292e1c2350cca66ee1",
+        )
+        adapted_claim = adapt_v1_claim_map(legacy_claim)
+        self.assertEqual(adapted_claim["schema_version"], CLAIM_MAP_SCHEMA_VERSION)
+        self.assertEqual(
+            hashlib.sha256(canonical_json_bytes(adapted_claim)).hexdigest(),
+            "64b7ebdd3cabc71003caaa8f2d1bd4a26005c0cc876e3b28f345ae483b799f54",
+        )
+
+        asset_fixture = (
+            REPO_ROOT / "tests/fixtures/contracts/asset-manifest-v2.valid.json"
+        ).read_bytes()
+        asset_v2 = json.loads(asset_fixture)
+        for asset in asset_v2["assets"]:
+            asset["evidence_ids"] = [evidence_token.decode()]
+        asset_v2_bytes = canonical_asset_manifest_bytes(asset_v2)
+        self.assertEqual(asset_v2_bytes, asset_fixture.replace(b"FACT_ID", evidence_token))
+        self.assertEqual(
+            hashlib.sha256(asset_v2_bytes).hexdigest(),
+            "193f6975f21e337ce2e9f8935012703be6c3e0682685e8ffa1cd2a6c213b704e",
+        )
+
+        legacy_asset = {"schema_version": 1, "assets": []}
+        legacy_asset_bytes = canonical_json_bytes(legacy_asset)
+        self.assertEqual(legacy_asset_bytes, b'{"assets":[],"schema_version":1}\n')
+        self.assertEqual(
+            hashlib.sha256(legacy_asset_bytes).hexdigest(),
+            "e246f5b102ee86fa516321a3b2e90ed018a0a94dbd991092347f2f245882a6ac",
+        )
+        self.assertEqual(read_asset_manifest(legacy_asset), legacy_asset)
+
+        bundle_v2_path = REPO_ROOT / "tests/fixtures/contracts/generated-bundle-v2.valid.json"
+        bundle_v2_bytes = bundle_v2_path.read_bytes()
+        self.assertEqual(bundle_v2_bytes, canonical_json_bytes(json.loads(bundle_v2_bytes)))
+        self.assertEqual(
+            hashlib.sha256(bundle_v2_bytes).hexdigest(),
+            "a0504bf5023b732464e4dc999665e4a3a264a7fd99e3c3b0ad0dc9ccca4788bb",
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle_v1, bundle_path = self.make_bundle(root, "readme")
+            bundle_v1_bytes = canonical_json_bytes(bundle_v1)
+            self.assertEqual(bundle_path.read_bytes(), bundle_v1_bytes)
+            self.assertEqual(
+                hashlib.sha256(bundle_v1_bytes).hexdigest(),
+                "10d639772ef352aa06707768cff9585fe17564ce1821932f21d3e61d8c3cf8aa",
+            )
+            self.assertEqual(validate_generated_bundle(bundle_v1, root)["status"], "pass")
+
+        # Legacy default producers remain v2; v3 is opt-in and must not become
+        # the implicit output version as the compiled route lands.
+        self.assertEqual(README_PLAN_V2_SCHEMA_VERSION, 2)
+        self.assertEqual(CLAIM_MAP_SCHEMA_VERSION, 2)
+        self.assertEqual(ASSET_MANIFEST_SCHEMA_VERSION, 2)
+        self.assertEqual(GENERATED_BUNDLE_SCHEMA_VERSION, 2)
 
 
 if __name__ == "__main__":

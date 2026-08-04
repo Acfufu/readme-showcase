@@ -49,6 +49,7 @@ class OfflinePipelineE2ETests(unittest.TestCase):
         *,
         mode: str,
         elk: bool = False,
+        diagram_route: str | None = None,
         engine_artifacts: tuple[Path, Path, Path] | None = None,
     ) -> tuple[Path, Path, dict[str, Any]]:
         helper = bundle_contracts.BundleContractTests(methodName="runTest")
@@ -56,6 +57,7 @@ class OfflinePipelineE2ETests(unittest.TestCase):
             run_root,
             mode,
             elk=elk,
+            diagram_route=diagram_route,
         )
         if bundle["candidate"]["readme"] is not None:
             source = run_root / bundle["candidate"]["readme"]["path"]
@@ -187,6 +189,35 @@ class OfflinePipelineE2ETests(unittest.TestCase):
             str(output),
             cwd=target,
         )
+
+    def test_legacy_none_static_and_elk_routes_remain_operational(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            target, base_sha = self.target(base)
+            for route in ("none", "static", "elk"):
+                with self.subTest(route=route):
+                    run_root = base / f"route-{route}"
+                    run_root.mkdir()
+                    bundle_path, evaluation_path, bundle = self.prepare(
+                        run_root,
+                        target,
+                        base_sha,
+                        mode="asset-only",
+                        elk=route == "elk",
+                        diagram_route=route,
+                    )
+                    plan_path = run_root / bundle["artifacts"]["plan"]["path"]
+                    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+                    self.assertEqual(plan["schema_version"], 1)
+                    self.assertEqual(plan["diagram_route"], route)
+                    self.assertEqual(bundle["schema_version"], 1)
+                    result = self.build(
+                        target,
+                        bundle_path,
+                        evaluation_path,
+                        run_root / "pr.json",
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_static_scan_retrieve_evaluate_and_pr_bundle_repeat(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
