@@ -18,7 +18,13 @@
     "README_zh.md",
     ".nvmrc",
     "dataset",
-    "skill",
+    "skill/.nvmrc",
+    "skill/**/*.js",
+    "skill/**/*.json",
+    "skill/**/*.md",
+    "skill/**/*.mjs",
+    "skill/**/*.py",
+    "skill/**/*.yaml",
     "scripts/install_skill.py"
   ],
   "devDependencies": {
