@@ -18,6 +18,7 @@ from skill.scripts.readme_showcase.visual_kernel.artifacts import (
     promote_compiled_artifacts,
 )
 from skill.scripts.readme_showcase.visual_kernel.diagnostics import VisualGateReport
+from skill.scripts.readme_showcase.visual_kernel.fingerprint import build_layered_fingerprint
 from skill.scripts.readme_showcase.visual_kernel.interaction import derive_interaction
 from skill.scripts.readme_showcase.visual_kernel.normalize import normalize_visual_spec
 from skill.scripts.readme_showcase.visual_kernel.model import validate_visual_spec
@@ -72,13 +73,32 @@ class CompiledArtifactTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             first["new"] = b"bad"  # type: ignore[index]
         inventory = json.loads(first["compiled/inventory.json"])
-        paths = [item["path"] for item in inventory["artifacts"]]
+        self.assertEqual(
+            [layer["name"] for layer in inventory["layers"]],
+            ["spec", "scenes", "theme", "identities", "gates", "timelines", "interactions", "artifacts"],
+        )
+        self.assertEqual(inventory["schema_version"], 1)
+        self.assertEqual(len(inventory["inventory_sha256"]), 64)
+        layers = inventory["layers"]
+        reconstructed = build_layered_fingerprint(
+            layers[0]["sha256"],
+            layers[1]["records"],
+            layers[2]["sha256"],
+            layers[3]["values"],
+            layers[4]["records"],
+            layers[5]["records"],
+            layers[6]["records"],
+            layers[7]["records"],
+        )
+        self.assertEqual(reconstructed.canonical_bytes(), first["compiled/inventory.json"])
+        self.assertEqual(inventory["inventory_sha256"], reconstructed.inventory_sha256)
+        paths = [item["path"] for item in inventory["layers"][-1]["records"]]
         self.assertEqual(paths, sorted(paths, key=lambda item: item.encode("utf-8")))
         self.assertNotIn("compiled/inventory.json", paths)
-        for item in inventory["artifacts"]:
+        for item in inventory["layers"][-1]["records"]:
             data = first[item["path"]]
             self.assertEqual(item["sha256"], hashlib.sha256(data).hexdigest())
-            self.assertEqual(item["size"], len(data))
+            self.assertEqual(len(item["prior_sha256"]), 64)
         self.assertEqual(
             [path for path in first if path.startswith("assets/readme-showcase/")],
             [
@@ -88,6 +108,82 @@ class CompiledArtifactTests(unittest.TestCase):
                 "assets/readme-showcase/zh-Hans/mobile.svg",
             ],
         )
+
+    def test_single_layer_identity_and_path_drift_changes_or_rejects_fingerprint(self) -> None:
+        spec, theme, records = self._inputs()
+        baseline = build_compiled_artifacts(spec, theme, records, IDENTITIES, evidence_graph=EVIDENCE)
+        changed_identity = dict(IDENTITIES)
+        changed_identity["renderer"] = hashlib.sha256(b"renderer-v2").hexdigest()
+        changed = build_compiled_artifacts(spec, theme, records, changed_identity, evidence_graph=EVIDENCE)
+        self.assertNotEqual(baseline["compiled/inventory.json"], changed["compiled/inventory.json"])
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "target"
+            target.mkdir()
+            workspace = RunWorkspace(root / "run", target)
+            workspace.initialize(
+                repository="owner/repo",
+                base_sha="a" * 40,
+                configuration={"mode": "readme", "project_type": "tool", "locales": ["en"], "scanner_profile": "balanced"},
+                clock=lambda: "2026-08-04T00:00:00Z",
+            )
+            path_tampered = dict(baseline)
+            path_inventory = json.loads(path_tampered["compiled/inventory.json"])
+            path_inventory["layers"][-1]["records"][0]["path"] = "assets/readme-showcase/en/../desktop.svg"
+            path_tampered["compiled/inventory.json"] = artifacts_module.canonical_json_bytes(path_inventory)
+            with self.assertRaises(ContractError):
+                promote_compiled_artifacts(workspace, path_tampered)
+
+            layer_tampered = dict(baseline)
+            layer_inventory = json.loads(layer_tampered["compiled/inventory.json"])
+            layer_inventory["layers"][2]["sha256"] = hashlib.sha256(b"tampered-theme").hexdigest()
+            projection = dict(layer_inventory)
+            del projection["inventory_sha256"]
+            layer_inventory["inventory_sha256"] = hashlib.sha256(artifacts_module.canonical_json_bytes(projection)).hexdigest()
+            layer_tampered["compiled/inventory.json"] = artifacts_module.canonical_json_bytes(layer_inventory)
+            with self.assertRaises(ContractError) as raised:
+                promote_compiled_artifacts(workspace, layer_tampered)
+            self.assertEqual(raised.exception.code, "E_VISUAL_FINGERPRINT")
+
+    def test_self_consistent_inventory_cannot_omit_required_base_or_svg(self) -> None:
+        spec, theme, records = self._inputs()
+        baseline = build_compiled_artifacts(spec, theme, records[:2], IDENTITIES, evidence_graph=EVIDENCE)
+
+        def without(path: str) -> dict[str, bytes]:
+            inventory = json.loads(baseline["compiled/inventory.json"])
+            layers = inventory["layers"]
+            layers[-1]["records"] = [item for item in layers[-1]["records"] if item["path"] != path]
+            rebuilt = build_layered_fingerprint(
+                layers[0]["sha256"],
+                layers[1]["records"],
+                layers[2]["sha256"],
+                layers[3]["values"],
+                layers[4]["records"],
+                layers[5]["records"],
+                layers[6]["records"],
+                layers[7]["records"],
+            )
+            result = dict(baseline)
+            del result[path]
+            result["compiled/inventory.json"] = rebuilt.canonical_bytes()
+            return result
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "target"
+            target.mkdir()
+            workspace = RunWorkspace(root / "run", target)
+            workspace.initialize(
+                repository="owner/repo",
+                base_sha="a" * 40,
+                configuration={"mode": "readme", "project_type": "tool", "locales": ["en"], "scanner_profile": "balanced"},
+                clock=lambda: "2026-08-04T00:00:00Z",
+            )
+            for path in ("compiled/visual-spec.json", "assets/readme-showcase/en/desktop.svg"):
+                with self.subTest(path=path), self.assertRaises(ContractError) as raised:
+                    promote_compiled_artifacts(workspace, without(path))
+                self.assertEqual(raised.exception.code, "E_VISUAL_FINGERPRINT")
 
     def test_closed_records_duplicate_and_path_drift_fail_before_promotion(self) -> None:
         spec, theme, records = self._inputs()
@@ -189,7 +285,7 @@ class CompiledArtifactTests(unittest.TestCase):
                 clock=lambda: "2026-08-04T00:00:00Z",
             )
             tampered_inventory = json.loads(artifacts["compiled/inventory.json"])
-            tampered_inventory["artifacts"][0]["size"] += 1
+            tampered_inventory["layers"][-1]["records"][0]["sha256"] = "a" * 64
             tampered = dict(artifacts)
             tampered["compiled/inventory.json"] = artifacts_module.canonical_json_bytes(tampered_inventory)
             with self.assertRaises(ContractError) as raised:

@@ -1,8 +1,8 @@
 """Bounded stage-6 artifact assembly for the visual kernel.
 
-The builder is deliberately filesystem-free.  It returns one immutable map of
-safe relative paths to canonical bytes; promotion is the only operation that
-hands that map to the centralized :class:`RunWorkspace` writer.
+The builder is filesystem-free.  It returns one immutable map of safe
+relative paths to canonical bytes; promotion is the only operation that hands
+that map to the centralized :class:`RunWorkspace` writer.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from typing import Any
 from ...pipeline_contracts import ContractError, canonical_json_bytes
 from ..contracts.locale import parse_locale
 from ..orchestration.workspace import RunWorkspace
+from .fingerprint import FINGERPRINT_SCHEMA_VERSION, build_layered_fingerprint
 from .scene import validate_visual_scene
 from .security import (
     MAX_COMPILED_BYTES,
@@ -32,22 +33,16 @@ from .security import (
 )
 
 
-_ARTIFACT_SCHEMA_VERSION = 1
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _VARIANTS = frozenset({"desktop", "mobile"})
 _RECORD_FIELDS = frozenset({"locale", "variant", "scene", "svg", "gate", "timeline", "interaction"})
 _IDENTITY_FIELDS = frozenset({"kernel", "elk", "renderer"})
 _SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
+_LAYER_NAMES = ("spec", "scenes", "theme", "identities", "gates", "timelines", "interactions", "artifacts")
 
 
 def _fail(code: str, message: str) -> ContractError:
     return ContractError(code, message)
-
-
-def _bytes(value: Any, context: str) -> bytes:
-    if type(value) is not bytes:
-        raise _fail("E_SCHEMA_TYPE", f"{context} must be bytes")
-    return value
 
 
 def _safe_path(value: Any, context: str) -> str:
@@ -101,7 +96,6 @@ def _records(value: Any) -> tuple[tuple[str, str, Mapping[str, Any]], ...]:
         iterator = iter(value)
     except TypeError as exc:
         raise _fail("E_SCHEMA_TYPE", "variants must be an iterable of closed records") from exc
-
     result: list[tuple[str, str, Mapping[str, Any]]] = []
     seen: set[tuple[str, str]] = set()
     for index, item in enumerate(iterator):
@@ -129,24 +123,6 @@ def _scene_locale_variant(raw: bytes, locale: str, variant: str) -> None:
         raise _fail("E_VISUAL_RESOURCE", "scene canonical bytes cannot be decoded") from exc
     if scene.locale != locale or scene.variant != variant:
         raise _fail("E_VISUAL_FINGERPRINT", "scene locale/variant differs from its artifact path")
-
-
-def _artifact_entry(
-    path: str,
-    kind: str,
-    data: bytes,
-    *,
-    locale: str | None,
-    variant: str | None,
-) -> dict[str, Any]:
-    return {
-        "path": path,
-        "type": kind,
-        "sha256": hashlib.sha256(data).hexdigest(),
-        "size": len(data),
-        "locale": locale,
-        "variant": variant,
-    }
 
 
 def _path_kind_limit(path: str) -> tuple[str, int]:
@@ -180,46 +156,92 @@ def _path_kind_limit(path: str) -> tuple[str, int]:
     raise _fail("E_VISUAL_PATH", f"unsupported compiled artifact path: {path}")
 
 
-def _validate_inventory(files: Mapping[str, bytes]) -> None:
-    raw = files["compiled/inventory.json"]
+def _report_prior(
+    gates: Iterable[Mapping[str, Any]],
+    timelines: Iterable[Mapping[str, Any]],
+    interactions: Iterable[Mapping[str, Any]],
+) -> str:
+    projection = {
+        "gates": list(gates),
+        "timelines": list(timelines),
+        "interactions": list(interactions),
+    }
+    return hashlib.sha256(canonical_json_bytes(projection)).hexdigest()
+
+
+def _fingerprint_from_inventory(raw: Any, context: str):
+    if not isinstance(raw, Mapping) or set(raw) != {"schema_version", "layers", "inventory_sha256"}:
+        raise _fail("E_VISUAL_FINGERPRINT", f"{context} must be a closed LayeredFingerprint object")
+    if raw["schema_version"] != FINGERPRINT_SCHEMA_VERSION:
+        raise _fail("E_VISUAL_FINGERPRINT", f"{context} requires schema_version 1")
+    layers = raw["layers"]
+    if not isinstance(layers, list) or len(layers) != len(_LAYER_NAMES):
+        raise _fail("E_VISUAL_FINGERPRINT", f"{context}.layers must contain the eight ordered layers")
+    if any(not isinstance(layer, Mapping) or not isinstance(layer.get("name"), str) for layer in layers):
+        raise _fail("E_VISUAL_FINGERPRINT", f"{context}.layers must contain named objects")
+    if tuple(layer["name"] for layer in layers) != _LAYER_NAMES:
+        raise _fail("E_VISUAL_FINGERPRINT", f"{context}.layers are not in canonical order")
     try:
-        inventory = json.loads(raw.decode("utf-8"))
+        spec = layers[0]["sha256"]
+        scenes = layers[1]["records"]
+        theme = layers[2]["sha256"]
+        identities = layers[3]["values"]
+        gates = layers[4]["records"]
+        timelines = layers[5]["records"]
+        interactions = layers[6]["records"]
+        artifacts = layers[7]["records"]
+    except (KeyError, TypeError) as exc:
+        raise _fail("E_VISUAL_FINGERPRINT", f"{context} is missing a layer projection") from exc
+    fingerprint = build_layered_fingerprint(spec, scenes, theme, identities, gates, timelines, interactions, artifacts)
+    if fingerprint.inventory_sha256 != raw["inventory_sha256"]:
+        raise _fail("E_VISUAL_FINGERPRINT", f"{context}.inventory_sha256 does not match its projection")
+    return fingerprint
+
+
+def _validate_inventory(files: Mapping[str, bytes]) -> None:
+    raw_bytes = files["compiled/inventory.json"]
+    try:
+        raw = json.loads(raw_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
         raise _fail("E_VISUAL_DETERMINISM", "compiled inventory must be canonical JSON") from exc
-    if not isinstance(inventory, dict) or set(inventory) != {"schema_version", "identities", "artifacts"}:
-        raise _fail("E_SCHEMA_UNKNOWN_FIELD", "compiled inventory has an unsupported shape")
-    if inventory["schema_version"] != _ARTIFACT_SCHEMA_VERSION or canonical_json_bytes(inventory) != raw:
-        raise _fail("E_VISUAL_DETERMINISM", "compiled inventory must be canonical schema v1 bytes")
-    _identities(inventory["identities"])
-    records = inventory["artifacts"]
-    if not isinstance(records, list):
-        raise _fail("E_SCHEMA_TYPE", "compiled inventory.artifacts must be an array")
-    seen: set[str] = set()
-    expected_paths = sorted((path for path in files if path != "compiled/inventory.json"), key=lambda item: item.encode("utf-8"))
-    observed_paths: list[str] = []
-    for index, record in enumerate(records):
-        if not isinstance(record, Mapping) or set(record) != {"path", "type", "sha256", "size", "locale", "variant"}:
-            raise _fail("E_SCHEMA_UNKNOWN_FIELD", f"compiled inventory artifact {index} is not closed")
-        path = _safe_path(record["path"], f"compiled inventory artifact {index}.path")
-        kind, _ = _path_kind_limit(path)
-        if path in seen:
-            raise _fail("E_VISUAL_PATH", f"compiled inventory contains duplicate path: {path}")
-        seen.add(path)
-        observed_paths.append(path)
-        if record["type"] != kind or record["sha256"] != hashlib.sha256(files.get(path, b"")).hexdigest():
-            raise _fail("E_VISUAL_FINGERPRINT", f"compiled inventory hash/type drift at {path}")
-        if path not in files or record["size"] != len(files[path]):
-            raise _fail("E_VISUAL_FINGERPRINT", f"compiled inventory size/path drift at {path}")
-        locale = record["locale"]
-        variant = record["variant"]
-        if kind in {"visual-spec", "theme"}:
-            if locale is not None or variant is not None:
-                raise _fail("E_SCHEMA_VALUE", f"compiled inventory metadata drift at {path}")
-        else:
-            if _locale(locale, f"compiled inventory {path}.locale") != path.split("/")[2] or _variant(variant, f"compiled inventory {path}.variant") != path.split("/")[-1].rsplit(".", 1)[0]:
-                raise _fail("E_VISUAL_FINGERPRINT", f"compiled inventory locale/variant drift at {path}")
-    if observed_paths != expected_paths:
+    fingerprint = _fingerprint_from_inventory(raw, "compiled inventory")
+    if fingerprint.canonical_bytes() != raw_bytes:
+        raise _fail("E_VISUAL_DETERMINISM", "compiled inventory must use LayeredFingerprint canonical bytes")
+    required_paths = {"compiled/visual-spec.json", "compiled/theme.json"}
+    for locale, variant, _, _ in fingerprint.scenes:
+        required_paths.update(
+            {
+                f"compiled/scenes/{locale}/{variant}.json",
+                f"compiled/gates/{locale}/{variant}.json",
+                f"compiled/timeline/{locale}/{variant}.json",
+                f"compiled/interaction/{locale}/{variant}.json",
+                f"assets/readme-showcase/{locale}/{variant}.svg",
+            }
+        )
+    file_paths = set(files) - {"compiled/inventory.json"}
+    observed_paths = [path for path, _, _ in fingerprint.artifacts]
+    if file_paths != required_paths or set(observed_paths) != required_paths:
         raise _fail("E_VISUAL_FINGERPRINT", "compiled inventory does not close over the artifact set")
+    if fingerprint.spec_sha256 != hashlib.sha256(files["compiled/visual-spec.json"]).hexdigest():
+        raise _fail("E_VISUAL_FINGERPRINT", "compiled inventory spec layer does not bind visual-spec.json")
+    if fingerprint.theme_sha256 != hashlib.sha256(files["compiled/theme.json"]).hexdigest():
+        raise _fail("E_VISUAL_FINGERPRINT", "compiled inventory theme layer does not bind theme.json")
+    for locale, variant, digest, _ in fingerprint.scenes:
+        path = f"compiled/scenes/{locale}/{variant}.json"
+        if path not in files or hashlib.sha256(files[path]).hexdigest() != digest:
+            raise _fail("E_VISUAL_FINGERPRINT", f"compiled inventory scene layer drift at {path}")
+    for name, records, directory in (
+        ("gate", fingerprint.gates, "gates"),
+        ("timeline", fingerprint.timelines, "timeline"),
+        ("interaction", fingerprint.interactions, "interaction"),
+    ):
+        for locale, variant, digest, _ in records:
+            path = f"compiled/{directory}/{locale}/{variant}.json"
+            if path not in files or hashlib.sha256(files[path]).hexdigest() != digest:
+                raise _fail("E_VISUAL_FINGERPRINT", f"compiled inventory {name} layer drift at {path}")
+    for path, digest, _ in fingerprint.artifacts:
+        if hashlib.sha256(files[path]).hexdigest() != digest:
+            raise _fail("E_VISUAL_FINGERPRINT", f"compiled inventory hash drift at {path}")
 
 
 def _preflight_files(files: Mapping[str, bytes], *, require_inventory: bool = False) -> dict[str, bytes]:
@@ -230,11 +252,12 @@ def _preflight_files(files: Mapping[str, bytes], *, require_inventory: bool = Fa
         path = _safe_path(raw_path, "compiled artifact path")
         if path in normalized:
             raise _fail("E_VISUAL_PATH", f"duplicate compiled artifact path: {path}")
-        data = _bytes(raw_data, f"compiled artifact {path}")
+        if type(raw_data) is not bytes:
+            raise _fail("E_SCHEMA_TYPE", f"compiled artifact {path} must be bytes")
         _, maximum = _path_kind_limit(path)
-        if len(data) > maximum:
+        if len(raw_data) > maximum:
             raise _fail("E_VISUAL_RESOURCE", f"compiled artifact {path} exceeds its byte limit")
-        normalized[path] = data
+        normalized[path] = raw_data
     if require_inventory and "compiled/inventory.json" not in normalized:
         raise _fail("E_SCHEMA_MISSING_FIELD", "compiled artifact set must contain compiled/inventory.json")
     if sum(len(data) for data in normalized.values()) > MAX_COMPILED_BYTES:
@@ -263,11 +286,12 @@ def build_compiled_artifacts(
         "compiled/visual-spec.json": spec_bytes,
         "compiled/theme.json": theme_bytes,
     }
-    entries = [
-        _artifact_entry("compiled/visual-spec.json", "visual-spec", spec_bytes, locale=None, variant=None),
-        _artifact_entry("compiled/theme.json", "theme", theme_bytes, locale=None, variant=None),
-    ]
     spec_sha256 = hashlib.sha256(spec_bytes).hexdigest()
+    scene_records: list[dict[str, str]] = []
+    gate_records: list[dict[str, str]] = []
+    timeline_records: list[dict[str, str]] = []
+    interaction_records: list[dict[str, str]] = []
+    prepared: list[tuple[str, str, bytes, bytes, bytes, bytes, bytes]] = []
 
     for locale, variant, record in records:
         canonical = validate_visual_security(
@@ -287,35 +311,65 @@ def build_compiled_artifacts(
             gate = json.loads(gate_bytes.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
             raise _fail("E_VISUAL_RESOURCE", "gate canonical bytes cannot be decoded") from exc
-        if (
-            gate["spec_sha256"] != spec_sha256
-            or gate["scene_sha256"] != hashlib.sha256(scene_bytes).hexdigest()
-            or gate["svg_sha256"] != hashlib.sha256(svg_bytes).hexdigest()
-        ):
+        scene_sha256 = hashlib.sha256(scene_bytes).hexdigest()
+        svg_sha256 = hashlib.sha256(svg_bytes).hexdigest()
+        if gate["spec_sha256"] != spec_sha256 or gate["scene_sha256"] != scene_sha256 or gate["svg_sha256"] != svg_sha256:
             raise _fail("E_VISUAL_FINGERPRINT", f"gate hashes do not bind {locale}/{variant}")
+        gate_sha256 = hashlib.sha256(gate_bytes).hexdigest()
+        timeline_sha256 = hashlib.sha256(timeline_bytes).hexdigest()
+        interaction_sha256 = hashlib.sha256(interaction_bytes).hexdigest()
+        scene_records.append({"locale": locale, "variant": variant, "sha256": scene_sha256, "prior_sha256": spec_sha256})
+        gate_records.append({"locale": locale, "variant": variant, "sha256": gate_sha256, "prior_sha256": scene_sha256})
+        timeline_records.append({"locale": locale, "variant": variant, "sha256": timeline_sha256, "prior_sha256": gate_sha256})
+        interaction_records.append({"locale": locale, "variant": variant, "sha256": interaction_sha256, "prior_sha256": timeline_sha256})
+        prepared.append((locale, variant, scene_bytes, gate_bytes, timeline_bytes, interaction_bytes, svg_bytes))
 
-        variant_paths = (
-            (f"compiled/scenes/{locale}/{variant}.json", "scene", scene_bytes),
-            (f"compiled/gates/{locale}/{variant}.json", "gate", gate_bytes),
-            (f"compiled/timeline/{locale}/{variant}.json", "timeline", timeline_bytes),
-            (f"compiled/interaction/{locale}/{variant}.json", "interaction", interaction_bytes),
-            (f"assets/readme-showcase/{locale}/{variant}.svg", "svg", svg_bytes),
-        )
-        for path, kind, data in variant_paths:
-            if path in files:
-                raise _fail("E_VISUAL_PATH", f"duplicate compiled artifact path: {path}")
-            files[path] = data
-            entries.append(_artifact_entry(path, kind, data, locale=locale, variant=variant))
-
-    entries.sort(key=lambda item: item["path"].encode("utf-8"))
-    inventory = canonical_json_bytes(
+    report_prior = _report_prior(gate_records, timeline_records, interaction_records)
+    files.update(
         {
-            "schema_version": _ARTIFACT_SCHEMA_VERSION,
-            "identities": identity_values,
-            "artifacts": entries,
+            f"compiled/scenes/{locale}/{variant}.json": scene_bytes
+            for locale, variant, scene_bytes, _, _, _, _ in prepared
         }
     )
-    files["compiled/inventory.json"] = inventory
+    files.update(
+        {
+            f"compiled/gates/{locale}/{variant}.json": gate_bytes
+            for locale, variant, _, gate_bytes, _, _, _ in prepared
+        }
+    )
+    files.update(
+        {
+            f"compiled/timeline/{locale}/{variant}.json": timeline_bytes
+            for locale, variant, _, _, timeline_bytes, _, _ in prepared
+        }
+    )
+    files.update(
+        {
+            f"compiled/interaction/{locale}/{variant}.json": interaction_bytes
+            for locale, variant, _, _, _, interaction_bytes, _ in prepared
+        }
+    )
+    files.update(
+        {
+            f"assets/readme-showcase/{locale}/{variant}.svg": svg_bytes
+            for locale, variant, _, _, _, _, svg_bytes in prepared
+        }
+    )
+    artifacts = [
+        {"path": path, "sha256": hashlib.sha256(data).hexdigest(), "prior_sha256": report_prior}
+        for path, data in files.items()
+    ]
+    fingerprint = build_layered_fingerprint(
+        spec_sha256,
+        scene_records,
+        hashlib.sha256(theme_bytes).hexdigest(),
+        identity_values,
+        gate_records,
+        timeline_records,
+        interaction_records,
+        artifacts,
+    )
+    files["compiled/inventory.json"] = fingerprint.canonical_bytes()
     return MappingProxyType(_preflight_files(files, require_inventory=True))
 
 
