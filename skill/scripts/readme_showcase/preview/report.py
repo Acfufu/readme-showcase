@@ -15,8 +15,10 @@ from ...pipeline_contracts import (
     canonical_json_bytes,
     read_regular_bytes,
 )
+from ..contracts.assets import validate_asset_manifest_v3
 from ..orchestration.stages import CandidateImportStage, RunContext
 from ..orchestration.workspace import RunWorkspace
+from ..visual_kernel.reader import load_compiled_visual
 
 if __package__.startswith("skill."):
     from ..evaluation.editorial import evaluate_editorial
@@ -179,6 +181,81 @@ def _evidence(
     return output or [{"label": "unavailable", "path": "none", "sha256": "0" * 64}]
 
 
+def _compiled_report_projection(
+    workspace: RunWorkspace,
+    manifest: dict[str, Any],
+    snapshot: PreviewInputSnapshot,
+) -> dict[str, Any]:
+    bundle_path = _attempt_path(workspace, manifest, 5, "generated-readme-bundle.json")
+    if bundle_path is None:
+        raise ContractError("E_PREVIEW_STATE", "compiled preview requires a committed generated bundle")
+    bundle_raw = snapshot.read(bundle_path)
+    bundle = _canonical_object(snapshot, bundle_path)
+    if bundle is None or bundle.get("schema_version") != 3:
+        raise ContractError("E_SCHEMA_VERSION", "compiled preview requires Generated Bundle v3")
+
+    loaded = load_compiled_visual(bundle_path.parent, bundle)
+    manifest_path = _attempt_path(workspace, manifest, 5, "asset-manifest.json")
+    if manifest_path is None:
+        raise ContractError("E_PREVIEW_STATE", "compiled preview requires an Asset Manifest v3")
+    manifest_payload = _canonical_object(snapshot, manifest_path)
+    if manifest_payload is None:
+        raise ContractError("E_PREVIEW_PATH", "compiled Asset Manifest is unavailable")
+    normalized = validate_asset_manifest_v3(manifest_payload, artifact_root=bundle_path.parent)
+    compiled_manifest = normalized["compiled"]
+    compiled_bundle = bundle.get("compiled")
+    if not isinstance(compiled_bundle, dict) or compiled_bundle.get("fingerprint") != loaded.inventory_sha256:
+        raise ContractError("E_VISUAL_FINGERPRINT", "compiled inventory reference is stale")
+
+    references = {
+        name: [{"path": item["path"], "sha256": item["sha256"]} for item in compiled_manifest[name]]
+        for name in ("svgs", "scenes", "gates", "timelines", "interactions")
+    }
+    by_layer = {
+        name: {(item["locale"], item["variant"]) for item in items}
+        for name, items in ((name, compiled_manifest[name]) for name in references)
+    }
+    keys = set().union(*(set(values) for values in by_layer.values()))
+    checks = []
+    for locale, variant in sorted(keys, key=lambda item: (item[0].encode("utf-8"), item[1].encode("utf-8"))):
+        check = {"locale": locale, "variant": variant}
+        for name in references:
+            check[name[:-1] if name.endswith("s") else name] = (locale, variant) in by_layer[name]
+        check["complete"] = all(check[name] for name in ("svg", "scene", "gate", "timeline", "interaction"))
+        checks.append(check)
+    locales = {check["locale"] for check in checks}
+    if (
+        not checks
+        or not all(check["complete"] for check in checks)
+        or any(
+            {
+                check["variant"]
+                for check in checks
+                if check["locale"] == locale
+            }
+            != {"desktop", "mobile"}
+            for locale in locales
+        )
+    ):
+        raise ContractError("E_VISUAL_FINGERPRINT", "compiled viewport set is incomplete")
+
+    inventory_ref = compiled_manifest["inventory"]
+    return {
+        "bundle": {
+            "path": bundle_path.relative_to(workspace.root).as_posix(),
+            "sha256": hashlib.sha256(bundle_raw or b"").hexdigest(),
+        },
+        "inventory": {
+            "path": inventory_ref["path"],
+            "sha256": inventory_ref["sha256"],
+            "fingerprint": loaded.inventory_sha256,
+        },
+        "artifacts": references,
+        "identities": compiled_manifest["identities"],
+        "viewports": {"complete": True, "checks": checks},
+    }
+
+
 def build_preview_snapshot(
     workspace: RunWorkspace,
     manifest: dict[str, Any],
@@ -277,6 +354,8 @@ def build_preview_snapshot(
         "mobile": {"source": next(iter(readmes)), "width_px": 375},
         "revision": {"current": manifest.get("current_revision") or "none"},
     }
+    if isinstance(plan, dict) and plan.get("schema_version") == 3 and plan.get("diagram_route") == "compiled":
+        report["compiled"] = _compiled_report_projection(workspace, manifest, snapshot)
     if locale_by_path is not None:
         report["locale_by_path"] = locale_by_path
     return report, readmes

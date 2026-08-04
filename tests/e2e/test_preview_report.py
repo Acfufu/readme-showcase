@@ -100,6 +100,28 @@ class PreviewReportTests(unittest.TestCase):
             for path in sorted(root.rglob("*")) if path.is_file()
         }
 
+    def prepare_compiled(self) -> Path:
+        plan, candidate, _, _ = pipeline_contracts.BundleAssembleStageTests._compiled_inputs_with_v1_evidence()
+        plan_path = self.root / "readme-plan-v3.json"
+        plan_path.write_bytes(canonical_json_bytes(plan))
+        started = self.cli(
+            "run", "--root", str(self.target), "--workspace", str(self.workspace),
+            "--mode", "readme", "--project-type", "developer-tool", "--locale", "en",
+            "--plan", str(plan_path),
+        )
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(json.loads(started.stdout)["status"], "waiting-for-candidate")
+        candidate_root = self.workspace / "stages/05-candidate"
+        for relative, raw in candidate.items():
+            destination = candidate_root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(raw)
+        resumed = self.cli("resume", "--workspace", str(self.workspace))
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        stage6 = self.workspace / "stages/06-bundle-assemble/attempts/1"
+        self.assertTrue((stage6 / "compiled/scenes/en/desktop.json").is_file())
+        return stage6
+
     def test_cli_produces_deterministic_five_surface_offline_report(self) -> None:
         completed = self.prepare()
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -114,6 +136,7 @@ class PreviewReportTests(unittest.TestCase):
         report = json.loads(first_bytes["report.json"])
         manifest = json.loads((self.workspace / "run-manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(report["generated_at"], manifest["created_at"])
+        self.assertNotIn("compiled", report)
         for section in ("diff", "evidence", "diagnostics", "evaluation", "editorial", "mobile"):
             self.assertIn(section, report)
             self.assertTrue(report[section])
@@ -135,35 +158,98 @@ class PreviewReportTests(unittest.TestCase):
         self.assertEqual(first_bytes, self.preview_bytes())
 
     def test_compiled_v3_preview_accepts_nested_stage_outputs(self) -> None:
-        plan, candidate, _, _ = pipeline_contracts.BundleAssembleStageTests._compiled_inputs_with_v1_evidence()
-        plan_path = self.root / "readme-plan-v3.json"
-        plan_path.write_bytes(canonical_json_bytes(plan))
-
-        started = self.cli(
-            "run", "--root", str(self.target), "--workspace", str(self.workspace),
-            "--mode", "readme", "--project-type", "developer-tool", "--locale", "en",
-            "--plan", str(plan_path),
-        )
-        self.assertEqual(started.returncode, 0, started.stderr)
-        self.assertEqual(json.loads(started.stdout)["status"], "waiting-for-candidate")
-        candidate_root = self.workspace / "stages/05-candidate"
-        for relative, raw in candidate.items():
-            destination = candidate_root / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(raw)
-
-        resumed = self.cli("resume", "--workspace", str(self.workspace))
-        self.assertEqual(resumed.returncode, 0, resumed.stderr)
-        stage6 = self.workspace / "stages/06-bundle-assemble/attempts/1"
-        self.assertTrue((stage6 / "compiled/scenes/en/desktop.json").is_file())
+        stage6 = self.prepare_compiled()
 
         first = self.cli("preview", "--workspace", str(self.workspace))
         self.assertEqual(first.returncode, 0, first.stderr)
         self.assertNotIn("E_PREVIEW_PATH", first.stderr)
         first_bytes = self.preview_bytes()
+        report = json.loads(first_bytes["report.json"])
+        self.assertIn("compiled", report)
+        compiled = report["compiled"]
+        self.assertEqual(
+            set(compiled),
+            {"bundle", "inventory", "artifacts", "identities", "viewports"},
+        )
+        self.assertEqual(set(compiled["bundle"]), {"path", "sha256"})
+        self.assertEqual(set(compiled["inventory"]), {"path", "sha256", "fingerprint"})
+        self.assertEqual(
+            set(compiled["artifacts"]),
+            {"svgs", "scenes", "gates", "timelines", "interactions"},
+        )
+        for references in compiled["artifacts"].values():
+            self.assertTrue(references)
+            self.assertEqual(
+                references,
+                sorted(references, key=lambda item: item["path"].encode("utf-8")),
+            )
+            for reference in references:
+                self.assertEqual(set(reference), {"path", "sha256"})
+                self.assertFalse(Path(reference["path"]).is_absolute())
+                self.assertNotIn("..", Path(reference["path"]).parts)
+        self.assertEqual(set(compiled["identities"]), {"kernel", "elk", "renderer"})
+        self.assertTrue(compiled["viewports"]["complete"])
+        self.assertEqual(len(compiled["viewports"]["checks"]), 2)
+        self.assertEqual(
+            {(item["locale"], item["variant"]) for item in compiled["viewports"]["checks"]},
+            {("en", "desktop"), ("en", "mobile")},
+        )
+        report_text = first_bytes["report.json"].decode("utf-8")
+        self.assertNotIn(str(self.workspace), report_text)
+        self.assertNotIn("CODEX_HOME", report_text)
         second = self.cli("preview", "--workspace", str(self.workspace))
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(first_bytes, self.preview_bytes())
+
+    def test_compiled_artifact_drift_preserves_last_good_preview(self) -> None:
+        stage6 = self.prepare_compiled()
+        rendered = self.cli("preview", "--workspace", str(self.workspace))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        before = self.preview_bytes()
+        for relative in (
+            "assets/readme-showcase/en/desktop.svg",
+            "compiled/scenes/en/desktop.json",
+            "compiled/gates/en/desktop.json",
+        ):
+            path = stage6 / relative
+            original = path.read_bytes()
+            path.write_bytes(original[:-1] + bytes((original[-1] ^ 1,)))
+            failed = self.cli("preview", "--workspace", str(self.workspace))
+            self.assertEqual(failed.returncode, 2)
+            self.assertRegex(failed.stderr, r"E_PREVIEW_STALE|E_VISUAL_FINGERPRINT")
+            self.assertEqual(before, self.preview_bytes())
+            path.write_bytes(original)
+
+        mobile = stage6 / "assets/readme-showcase/en/mobile.svg"
+        mobile_raw = mobile.read_bytes()
+        mobile.unlink()
+        failed = self.cli("preview", "--workspace", str(self.workspace))
+        self.assertEqual(failed.returncode, 2)
+        self.assertRegex(failed.stderr, r"E_PREVIEW_STALE|E_VISUAL_FINGERPRINT|E_VISUAL_PATH")
+        self.assertEqual(before, self.preview_bytes())
+        mobile.write_bytes(mobile_raw)
+
+        bundle = stage6 / "generated-readme-bundle.json"
+        bundle_raw = bundle.read_bytes()
+        bundle.write_bytes(bundle_raw[:-1] + bytes((bundle_raw[-1] ^ 1,)))
+        failed = self.cli("preview", "--workspace", str(self.workspace))
+        self.assertEqual(failed.returncode, 2)
+        self.assertIn("E_PREVIEW_STALE", failed.stderr)
+        self.assertEqual(before, self.preview_bytes())
+        bundle.write_bytes(bundle_raw)
+
+        svg = stage6 / "assets/readme-showcase/en/desktop.svg"
+        svg_raw = svg.read_bytes()
+        outside = self.root / "outside-stage6.svg"
+        outside.write_bytes(svg_raw)
+        svg.unlink()
+        svg.symlink_to(outside)
+        failed = self.cli("preview", "--workspace", str(self.workspace))
+        self.assertEqual(failed.returncode, 2)
+        self.assertRegex(failed.stderr, r"E_PREVIEW_STALE|E_PREVIEW_PATH")
+        self.assertEqual(before, self.preview_bytes())
+        svg.unlink()
+        svg.write_bytes(svg_raw)
 
     def test_malicious_candidate_is_literal_and_unsafe_assets_fail_closed(self) -> None:
         resumed = self.prepare(malicious=True)
