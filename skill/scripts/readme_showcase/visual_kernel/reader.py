@@ -358,6 +358,7 @@ def load_compiled_visual(attempt_root: os.PathLike[str] | str, bundle: Mapping[s
     if manifest_path != inventory_ref["path"] or manifest_sha != inventory_ref["sha256"]:
         raise _fingerprint_error("asset manifest inventory reference differs from bundle")
 
+    _scan_against_inventory(root, expected_paths)
     try:
         return CompiledVisual(artifacts, fingerprint.inventory_sha256)
     except ContractError as exc:

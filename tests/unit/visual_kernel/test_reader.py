@@ -5,12 +5,14 @@ import hashlib
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes
 from skill.scripts.readme_showcase.visual_kernel.artifacts import build_compiled_artifacts
 from skill.scripts.readme_showcase.visual_kernel.compiler import CompiledVisual
 from skill.scripts.readme_showcase.visual_kernel.fingerprint import build_layered_fingerprint
+from skill.scripts.readme_showcase.visual_kernel import reader as reader_module
 from skill.scripts.readme_showcase.visual_kernel.reader import load_compiled_visual
 from tests.unit.visual_kernel import test_artifacts as artifacts_test
 from tests.unit.visual_kernel.test_scene import EVIDENCE
@@ -219,6 +221,26 @@ class CompiledVisualReaderTests(unittest.TestCase):
             extra.write_bytes(b"extra")
             self._assert_code(root, bundle, "E_VISUAL_FINGERPRINT")
             extra.unlink()
+
+            original_scan = reader_module._scan_against_inventory
+            scan_calls = 0
+
+            def scan_with_race(scan_root: Path, expected: set[str]) -> None:
+                nonlocal scan_calls
+                scan_calls += 1
+                original_scan(scan_root, expected)
+                if scan_calls == 1:
+                    (root / "compiled/race-extra.json").write_bytes(b"race")
+
+            with mock.patch.object(
+                reader_module,
+                "_scan_against_inventory",
+                side_effect=scan_with_race,
+            ):
+                self._assert_code(root, bundle, "E_VISUAL_FINGERPRINT")
+            self.assertEqual(scan_calls, 2)
+            (root / "compiled/race-extra.json").unlink()
+
             target = root / "outside.svg"
             target.write_bytes(b"outside")
             svg = next((root / "assets/readme-showcase").rglob("*.svg"))
