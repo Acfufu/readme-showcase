@@ -19,6 +19,11 @@ from skill.scripts.pipeline_contracts import (
     validate_contract,
     write_bytes_atomic,
 )
+from skill.scripts.readme_showcase.contracts.plan import (
+    canonical_readme_plan_bytes,
+    read_readme_plan,
+    validate_readme_plan,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +48,107 @@ class ExistingAuditCompatibilityTests(unittest.TestCase):
 
 
 class PipelineContractTests(unittest.TestCase):
+    @staticmethod
+    def _v3_plan(route: str = "compiled") -> dict[str, object]:
+        return {
+            "schema_version": 3,
+            "mode": "readme",
+            "locales": [{"tag": "en", "readme_path": "README.md"}],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": route,
+            "commands": [],
+            "evidence_ids": ["file:" + "a" * 64],
+        }
+
+    @staticmethod
+    def _v2_plan(route: str = "static") -> dict[str, object]:
+        return {
+            "schema_version": 2,
+            "mode": "readme",
+            "locales": [{"tag": "en", "readme_path": "README.md"}],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": route,
+            "commands": [],
+            "evidence_ids": ["file:" + "a" * 64],
+        }
+
+    def test_readme_plan_v3_compiled_route_and_version_aware_reader(self) -> None:
+        for route in ("none", "static", "elk", "compiled"):
+            with self.subTest(route=route):
+                payload = self._v3_plan(route)
+                self.assertEqual(read_readme_plan(payload, mode="readme"), payload)
+                self.assertEqual(read_readme_plan(payload, version=3), payload)
+                self.assertEqual(canonical_readme_plan_bytes(payload), canonical_json_bytes(payload))
+
+        with self.assertRaises(ContractError) as raised:
+            read_readme_plan(self._v3_plan(), version=2)
+        self.assertEqual(raised.exception.code, "E_SCHEMA_VERSION")
+
+    def test_compiled_route_is_rejected_before_plan_v3(self) -> None:
+        payload_v1 = {
+            "schema_version": 1,
+            "mode": "readme",
+            "languages": ["en"],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": "compiled",
+            "commands": [],
+            "evidence_ids": ["file:README.md"],
+        }
+        for version, payload in ((1, payload_v1), (2, self._v2_plan("compiled"))):
+            with self.subTest(version=version):
+                with self.assertRaises(ContractError) as raised:
+                    validate_readme_plan(payload)
+                self.assertEqual(raised.exception.code, "E_BUNDLE_PLAN")
+
+    def test_plan_v3_rejects_malformed_trust_inputs(self) -> None:
+        cases = (
+            ("unknown-route", {"diagram_route": "browser"}, "E_BUNDLE_PLAN"),
+            ("unknown-field", {"unknown": True}, "E_SCHEMA_UNKNOWN_FIELD"),
+            ("float", {"schema_version": 3.0}, "E_SCHEMA_FLOAT"),
+            (
+                "unsafe-locale-path",
+                {"locales": [{"tag": "en", "readme_path": "../README.md"}]},
+                "E_README_PATH",
+            ),
+            (
+                "stale-evidence-id",
+                {"evidence_ids": ["file:README.md"]},
+                "E_CLAIM_EVIDENCE",
+            ),
+        )
+        for name, update, code in cases:
+            with self.subTest(case=name):
+                payload = self._v3_plan()
+                payload.update(update)
+                with self.assertRaises(ContractError) as raised:
+                    validate_readme_plan(payload)
+                self.assertEqual(raised.exception.code, code)
+
+    def test_legacy_plan_bytes_and_hashes_remain_stable(self) -> None:
+        expected_fixture_hashes = {
+            "readme-plan-v1.valid.json": "ecfd65f67dabb6ea688ddd99db9b472863ffb3a338c39e786a94cbf85648a3e6",
+            "readme-plan-v2.valid.json": "0505e851996c2343590afdee622ab5468e382a1ff5f7aba401d12d8dc0a0993c",
+        }
+        for name, expected in expected_fixture_hashes.items():
+            with self.subTest(fixture=name):
+                actual = hashlib.sha256((REPO_ROOT / "tests/fixtures/contracts" / name).read_bytes()).hexdigest()
+                self.assertEqual(actual, expected)
+
+        v1 = json.loads((REPO_ROOT / "tests/fixtures/contracts/readme-plan-v1.valid.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            hashlib.sha256(canonical_readme_plan_bytes(v1)).hexdigest(),
+            "ecfd65f67dabb6ea688ddd99db9b472863ffb3a338c39e786a94cbf85648a3e6",
+        )
+        v2 = json.loads((REPO_ROOT / "tests/fixtures/contracts/readme-plan-v2.valid.json").read_text(encoding="utf-8"))
+        v2["evidence_ids"] = ["file:" + "a" * 64]
+        self.assertEqual(
+            hashlib.sha256(canonical_readme_plan_bytes(v2)).hexdigest(),
+            "86a4973990ea0e5c6b198c235e1fdf7a496358a8d681b2a231cb45710bc2d694",
+        )
+
     def test_canonical_json_is_stable_utf8_and_lf_terminated(self) -> None:
         first = {"z": "证据", "schema_version": 1, "a": [3, 2, 1]}
         second = {"a": [3, 2, 1], "schema_version": 1, "z": "证据"}

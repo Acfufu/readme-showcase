@@ -12,9 +12,11 @@ from .locale import parse_locale
 
 README_PLAN_SCHEMA_VERSION = 1
 README_PLAN_V2_SCHEMA_VERSION = 2
+README_PLAN_V3_SCHEMA_VERSION = 3
 PLAN_MODES = frozenset({"readme", "asset-only", "audit-only"})
 PLAN_LANGUAGES = frozenset({"en", "zh"})
 DIAGRAM_ROUTES = frozenset({"none", "static", "elk"})
+_V3_DIAGRAM_ROUTES = DIAGRAM_ROUTES | {"compiled"}
 MAX_PLAN_ITEMS = 10_000
 MAX_PLAN_TEXT_BYTES = 4096
 _URL = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>(){}\[\]\"']+")
@@ -155,8 +157,12 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
     if not isinstance(payload, dict):
         raise ContractError("E_SCHEMA_TYPE", "README plan must be a JSON object")
     version = payload.get("schema_version")
-    if type(version) is not int or version not in {README_PLAN_SCHEMA_VERSION, README_PLAN_V2_SCHEMA_VERSION}:
-        raise ContractError("E_SCHEMA_VERSION", "README plan requires schema_version 1 or 2")
+    if type(version) is not int or version not in {
+        README_PLAN_SCHEMA_VERSION,
+        README_PLAN_V2_SCHEMA_VERSION,
+        README_PLAN_V3_SCHEMA_VERSION,
+    }:
+        raise ContractError("E_SCHEMA_VERSION", "README plan requires schema_version 1, 2, or 3")
     version_field = "languages" if version == README_PLAN_SCHEMA_VERSION else "locales"
     fields = {
         "schema_version", "mode", version_field, "sections", "visual_intent",
@@ -181,13 +187,16 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
     else:
         locale_contract = {"locales": validate_locale_mappings(plan["locales"])}
     diagram_route = normalize_generation_text(plan["diagram_route"], "README plan.diagram_route")
-    if diagram_route not in DIAGRAM_ROUTES:
+    allowed_routes = _V3_DIAGRAM_ROUTES if version == README_PLAN_V3_SCHEMA_VERSION else DIAGRAM_ROUTES
+    if diagram_route not in allowed_routes:
         raise ContractError("E_BUNDLE_PLAN", "README plan diagram route is unsupported")
     evidence_ids = _strings(plan["evidence_ids"], "README plan.evidence_ids")
-    if version == README_PLAN_V2_SCHEMA_VERSION and not evidence_ids:
-        raise ContractError("E_CLAIM_EVIDENCE", "README plan v2 requires normative evidence")
-    if version == README_PLAN_V2_SCHEMA_VERSION and any(not _EVIDENCE_ID.fullmatch(item) for item in evidence_ids):
-        raise ContractError("E_CLAIM_EVIDENCE", "README plan v2 evidence IDs must be normative Evidence v2 IDs")
+    if version in {README_PLAN_V2_SCHEMA_VERSION, README_PLAN_V3_SCHEMA_VERSION} and not evidence_ids:
+        raise ContractError("E_CLAIM_EVIDENCE", f"README plan v{version} requires normative evidence")
+    if version in {README_PLAN_V2_SCHEMA_VERSION, README_PLAN_V3_SCHEMA_VERSION} and any(
+        not _EVIDENCE_ID.fullmatch(item) for item in evidence_ids
+    ):
+        raise ContractError("E_CLAIM_EVIDENCE", f"README plan v{version} evidence IDs must be normative Evidence v2 IDs")
     normalized = {
         "schema_version": version,
         "mode": normalized_mode,
@@ -203,8 +212,25 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
     return copy.deepcopy(normalized)
 
 
-def canonical_readme_plan_bytes(payload: Any, *, mode: str | None = None) -> bytes:
-    return canonical_json_bytes(validate_readme_plan(payload, mode=mode))
+def read_readme_plan(
+    payload: Any,
+    *,
+    mode: str | None = None,
+    version: int | None = None,
+) -> dict[str, Any]:
+    plan = validate_readme_plan(payload, mode=mode)
+    if version is not None and (type(version) is not int or plan["schema_version"] != version):
+        raise ContractError("E_SCHEMA_VERSION", f"README plan requires schema_version {version}")
+    return plan
+
+
+def canonical_readme_plan_bytes(
+    payload: Any,
+    *,
+    mode: str | None = None,
+    version: int | None = None,
+) -> bytes:
+    return canonical_json_bytes(read_readme_plan(payload, mode=mode, version=version))
 
 
 def validate_readme_plan_v2(payload: Any, *, mode: str | None = None) -> dict[str, Any]:
