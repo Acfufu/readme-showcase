@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib
 import json
@@ -7,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -16,9 +18,25 @@ _CONTRACTS = importlib.import_module("skill.scripts.pipeline_contracts")
 _CORE = importlib.import_module("skill.scripts.pipeline_core")
 ContractError = _CONTRACTS.ContractError
 canonical_sha256 = _CONTRACTS.canonical_sha256
+canonical_json_bytes = _CONTRACTS.canonical_json_bytes
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
 validate_generated_bundle = _CORE.validate_generated_bundle
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+from skill.scripts.readme_showcase.contracts.assets import (
+    canonical_asset_manifest_bytes,
+    read_asset_manifest,
+    validate_asset_manifest,
+)
+from skill.scripts.readme_showcase.visual_kernel.artifacts import build_compiled_artifacts
+from skill.scripts.readme_showcase.visual_kernel.diagnostics import VisualGateReport
+from skill.scripts.readme_showcase.visual_kernel.interaction import derive_interaction
+from skill.scripts.readme_showcase.visual_kernel.model import validate_visual_spec
+from skill.scripts.readme_showcase.visual_kernel.normalize import normalize_visual_spec
+from skill.scripts.readme_showcase.visual_kernel.svg import serialize_svg
+from skill.scripts.readme_showcase.visual_kernel.theme import resolve_theme
+from skill.scripts.readme_showcase.visual_kernel.timeline import derive_timeline
+from tests.unit.visual_kernel.test_scene import EVIDENCE, _build, _spec
 
 
 class BundleContractTests(unittest.TestCase):
@@ -46,6 +64,134 @@ class BundleContractTests(unittest.TestCase):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(value)
         return {"path": path, "sha256": __import__("hashlib").sha256(value).hexdigest()}
+
+    def make_compiled_asset_manifest(
+        self,
+        root: Path,
+    ) -> tuple[dict[str, Any], list[dict[str, str]], dict[str, Any]]:
+        """Materialize a truthful stage-6 output and its v3 manifest."""
+
+        payload = _spec("flow")
+        plan = normalize_visual_spec(payload, EVIDENCE)
+        theme = resolve_theme()
+        timeline = derive_timeline(plan)
+        interaction_payload = copy.deepcopy(payload)
+        interaction_payload["edges"] = interaction_payload["edges"][:1]  # type: ignore[index]
+        interaction = derive_interaction(normalize_visual_spec(interaction_payload, EVIDENCE))
+        spec_sha256 = hashlib.sha256(
+            validate_visual_spec(payload, evidence_graph=EVIDENCE).canonical_bytes()
+        ).hexdigest()
+        identities = {
+            name: hashlib.sha256(name.encode("utf-8")).hexdigest()
+            for name in ("kernel", "elk", "renderer")
+        }
+        records: list[dict[str, object]] = []
+        for locale in ("en", "zh-Hans"):
+            for variant in ("desktop", "mobile"):
+                scene = replace(_build("flow", variant), locale=locale)
+                svg = serialize_svg(scene, theme)
+                gate = VisualGateReport.build(
+                    spec_sha256,
+                    hashlib.sha256(scene.canonical_bytes()).hexdigest(),
+                    hashlib.sha256(svg).hexdigest(),
+                )
+                records.append(
+                    {
+                        "locale": locale,
+                        "variant": variant,
+                        "scene": scene,
+                        "svg": svg,
+                        "gate": gate,
+                        "timeline": timeline,
+                        "interaction": interaction,
+                    }
+                )
+        artifacts = build_compiled_artifacts(
+            payload,
+            theme,
+            records,
+            identities,
+            evidence_graph=EVIDENCE,
+        )
+        for path, raw in artifacts.items():
+            self.write_bytes(root, path, raw)
+        for fact in EVIDENCE["facts"]:
+            source = fact["source"]
+            self.write_bytes(root, source["path"], str(fact["semantic_key"]).encode("utf-8"))
+
+        inventory = json.loads(artifacts["compiled/inventory.json"].decode("utf-8"))
+        layers = {layer["name"]: layer for layer in inventory["layers"]}
+        artifact_hashes = {
+            record["path"]: record["sha256"] for record in layers["artifacts"]["records"]
+        }
+
+        def single(path: str) -> dict[str, str]:
+            return {"path": path, "sha256": artifact_hashes[path]}
+
+        def variants(layer_name: str, pattern: str) -> list[dict[str, str]]:
+            return [
+                {
+                    "locale": record["locale"],
+                    "variant": record["variant"],
+                    "path": pattern.format(locale=record["locale"], variant=record["variant"]),
+                    "sha256": artifact_hashes[
+                        pattern.format(locale=record["locale"], variant=record["variant"])
+                    ],
+                }
+                for record in layers[layer_name]["records"]
+            ]
+
+        compiled = {
+            "spec": single("compiled/visual-spec.json"),
+            "theme": single("compiled/theme.json"),
+            "inventory": {
+                "path": "compiled/inventory.json",
+                "sha256": hashlib.sha256(artifacts["compiled/inventory.json"]).hexdigest(),
+            },
+            "scenes": variants("scenes", "compiled/scenes/{locale}/{variant}.json"),
+            "gates": variants("gates", "compiled/gates/{locale}/{variant}.json"),
+            "timelines": variants("timelines", "compiled/timeline/{locale}/{variant}.json"),
+            "interactions": variants("interactions", "compiled/interaction/{locale}/{variant}.json"),
+            "svgs": [
+                {
+                    "locale": record["path"].split("/")[2],
+                    "variant": record["path"].split("/")[3][:-4],
+                    "path": record["path"],
+                    "sha256": record["sha256"],
+                }
+                for record in layers["artifacts"]["records"]
+                if record["path"].startswith("assets/readme-showcase/")
+            ],
+            "identities": layers["identities"]["values"],
+        }
+        scene_by_key = {(item["locale"], item["variant"]): item for item in compiled["scenes"]}
+        gate_by_key = {(item["locale"], item["variant"]): item for item in compiled["gates"]}
+        assets = []
+        for svg in compiled["svgs"]:
+            key = (svg["locale"], svg["variant"])
+            scene = scene_by_key[key]
+            gate = gate_by_key[key]
+            assets.append(
+                {
+                    "asset_id": f"diagram-{svg['locale']}-{svg['variant']}",
+                    "path": svg["path"],
+                    "artifact_sha256": svg["sha256"],
+                    "evidence_ids": [EVIDENCE["facts"][0]["fact_id"]],
+                    "role": "diagram",
+                    "locale": svg["locale"],
+                    "variant": svg["variant"],
+                    "scene_sha256": scene["sha256"],
+                    "gate_sha256": gate["sha256"],
+                    "provenance": {
+                        "kind": "generated",
+                        "path": scene["path"],
+                        "sha256": scene["sha256"],
+                    },
+                }
+            )
+        manifest = {"schema_version": 3, "assets": assets, "compiled": compiled}
+        candidates = [{"path": "visual-spec.json", "sha256": compiled["spec"]["sha256"]}]
+        return manifest, candidates, EVIDENCE
 
     def make_bundle(
         self,
@@ -561,6 +707,126 @@ class BundleContractTests(unittest.TestCase):
             write_canonical_json_atomic(manifest_path, manifest)
             bundle["artifacts"]["asset_manifest"]["sha256"] = canonical_sha256(manifest)
             self.assert_code(root, bundle, "E_SVG_UNSAFE")
+
+    def test_compiled_asset_manifest_v3_closes_inventory_and_truthful_asset_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest, candidates, evidence = self.make_compiled_asset_manifest(root)
+            normalized = validate_asset_manifest(
+                manifest,
+                evidence_graph=evidence,
+                artifact_root=root,
+                candidate_assets=candidates,
+            )
+            self.assertEqual(normalized, manifest)
+            self.assertEqual(
+                canonical_asset_manifest_bytes(
+                    manifest,
+                    evidence_graph=evidence,
+                    artifact_root=root,
+                    candidate_assets=candidates,
+                ),
+                canonical_json_bytes(manifest),
+            )
+            self.assertEqual(len(normalized["compiled"]["svgs"]), 4)
+            self.assertEqual(len(normalized["assets"]), 4)
+
+    def test_compiled_asset_manifest_v3_rejects_inventory_provenance_and_candidate_drift(self) -> None:
+        cases = (
+            ("stale-scene-ref", "E_VISUAL_FINGERPRINT"),
+            ("missing-gate-ref", "E_VISUAL_FINGERPRINT"),
+            ("duplicate-scene-ref", "E_VISUAL_FINGERPRINT"),
+            ("identity-drift", "E_VISUAL_FINGERPRINT"),
+            ("artifact-byte-drift", "E_BUNDLE_HASH"),
+            ("evidence-drift", "E_CLAIM_EVIDENCE"),
+            ("candidate-drift", "E_BUNDLE_HASH"),
+            ("wrong-role", "E_BUNDLE_ASSET"),
+        )
+        for case, expected_code in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                manifest, candidates, evidence = self.make_compiled_asset_manifest(root)
+                candidate = copy.deepcopy(manifest)
+                candidate_assets = copy.deepcopy(candidates)
+                if case == "stale-scene-ref":
+                    candidate["compiled"]["scenes"][0]["sha256"] = "0" * 64
+                elif case == "missing-gate-ref":
+                    candidate["compiled"]["gates"].pop()
+                elif case == "duplicate-scene-ref":
+                    candidate["compiled"]["scenes"].append(copy.deepcopy(candidate["compiled"]["scenes"][0]))
+                elif case == "identity-drift":
+                    candidate["compiled"]["identities"]["renderer"] = "1" * 64
+                elif case == "artifact-byte-drift":
+                    (root / candidate["compiled"]["svgs"][0]["path"]).write_bytes(b"tampered")
+                elif case == "evidence-drift":
+                    candidate["assets"][0]["evidence_ids"] = ["file:" + "f" * 64]
+                elif case == "candidate-drift":
+                    candidate_assets[0]["sha256"] = "0" * 64
+                elif case == "wrong-role":
+                    candidate["assets"][0]["role"] = "hero"
+                with self.assertRaises(ContractError) as raised:
+                    validate_asset_manifest(
+                        candidate,
+                        evidence_graph=evidence,
+                        artifact_root=root,
+                        candidate_assets=candidate_assets,
+                    )
+                self.assertEqual(raised.exception.code, expected_code)
+
+    def test_asset_manifest_v3_rejects_symlink_and_extra_compiled_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest, candidates, evidence = self.make_compiled_asset_manifest(root)
+            outside = root.parent / "asset-manifest-v3-outside"
+            outside.write_bytes(b"outside")
+            scene_path = root / manifest["compiled"]["scenes"][0]["path"]
+            scene_path.unlink()
+            scene_path.symlink_to(outside)
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(
+                    manifest,
+                    evidence_graph=evidence,
+                    artifact_root=root,
+                    candidate_assets=candidates,
+                )
+            self.assertEqual(raised.exception.code, "E_PATH")
+            outside.unlink()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest, candidates, evidence = self.make_compiled_asset_manifest(root)
+            extra = {
+                "locale": "zh-Hant",
+                "variant": "desktop",
+                "path": "compiled/scenes/zh-Hant/desktop.json",
+                "sha256": "0" * 64,
+            }
+            manifest["compiled"]["scenes"].append(extra)
+            manifest["compiled"]["scenes"].sort(
+                key=lambda item: (item["locale"].encode("utf-8"), item["variant"].encode("utf-8"))
+            )
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(
+                    manifest,
+                    evidence_graph=evidence,
+                    artifact_root=root,
+                    candidate_assets=candidates,
+                )
+            self.assertEqual(raised.exception.code, "E_VISUAL_FINGERPRINT")
+
+    def test_legacy_asset_manifest_hashes_and_v1_adapter_remain_unchanged(self) -> None:
+        valid_fixture = REPO_ROOT / "tests/fixtures/contracts/asset-manifest-v2.valid.json"
+        invalid_fixture = REPO_ROOT / "tests/fixtures/contracts/asset-manifest-v2.invalid.json"
+        self.assertEqual(
+            hashlib.sha256(valid_fixture.read_bytes()).hexdigest(),
+            "f6e3cac29897085f0541420bf66d54aadaa8df509e90841af185fe52b5c244ae",
+        )
+        self.assertEqual(
+            hashlib.sha256(invalid_fixture.read_bytes()).hexdigest(),
+            "75f7b4c3439942e0b4c53fb70367c21e1af065d0da72e394acbd59bd381c1f0c",
+        )
+        legacy = {"schema_version": 1, "assets": []}
+        self.assertEqual(read_asset_manifest(legacy), legacy)
 
 
 if __name__ == "__main__":
