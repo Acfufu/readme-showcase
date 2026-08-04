@@ -162,9 +162,9 @@ The run may report `waiting-for-plan` or `waiting-for-candidate`; write the
 missing canonical input at the reported central workspace and call `resume`.
 `status` intentionally redacts the workspace unless debug verbosity is
 requested; `explain` returns the canonical manifest for local inspection.
-Standalone `validate-bundle`, `evaluate`, `build-pr-bundle`, and
-`check-publish-gate` continue to require their inputs and outputs outside the
-target repository, as enforced by the current CLI.
+Standalone `validate-bundle` and `evaluate` use caller-supplied artifact roots;
+`build-pr-bundle` and `check-publish-gate` enforce the outside-target
+publication boundary, as enforced by the current CLI.
 
 ## Failure and explicit retry
 
