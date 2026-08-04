@@ -61,7 +61,11 @@ class SchemaParityTests(unittest.TestCase):
         payload = self._payload(payload)
         try:
             if entry["adapter"] == "evidence_graph":
-                validator(payload, evidence_graph=self.graph)
+                if entry["schema"] == "claim-map.v3.schema.json":
+                    visual_spec = self._payload(_load(FIXTURES / "visual-spec-v1.valid.json"))
+                    validator(payload, evidence_graph=self.graph, visual_spec=visual_spec)
+                else:
+                    validator(payload, evidence_graph=self.graph)
             elif entry["adapter"] == "artifact_root":
                 if valid:
                     from tests.contract.test_bundle_v2 import BundleV2ContractTests
@@ -86,10 +90,10 @@ class SchemaParityTests(unittest.TestCase):
         self.assertEqual(importlib.metadata.version("jsonschema"), "4.26.0")
         self.assertEqual(self.index["draft"], "https://json-schema.org/draft/2020-12/schema")
         entries = self.index["schemas"]
-        self.assertEqual(len(entries), 21)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 21)
-        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 21)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 42)
+        self.assertEqual(len(entries), 22)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 22)
+        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 22)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 44)
         self.assertEqual(INDEX.read_bytes(), canonical_json_bytes(self.index))
         self.assertEqual(
             [entry["schema"] for entry in entries],
@@ -160,6 +164,16 @@ class SchemaParityTests(unittest.TestCase):
             "tests/fixtures/contracts/readme-plan-v1.invalid.json": "4cd8a573d310e4dd0e521e24d2ab9a5d866b3f1fa9ba8c3b8d0787f3c573b10d",
             "tests/fixtures/contracts/readme-plan-v2.valid.json": "0505e851996c2343590afdee622ab5468e382a1ff5f7aba401d12d8dc0a0993c",
             "tests/fixtures/contracts/readme-plan-v2.invalid.json": "6fb138e0ff1348f88673321104a84cf33784a56ccf347776e8636adaafe92474",
+        }
+        for relative, digest in expected.items():
+            with self.subTest(path=relative):
+                self.assertEqual(hashlib.sha256((ROOT / relative).read_bytes()).hexdigest(), digest)
+
+    def test_claim_map_v2_schema_and_fixture_bytes_remain_unchanged(self) -> None:
+        expected = {
+            "skill/schemas/claim-map.v2.schema.json": "1a41b0ef2c3ad3bd7b2ec4707668cdcf52b91b36ae79efd6523245c4d51d0739",
+            "tests/fixtures/contracts/claim-map-v2.valid.json": "8a8e46f5eb19ebce7934d3320d9a496c5ad3c36884335710abcfdffacb02cc4d",
+            "tests/fixtures/contracts/claim-map-v2.invalid.json": "1d5fbf165d55603d879791918ea6b2990c499382c26dddabdb96b0216c0699c5",
         }
         for relative, digest in expected.items():
             with self.subTest(path=relative):

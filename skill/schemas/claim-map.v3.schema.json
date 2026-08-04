@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/claim-map.v3.schema.json",
+  "title": "Claim Map v3",
+  "$comment": "Python semantic validation additionally enforces composed cardinality, evidence graph membership, canonical order, bilingual pair equivalence, and complete Visual Spec element coverage for diagram labels.",
+  "x-python-semantic-validation": {"validator": "skill.scripts.readme_showcase.contracts.claims.validate_claim_map", "codes": ["E_CLAIM_COVERAGE", "E_CLAIM_EVIDENCE", "E_CLAIM_LANGUAGE"]},
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "markdown_blocks", "diagram_labels"],
+  "properties": {
+    "schema_version": {"const": 3},
+    "markdown_blocks": {"$ref": "#/$defs/claims"},
+    "diagram_labels": {"$ref": "#/$defs/diagramClaims"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "^[^\\u0000]+$"},
+    "evidenceId": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "^[a-z]+:[0-9a-f]{64}$"},
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "content_sha256", "claim_kind", "evidence_ids", "language_pair_id", "support_level"],
+      "properties": {
+        "claim_id": {"$ref": "#/$defs/text"},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "claim_kind": {"enum": ["factual", "instruction", "decorative"]},
+        "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/evidenceId"}},
+        "language_pair_id": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]},
+        "support_level": {"enum": ["direct", "composed", "documented-only"]}
+      },
+      "allOf": [{"if": {"properties": {"support_level": {"const": "composed"}}}, "then": {"properties": {"evidence_ids": {"minItems": 2}}}}]
+    },
+    "diagramClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "content_sha256", "claim_kind", "evidence_ids", "language_pair_id", "support_level", "element_id"],
+      "properties": {
+        "claim_id": {"$ref": "#/$defs/text"},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "claim_kind": {"enum": ["factual", "instruction", "decorative"]},
+        "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/evidenceId"}},
+        "language_pair_id": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]},
+        "support_level": {"enum": ["direct", "composed", "documented-only"]},
+        "element_id": {"$ref": "#/$defs/text"}
+      },
+      "allOf": [{"if": {"properties": {"support_level": {"const": "composed"}}}, "then": {"properties": {"evidence_ids": {"minItems": 2}}}}]
+    },
+    "claims": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/claim"}},
+    "diagramClaims": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/diagramClaim"}}
+  }
+}

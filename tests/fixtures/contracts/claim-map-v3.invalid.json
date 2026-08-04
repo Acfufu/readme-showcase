@@ -1,0 +1,55 @@
+{
+  "cases": [
+    {
+      "name": "missing-element-id",
+      "code": "E_CLAIM_COVERAGE",
+      "payload": {
+        "schema_version": 3,
+        "markdown_blocks": [{"claim_id":"markdown:en:overview","claim_kind":"factual","content_sha256":"9ba2fac45227260c7a17dbad7eadbfe242249c33aa66924408a0f9db8e85a4cd","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"}],
+        "diagram_labels": [
+          {"claim_id":"diagram:en:gateway","claim_kind":"factual","content_sha256":"41ed52921661c7f0d68d92511589cc9d7aaeab2b5db49fb27f0be336cbfdb7df","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"},
+          {"claim_id":"diagram:en:submit","claim_kind":"factual","content_sha256":"155f816c0407310c0dab222493370773e045ee7fe04e6c9a951b07f495531264","element_id":"submit","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"},
+          {"claim_id":"diagram:en:visitor","claim_kind":"factual","content_sha256":"cf9f5896322a374004754032700aef183a879ecbf0004aa546f3810d56672155","element_id":"visitor","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"}
+        ]
+      }
+    },
+    {
+      "name": "duplicate-element-id",
+      "code": "E_CLAIM_COVERAGE",
+      "semantic": true,
+      "payload": {
+        "schema_version": 3,
+        "markdown_blocks": [{"claim_id":"markdown:en:overview","claim_kind":"factual","content_sha256":"9ba2fac45227260c7a17dbad7eadbfe242249c33aa66924408a0f9db8e85a4cd","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"}],
+        "diagram_labels": [
+          {"claim_id":"diagram:en:gateway","claim_kind":"factual","content_sha256":"41ed52921661c7f0d68d92511589cc9d7aaeab2b5db49fb27f0be336cbfdb7df","element_id":"gateway","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"},
+          {"claim_id":"diagram:en:submit","claim_kind":"factual","content_sha256":"155f816c0407310c0dab222493370773e045ee7fe04e6c9a951b07f495531264","element_id":"gateway","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"},
+          {"claim_id":"diagram:en:visitor","claim_kind":"factual","content_sha256":"cf9f5896322a374004754032700aef183a879ecbf0004aa546f3810d56672155","element_id":"visitor","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"}
+        ]
+      }
+    },
+    {
+      "name": "bad-evidence-id",
+      "code": "E_CLAIM_EVIDENCE",
+      "semantic": true,
+      "payload": {
+        "schema_version": 3,
+        "markdown_blocks": [{"claim_id":"markdown:en:overview","claim_kind":"factual","content_sha256":"9ba2fac45227260c7a17dbad7eadbfe242249c33aa66924408a0f9db8e85a4cd","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"}],
+        "diagram_labels": [
+          {"claim_id":"diagram:en:gateway","claim_kind":"factual","content_sha256":"41ed52921661c7f0d68d92511589cc9d7aaeab2b5db49fb27f0be336cbfdb7df","element_id":"gateway","evidence_ids":["config:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"],"language_pair_id":null,"support_level":"direct"},
+          {"claim_id":"diagram:en:submit","claim_kind":"factual","content_sha256":"155f816c0407310c0dab222493370773e045ee7fe04e6c9a951b07f495531264","element_id":"submit","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"},
+          {"claim_id":"diagram:en:visitor","claim_kind":"factual","content_sha256":"cf9f5896322a374004754032700aef183a879ecbf0004aa546f3810d56672155","element_id":"visitor","evidence_ids":["FACT_ID"],"language_pair_id":null,"support_level":"direct"}
+        ]
+      }
+    },
+    {
+      "name": "unknown-field",
+      "code": "E_SCHEMA_UNKNOWN_FIELD",
+      "payload": {
+        "schema_version": 3,
+        "markdown_blocks": [],
+        "diagram_labels": [],
+        "unknown": true
+      }
+    }
+  ]
+}
