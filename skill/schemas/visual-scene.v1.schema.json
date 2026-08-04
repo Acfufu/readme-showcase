@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/visual-scene.v1.schema.json",
+  "title": "Visual Scene v1",
+  "$comment": "Draft 2020-12 validates the closed Scene projection. Python validation additionally enforces NFC and byte-sorted IDs, provenance bindings, primitive order, view-box containment, group containment, and the live renderer fingerprint.",
+  "x-python-semantic-validation": {
+    "validator": "skill.scripts.readme_showcase.visual_kernel.scene.validate_visual_scene",
+    "codes": [
+      "E_SCHEMA_VERSION",
+      "E_SCHEMA_TYPE",
+      "E_SCHEMA_UNKNOWN_FIELD",
+      "E_SCHEMA_MISSING_FIELD",
+      "E_SCHEMA_VALUE",
+      "E_LOCALE",
+      "E_VISUAL_SPEC_ID",
+      "E_VISUAL_SPEC_EVIDENCE",
+      "E_VISUAL_GEOMETRY",
+      "E_VISUAL_FINGERPRINT",
+      "E_VISUAL_TEXT_FIT",
+      "E_VISUAL_DETERMINISM"
+    ]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "locale",
+    "variant",
+    "view_box",
+    "source_spec_sha256",
+    "theme_sha256",
+    "backend",
+    "layers",
+    "primitives"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "locale": {"$ref": "#/$defs/locale"},
+    "variant": {"enum": ["desktop", "mobile"]},
+    "view_box": {"$ref": "#/$defs/viewBox"},
+    "source_spec_sha256": {"$ref": "#/$defs/sha256"},
+    "theme_sha256": {"$ref": "#/$defs/sha256"},
+    "backend": {"$ref": "#/$defs/backend"},
+    "layers": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {"const": "containers"},
+        {"const": "edges"},
+        {"const": "nodes"},
+        {"const": "labels"}
+      ],
+      "items": false
+    },
+    "primitives": {
+      "type": "array",
+      "items": {"oneOf": [
+        {"$ref": "#/$defs/group"},
+        {"$ref": "#/$defs/rect"},
+        {"$ref": "#/$defs/line"},
+        {"$ref": "#/$defs/path"},
+        {"$ref": "#/$defs/textPrimitive"}
+      ]}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"variant": {"const": "desktop"}}},
+      "then": {
+        "properties": {
+          "view_box": {"$ref": "#/$defs/desktopViewBox"},
+          "primitives": {
+            "items": {
+              "if": {"properties": {"kind": {"const": "text"}}},
+              "then": {"properties": {"font_size": {"minimum": 16}}}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"variant": {"const": "mobile"}}},
+      "then": {
+        "properties": {
+          "view_box": {"$ref": "#/$defs/mobileViewBox"},
+          "primitives": {
+            "items": {
+              "if": {"properties": {"kind": {"const": "text"}}},
+              "then": {"properties": {"font_size": {"minimum": 24}}
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "locale": {
+      "enum": ["en", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de"]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?:[^\\u0000]*\\S)$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^[a-z]+:[0-9a-f]{64}$"
+    },
+    "evidenceIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/evidenceId"}
+    },
+    "requiredEvidenceIds": {
+      "allOf": [
+        {"$ref": "#/$defs/evidenceIds"},
+        {"minItems": 1}
+      ]
+    },
+    "coordinate": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 20000
+    },
+    "positiveCoordinate": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20000
+    },
+    "viewBox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"const": 0},
+        "y": {"const": 0},
+        "width": {"$ref": "#/$defs/coordinate"},
+        "height": {"$ref": "#/$defs/positiveCoordinate"}
+      }
+    },
+    "desktopViewBox": {
+      "allOf": [
+        {"$ref": "#/$defs/viewBox"},
+        {"properties": {"width": {"const": 1200}}}
+      ]
+    },
+    "mobileViewBox": {
+      "allOf": [
+        {"$ref": "#/$defs/viewBox"},
+        {"properties": {"width": {"minimum": 1, "maximum": 720}}}
+      ]
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine_kind",
+        "package_name",
+        "package_version",
+        "package_sha256",
+        "module_sha256",
+        "node_version",
+        "renderer_sha256"
+      ],
+      "properties": {
+        "engine_kind": {"const": "elk"},
+        "package_name": {"const": "elkjs"},
+        "package_version": {"const": "0.9.3"},
+        "package_sha256": {"const": "fb9bb80b980c72022fb4540b38aa0545242b4eb67b82250aeae2f0beb67eea25"},
+        "module_sha256": {"const": "b0745abd7f23cd91690a1587e377edbe19fd7233c783300290936720546216d4"},
+        "node_version": {"const": "22.22.3"},
+        "renderer_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "primitiveBase": {
+      "type": "object",
+      "required": ["kind", "id", "source_id", "evidence_ids", "layer", "z"],
+      "properties": {
+        "kind": {"enum": ["group", "rect", "line", "path", "text"]},
+        "id": {"$ref": "#/$defs/id"},
+        "source_id": {"$ref": "#/$defs/id"},
+        "evidence_ids": {"$ref": "#/$defs/evidenceIds"},
+        "layer": {"enum": ["containers", "edges", "nodes", "labels"]},
+        "z": {"$ref": "#/$defs/coordinate"}
+      }
+    },
+    "group": {
+      "allOf": [
+        {"$ref": "#/$defs/primitiveBase"},
+        {
+          "type": "object",
+          "required": ["kind", "x", "y", "width", "height", "children"],
+          "properties": {
+            "kind": {"const": "group"},
+            "layer": {"const": "containers"},
+            "evidence_ids": {"$ref": "#/$defs/requiredEvidenceIds"},
+            "x": {"$ref": "#/$defs/coordinate"},
+            "y": {"$ref": "#/$defs/coordinate"},
+            "width": {"$ref": "#/$defs/coordinate"},
+            "height": {"$ref": "#/$defs/coordinate"},
+            "children": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/id"}
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "rect": {
+      "allOf": [
+        {"$ref": "#/$defs/primitiveBase"},
+        {
+          "type": "object",
+          "required": ["kind", "x", "y", "width", "height"],
+          "properties": {
+            "kind": {"const": "rect"},
+            "layer": {"const": "nodes"},
+            "evidence_ids": {"$ref": "#/$defs/requiredEvidenceIds"},
+            "x": {"$ref": "#/$defs/coordinate"},
+            "y": {"$ref": "#/$defs/coordinate"},
+            "width": {"$ref": "#/$defs/coordinate"},
+            "height": {"$ref": "#/$defs/coordinate"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "line": {
+      "allOf": [
+        {"$ref": "#/$defs/primitiveBase"},
+        {
+          "type": "object",
+          "required": ["kind", "x1", "y1", "x2", "y2"],
+          "properties": {
+            "kind": {"const": "line"},
+            "layer": {"const": "edges"},
+            "x1": {"$ref": "#/$defs/coordinate"},
+            "y1": {"$ref": "#/$defs/coordinate"},
+            "x2": {"$ref": "#/$defs/coordinate"},
+            "y2": {"$ref": "#/$defs/coordinate"}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": {"$ref": "#/$defs/coordinate"},
+        "y": {"$ref": "#/$defs/coordinate"}
+      }
+    },
+    "path": {
+      "allOf": [
+        {"$ref": "#/$defs/primitiveBase"},
+        {
+          "type": "object",
+          "required": ["kind", "points"],
+          "properties": {
+            "kind": {"const": "path"},
+            "layer": {"const": "edges"},
+            "points": {
+              "type": "array",
+              "minItems": 2,
+              "items": {"$ref": "#/$defs/point"}
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "textPrimitive": {
+      "allOf": [
+        {"$ref": "#/$defs/primitiveBase"},
+        {
+          "type": "object",
+          "required": ["kind", "x", "y", "text", "lines", "widths", "font_size", "role"],
+          "properties": {
+            "kind": {"const": "text"},
+            "layer": {"const": "labels"},
+            "evidence_ids": {"$ref": "#/$defs/requiredEvidenceIds"},
+            "x": {"$ref": "#/$defs/coordinate"},
+            "y": {"$ref": "#/$defs/coordinate"},
+            "text": {"$ref": "#/$defs/text"},
+            "lines": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/text"}
+            },
+            "widths": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/coordinate"}
+            },
+            "font_size": {"$ref": "#/$defs/positiveCoordinate"},
+            "role": {"enum": ["core", "title", "node", "label", "edge", "group", "lane", "caption", "description"]}
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

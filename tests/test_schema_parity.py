@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib
 import importlib.metadata
 import json
@@ -84,10 +85,10 @@ class SchemaParityTests(unittest.TestCase):
         self.assertEqual(importlib.metadata.version("jsonschema"), "4.26.0")
         self.assertEqual(self.index["draft"], "https://json-schema.org/draft/2020-12/schema")
         entries = self.index["schemas"]
-        self.assertEqual(len(entries), 18)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 18)
-        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 18)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 36)
+        self.assertEqual(len(entries), 19)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 19)
+        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 19)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 38)
         self.assertEqual(INDEX.read_bytes(), canonical_json_bytes(self.index))
         self.assertEqual(
             [entry["schema"] for entry in entries],
@@ -149,6 +150,52 @@ class SchemaParityTests(unittest.TestCase):
         structural = next(case for case in invalid["cases"] if case["name"] == "unknown-field")
         self.assertIsNot(structural.get("semantic"), True)
         self.assertTrue(list(Draft202012Validator(schema).iter_errors(structural["payload"])))
+
+    def test_visual_scene_semantic_builder_errors_are_declared(self) -> None:
+        entry = next(item for item in self.index["schemas"] if item["schema"] == "visual-scene.v1.schema.json")
+        schema = _load(SCHEMAS / entry["schema"])
+        declared = self._declared_codes(schema)
+        valid = self._payload(_load(FIXTURES / entry["valid_fixture"]))
+
+        def primitive(candidate: dict[str, Any], kind: str) -> dict[str, Any]:
+            return next(item for item in candidate["primitives"] if item["kind"] == kind)
+
+        cases: list[tuple[str, dict[str, Any], str]] = []
+        floating = copy.deepcopy(valid)
+        primitive(floating, "rect")["x"] = 1.5
+        cases.append(("float-geometry", floating, "E_VISUAL_GEOMETRY"))
+
+        outside = copy.deepcopy(valid)
+        primitive(outside, "rect")["x"] = 20001
+        cases.append(("out-of-bounds-geometry", outside, "E_VISUAL_GEOMETRY"))
+
+        unknown = copy.deepcopy(valid)
+        primitive(unknown, "rect")["mystery"] = True
+        cases.append(("unknown-primitive-field", unknown, "E_SCHEMA_UNKNOWN_FIELD"))
+
+        bad_source_hash = copy.deepcopy(valid)
+        bad_source_hash["source_spec_sha256"] = "g" * 64
+        cases.append(("bad-source-hash", bad_source_hash, "E_VISUAL_FINGERPRINT"))
+
+        invalid_order = copy.deepcopy(valid)
+        invalid_order["primitives"] = list(reversed(invalid_order["primitives"]))
+        cases.append(("invalid-primitive-order", invalid_order, "E_VISUAL_DETERMINISM"))
+
+        wrong_backend = copy.deepcopy(valid)
+        wrong_backend["backend"]["package_version"] = "0.9.2"
+        cases.append(("wrong-backend-identity", wrong_backend, "E_VISUAL_FINGERPRINT"))
+
+        malformed_path = copy.deepcopy(valid)
+        primitive(malformed_path, "path")["points"] = [{"x": 1}]
+        cases.append(("malformed-path-point", malformed_path, "E_VISUAL_GEOMETRY"))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            for name, payload, expected_code in cases:
+                with self.subTest(case=name):
+                    python_ok, python_code = self._python_result(entry, payload, Path(temporary), valid=False)
+                    self.assertFalse(python_ok)
+                    self.assertEqual(python_code, expected_code)
+                    self.assertIn(expected_code, declared)
 
 
 if __name__ == "__main__":
