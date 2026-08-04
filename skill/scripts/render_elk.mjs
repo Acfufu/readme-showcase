@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, mkdtemp, open, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -567,6 +567,197 @@ function validateSvg(raw, input, semantic = false) {
   }
 }
 
+async function canonicalPath(rawPath) {
+  let absolute = resolve(rawPath);
+  for (const alias of ["/tmp", "/var"]) {
+    if (absolute !== alias && !absolute.startsWith(`${alias}${sep}`)) continue;
+    try {
+      const target = await realpath(alias);
+      if (target !== alias) absolute = `${target}${absolute.slice(alias.length)}`;
+    } catch {
+      // Keep normal path errors at caller, where stable contract code is known.
+    }
+  }
+  return absolute;
+}
+
+function directoryIdentity(entry) {
+  return { dev: entry.dev, ino: entry.ino };
+}
+
+function sameDirectoryIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function safeDirectory(rawPath, code, exitCode = 1) {
+  const absolute = await canonicalPath(rawPath);
+  let current = sep;
+  let finalEntry;
+  for (const part of absolute.split(sep).filter(Boolean)) {
+    const next = join(current, part);
+    let entry;
+    try {
+      entry = await lstat(next, { bigint: true });
+    } catch {
+      fail(code, `directory is unavailable: ${rawPath}`, exitCode);
+    }
+    if (entry.isSymbolicLink() || !entry.isDirectory()) {
+      fail(code, `directory ancestry must not contain links: ${rawPath}`, exitCode);
+    }
+    current = next;
+    finalEntry = entry;
+  }
+  if (!finalEntry) {
+    try {
+      finalEntry = await lstat(current, { bigint: true });
+    } catch {
+      fail(code, `directory is unavailable: ${rawPath}`, exitCode);
+    }
+  }
+  try {
+    const observed = await lstat(current, { bigint: true });
+    if (
+      observed.isSymbolicLink()
+      || !observed.isDirectory()
+      || !sameDirectoryIdentity(directoryIdentity(observed), directoryIdentity(finalEntry))
+    ) {
+      fail(code, `directory changed during validation: ${rawPath}`, exitCode);
+    }
+    return {
+      path: current,
+      realPath: await realpath(current),
+      identity: directoryIdentity(observed),
+    };
+  } catch (error) {
+    if (error instanceof AdapterError) throw error;
+    fail(code, `directory is unavailable: ${rawPath}`, exitCode);
+  }
+}
+
+async function assertDirectoryIdentity(snapshot, code = "E_OUTPUT_PATH", exitCode = 1) {
+  const current = await safeDirectory(snapshot.path, code, exitCode);
+  if (!sameDirectoryIdentity(current.identity, snapshot.identity)) {
+    fail(code, "run directory was replaced during output", exitCode);
+  }
+  return current;
+}
+
+async function findDirectoryByIdentity(snapshot) {
+  const parent = await safeDirectory(dirname(snapshot.path), "E_OUTPUT_PATH");
+  for (const name of await readdir(parent.path)) {
+    const candidate = join(parent.path, name);
+    try {
+      const entry = await lstat(candidate, { bigint: true });
+      if (entry.isDirectory() && sameDirectoryIdentity(directoryIdentity(entry), snapshot.identity)) {
+        return candidate;
+      }
+    } catch {
+      // Candidate may disappear during a concurrent replacement.
+    }
+  }
+  return null;
+}
+
+async function recoverDirectory(snapshot) {
+  try {
+    const current = await safeDirectory(snapshot.path, "E_OUTPUT_PATH");
+    if (sameDirectoryIdentity(current.identity, snapshot.identity)) return current;
+  } catch {
+    // Original path may have been replaced or renamed.
+  }
+  const path = await findDirectoryByIdentity(snapshot);
+  if (path === null) fail("E_OUTPUT_PATH", "original run directory is unavailable");
+  const recovered = await safeDirectory(path, "E_OUTPUT_PATH");
+  if (!sameDirectoryIdentity(recovered.identity, snapshot.identity)) {
+    fail("E_OUTPUT_PATH", "original run directory identity changed");
+  }
+  return recovered;
+}
+
+async function cleanupTemporary(snapshot, name) {
+  try {
+    const recovered = await recoverDirectory(snapshot);
+    await rm(join(recovered.path, name), { force: true });
+    await syncDirectory(recovered);
+  } catch {
+    // Cleanup must never follow a replaced or linked output ancestry.
+  }
+}
+
+async function validateDestination(parent, name, code, exitCode = 1) {
+  let entry;
+  try {
+    entry = await lstat(join(parent, name), { bigint: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    fail(code, `destination is unavailable: ${join(parent, name)}`, exitCode);
+  }
+  if (entry.isSymbolicLink() || !entry.isFile()) {
+    fail(code, `destination must be absent or a regular file: ${join(parent, name)}`, exitCode);
+  }
+}
+
+async function syncDirectory(snapshot) {
+  await assertDirectoryIdentity(snapshot);
+  let handle;
+  try {
+    handle = await open(snapshot.path, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0) | (constants.O_NOFOLLOW ?? 0));
+    await handle.sync();
+  } finally {
+    if (handle) await handle.close();
+  }
+  await assertDirectoryIdentity(snapshot);
+}
+
+async function validateOutputPaths(inputPath, outputPath, metadataPath) {
+  const outputParent = await safeDirectory(dirname(outputPath), "E_OUTPUT_PATH", 2);
+  const metadataParent = await safeDirectory(dirname(metadataPath), "E_OUTPUT_PATH", 2);
+  const inputParent = await safeDirectory(dirname(inputPath), "E_INPUT_PATH", 2);
+  if (
+    outputParent.realPath !== metadataParent.realPath
+    || outputParent.realPath !== inputParent.realPath
+    || !sameDirectoryIdentity(outputParent.identity, metadataParent.identity)
+    || !sameDirectoryIdentity(outputParent.identity, inputParent.identity)
+  ) {
+    fail("E_OUTPUT_PATH", "input, output, and metadata must share one real run root", 2);
+  }
+  const outputName = basename(outputPath);
+  const metadataName = basename(metadataPath);
+  if (!outputName || !metadataName || outputName === metadataName) {
+    fail("E_OUTPUT_PATH", "output and metadata must be distinct files", 2);
+  }
+  await validateDestination(outputParent.realPath, outputName, "E_OUTPUT_PATH", 2);
+  await validateDestination(metadataParent.realPath, metadataName, "E_OUTPUT_PATH", 2);
+  return {
+    inputPath: join(inputParent.realPath, basename(inputPath)),
+    outputPath: join(outputParent.realPath, outputName),
+    metadataPath: join(metadataParent.realPath, metadataName),
+    runRoot: {
+      path: outputParent.realPath,
+      identity: outputParent.identity,
+    },
+  };
+}
+
+async function validateSingleOutput(path, runRoot = null) {
+  const parent = await safeDirectory(dirname(path), "E_OUTPUT_PATH", 1);
+  if (runRoot !== null) {
+    await assertDirectoryIdentity(runRoot);
+    if (
+      parent.realPath !== runRoot.path
+      || !sameDirectoryIdentity(parent.identity, runRoot.identity)
+    ) {
+      fail("E_OUTPUT_PATH", "destination escaped its real run root");
+    }
+  }
+  const name = basename(path);
+  await validateDestination(parent.realPath, name, "E_OUTPUT_PATH", 1);
+  return {
+    path: join(parent.realPath, name),
+    runRoot: runRoot ?? { path: parent.realPath, identity: parent.identity },
+  };
+}
+
 function parseArguments(raw, worker = false) {
   const allowed = new Set(["--input", "--output", "--metadata", ...(worker ? ["--worker-output"] : [])]);
   const values = {};
@@ -584,10 +775,14 @@ function parseArguments(raw, worker = false) {
   return values;
 }
 
-async function atomicWrite(path, raw) {
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.tmp-${process.pid}-${Date.now()}`;
+async function atomicWrite(path, raw, runRoot = null, previousRaw = undefined) {
+  const destination = await validateSingleOutput(path, runRoot);
+  const parent = destination.runRoot;
+  const name = basename(destination.path);
+  const temporary = join(parent.path, `.${name}.tmp-${process.pid}-${Date.now()}`);
+  let renamed = false;
   try {
+    await assertDirectoryIdentity(parent);
     const handle = await open(temporary, "wx", 0o600);
     try {
       await handle.writeFile(raw);
@@ -595,37 +790,75 @@ async function atomicWrite(path, raw) {
     } finally {
       await handle.close();
     }
-    await rename(temporary, path);
+    await assertDirectoryIdentity(parent);
+    await validateDestination(parent.path, name, "E_OUTPUT_PATH");
+    await assertDirectoryIdentity(parent);
+    await rename(temporary, destination.path);
+    renamed = true;
+    await assertDirectoryIdentity(parent);
+    await syncDirectory(parent);
+  } catch (error) {
+    if (renamed && previousRaw !== undefined) {
+      try {
+        const recovered = await recoverDirectory(parent);
+        const restorePath = join(recovered.path, name);
+        if (previousRaw === null) {
+          await rm(restorePath, { force: true });
+          await syncDirectory(recovered);
+        } else {
+          await atomicWrite(restorePath, previousRaw, recovered);
+        }
+      } catch {
+        // Keep original error; pair-level rollback reports if restoration failed.
+      }
+    }
+    throw error;
   } finally {
-    await rm(temporary, { force: true });
+    await cleanupTemporary(parent, basename(temporary));
   }
 }
 
-async function readExisting(path, maximum) {
+async function readExisting(path, maximum, runRoot = null) {
+  const destination = await validateSingleOutput(path, runRoot);
+  await assertDirectoryIdentity(destination.runRoot);
   try {
-    return await readBounded(path, maximum, "E_ATOMIC_WRITE");
+    const previous = await readBounded(destination.path, maximum, "E_ATOMIC_WRITE");
+    await assertDirectoryIdentity(destination.runRoot);
+    return previous;
   } catch (error) {
     if (error instanceof AdapterError && error.message.endsWith(" is unavailable")) return null;
     throw error;
   }
 }
 
-async function atomicWritePair(outputPath, outputRaw, metadataPath, metadataRaw) {
+async function atomicWritePair(outputPath, outputRaw, metadataPath, metadataRaw, runRoot) {
+  await assertDirectoryIdentity(runRoot);
   const [previousOutput, previousMetadata] = await Promise.all([
-    readExisting(outputPath, MAX_SVG_BYTES),
-    readExisting(metadataPath, MAX_METADATA_BYTES),
+    readExisting(outputPath, MAX_SVG_BYTES, runRoot),
+    readExisting(metadataPath, MAX_METADATA_BYTES, runRoot),
   ]);
+  await assertDirectoryIdentity(runRoot);
   let outputWritten = false;
   try {
-    await atomicWrite(outputPath, outputRaw);
+    await atomicWrite(outputPath, outputRaw, runRoot, previousOutput);
     outputWritten = true;
-    await atomicWrite(metadataPath, metadataRaw);
+    await assertDirectoryIdentity(runRoot);
+    await atomicWrite(metadataPath, metadataRaw, runRoot, previousMetadata);
+    await assertDirectoryIdentity(runRoot);
   } catch (error) {
     if (outputWritten) {
       try {
-        if (previousOutput === null) await rm(outputPath, { force: true });
-        else await atomicWrite(outputPath, previousOutput);
-        if (previousMetadata !== null) await atomicWrite(metadataPath, previousMetadata);
+        const recovered = await recoverDirectory(runRoot);
+        const outputDestination = join(recovered.path, basename(outputPath));
+        if (previousOutput === null) {
+          await rm(outputDestination, { force: true });
+          await syncDirectory(recovered);
+        }
+        else await atomicWrite(outputDestination, previousOutput, recovered);
+        if (previousMetadata !== null) {
+          await atomicWrite(join(recovered.path, basename(metadataPath)), previousMetadata, recovered);
+        }
+        await syncDirectory(recovered);
       } catch {
         fail("E_ATOMIC_ROLLBACK", "failed to restore last-known-good files");
       }
@@ -635,8 +868,9 @@ async function atomicWritePair(outputPath, outputRaw, metadataPath, metadataRaw)
 }
 
 async function runWorker(args) {
-  const inputPath = resolve(args["--input"]);
-  const workerOutput = resolve(args["--worker-output"]);
+  const inputPath = await canonicalPath(args["--input"]);
+  const workerOutput = await canonicalPath(args["--worker-output"]);
+  const outputDestination = await validateSingleOutput(workerOutput);
   const [{ value: rawInput }, engine] = await Promise.all([
     parseJson(inputPath, MAX_INPUT_BYTES, "E_INPUT_SCHEMA"),
     verifyEngine(),
@@ -662,7 +896,7 @@ async function runWorker(args) {
     }
     const rawSvg = renderSvg(layout, input);
     validateSvg(rawSvg, input, true);
-    await atomicWrite(workerOutput, rawSvg);
+    await atomicWrite(outputDestination.path, rawSvg, outputDestination.runRoot);
   } finally {
     await rm(vendorSnapshot, { recursive: true, force: true });
   }
@@ -724,18 +958,17 @@ function workerFailure(result) {
 }
 
 async function runController(args) {
-  const inputPath = resolve(args["--input"]);
-  const outputPath = resolve(args["--output"]);
-  const metadataPath = resolve(args["--metadata"]);
-  if (
-    dirname(inputPath) !== dirname(outputPath)
-    || dirname(outputPath) !== dirname(metadataPath)
-    || new Set([inputPath, outputPath, metadataPath]).size !== 3
-  ) {
+  const [inputPath, outputPath, metadataPath] = await Promise.all([
+    canonicalPath(args["--input"]),
+    canonicalPath(args["--output"]),
+    canonicalPath(args["--metadata"]),
+  ]);
+  if (new Set([inputPath, outputPath, metadataPath]).size !== 3) {
     fail("E_USAGE", "input, output, and metadata must be distinct files in one directory", 2);
   }
+  const paths = await validateOutputPaths(inputPath, outputPath, metadataPath);
   const [{ raw: inputRaw, value: rawInput }] = await Promise.all([
-    parseJson(inputPath, MAX_INPUT_BYTES, "E_INPUT_SCHEMA"),
+    parseJson(paths.inputPath, MAX_INPUT_BYTES, "E_INPUT_SCHEMA"),
     verifyEngine(),
   ]);
   const input = validateEnvelope(rawInput);
@@ -781,7 +1014,7 @@ async function runController(args) {
       fallback_state: "preserved",
     };
     const metadataRaw = Buffer.from(`${canonical(metadata)}\n`, "utf8");
-    await atomicWritePair(outputPath, firstRaw, metadataPath, metadataRaw);
+    await atomicWritePair(paths.outputPath, firstRaw, paths.metadataPath, metadataRaw, paths.runRoot);
     process.stdout.write(`${JSON.stringify({
       schema_version: 1,
       status: "available",

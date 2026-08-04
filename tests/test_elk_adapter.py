@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,11 @@ PACKAGE_INTEGRITY = (
     "sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxf"
     "Omt8KjswHmI5EwCQcPMpOYhQ=="
 )
+LEGACY_HASHES = {
+    "architecture.json": "56d0f7440385fe1f1e86255c11a10659c395647cbc9c67ffc4424fca233b7bfc",
+    "flowchart.json": "fb70cc63fc71ff1d799b6a533d0b9f32c223833e7b235a1926c6a1254a2c4d8f",
+    "c4.json": "0fecb54066a709e7e379b6dfbe42ab2cd62e9e0c77d4cc341ecb6cf7fed1f1ae",
+}
 
 
 @unittest.skipIf(
@@ -25,6 +31,33 @@ PACKAGE_INTEGRITY = (
     "Node/ELK tests run in isolated Node 22 lane",
 )
 class ELKAdapterTests(unittest.TestCase):
+    def invoke_adapter(
+        self,
+        input_path: Path,
+        output_path: Path,
+        metadata_path: Path,
+        *,
+        adapter: Path = ADAPTER,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                "node",
+                str(adapter),
+                "--input",
+                str(input_path),
+                "--output",
+                str(output_path),
+                "--metadata",
+                str(metadata_path),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=45,
+            env={**os.environ, "GITHUB_TOKEN": "must-not-reach-worker"},
+        )
+
     def run_adapter(
         self,
         root: Path,
@@ -45,25 +78,253 @@ class ELKAdapterTests(unittest.TestCase):
             )
         output = run_dir / "diagram.svg"
         metadata = run_dir / "diagram.engine.json"
-        result = subprocess.run(
-            [
-                "node",
-                str(adapter),
-                "--input",
-                str(input_path),
-                "--output",
-                str(output),
-                "--metadata",
-                str(metadata),
-            ],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=45,
-            env={**os.environ, "GITHUB_TOKEN": "must-not-reach-worker"},
-        )
+        result = self.invoke_adapter(input_path, output, metadata, adapter=adapter)
         return result, output, metadata
+
+    def test_symlinked_output_parent_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            outside = base / "outside"
+            outside.mkdir()
+            input_path = outside / "diagram.diagram.json"
+            shutil.copyfile(FIXTURES / "architecture.json", input_path)
+            outside_output = outside / "diagram.svg"
+            outside_metadata = outside / "diagram.engine.json"
+            outside_output.write_bytes(b"outside-sentinel-svg")
+            outside_metadata.write_bytes(b"outside-sentinel-metadata")
+            linked_parent = base / "run"
+            linked_parent.symlink_to(outside, target_is_directory=True)
+
+            result = self.invoke_adapter(
+                linked_parent / input_path.name,
+                linked_parent / outside_output.name,
+                linked_parent / outside_metadata.name,
+            )
+
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("E_OUTPUT_PATH", result.stderr)
+            self.assertEqual(outside_output.read_bytes(), b"outside-sentinel-svg")
+            self.assertEqual(
+                outside_metadata.read_bytes(), b"outside-sentinel-metadata"
+            )
+            self.assertTrue(linked_parent.is_symlink())
+
+    def test_final_path_symlinks_are_rejected(self) -> None:
+        for linked_name in ("diagram.svg", "diagram.engine.json"):
+            with self.subTest(linked_name=linked_name), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                run = base / "run"
+                outside = base / "outside"
+                run.mkdir()
+                outside.mkdir()
+                input_path = run / "diagram.diagram.json"
+                shutil.copyfile(FIXTURES / "architecture.json", input_path)
+                output = run / "diagram.svg"
+                metadata = run / "diagram.engine.json"
+                output.write_bytes(b"last-good-svg")
+                metadata.write_bytes(b"last-good-metadata")
+                sentinel = outside / linked_name
+                sentinel.write_bytes(b"outside-sentinel")
+                (run / linked_name).unlink()
+                (run / linked_name).symlink_to(sentinel)
+
+                result = self.invoke_adapter(input_path, output, metadata)
+
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("E_OUTPUT_PATH", result.stderr)
+                self.assertTrue((run / linked_name).is_symlink())
+                self.assertEqual(sentinel.read_bytes(), b"outside-sentinel")
+                if linked_name == output.name:
+                    self.assertEqual(metadata.read_bytes(), b"last-good-metadata")
+                else:
+                    self.assertEqual(output.read_bytes(), b"last-good-svg")
+
+    def test_mixed_real_output_roots_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            run = base / "run"
+            other = base / "other"
+            run.mkdir()
+            other.mkdir()
+            input_path = run / "diagram.diagram.json"
+            shutil.copyfile(FIXTURES / "architecture.json", input_path)
+            output = run / "diagram.svg"
+            metadata = other / "diagram.engine.json"
+
+            result = self.invoke_adapter(input_path, output, metadata)
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("E_OUTPUT_PATH", result.stderr)
+            self.assertFalse(output.exists())
+            self.assertFalse(metadata.exists())
+
+    def test_parent_replacement_race_preserves_last_good(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            run = base / "run"
+            outside = base / "outside"
+            run.mkdir()
+            outside.mkdir()
+            input_path = run / "diagram.diagram.json"
+            shutil.copyfile(FIXTURES / "architecture.json", input_path)
+            output = run / "diagram.svg"
+            metadata = run / "diagram.engine.json"
+            output.write_bytes(b"last-good-svg")
+            metadata.write_bytes(b"last-good-metadata")
+            outside_output = outside / output.name
+            outside_metadata = outside / metadata.name
+            outside_output.write_bytes(b"outside-sentinel-svg")
+            outside_metadata.write_bytes(b"outside-sentinel-metadata")
+
+            copied_skill = base / "skill"
+            shutil.copytree(REPO_ROOT / "skill", copied_skill)
+            adapter = copied_skill / "scripts/render_elk.mjs"
+            source = adapter.read_text(encoding="utf-8")
+            marker = '    await assertDirectoryIdentity(parent);\n    await validateDestination(parent.path, name, "E_OUTPUT_PATH");'
+            self.assertIn(marker, source)
+            adapter.write_text(
+                source.replace(
+                    marker,
+                    '    await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));\n'
+                    f"{marker}",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            process = subprocess.Popen(
+                [
+                    "node",
+                    str(adapter),
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(output),
+                    "--metadata",
+                    str(metadata),
+                ],
+                cwd=REPO_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={**os.environ, "GITHUB_TOKEN": "must-not-reach-worker"},
+            )
+            replaced = False
+            backup = base / "run-real"
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline and process.poll() is None:
+                if any(run.glob(".diagram.svg.tmp-*")):
+                    run.rename(backup)
+                    run.symlink_to(outside, target_is_directory=True)
+                    replaced = True
+                    break
+                time.sleep(0.001)
+            try:
+                stdout, stderr = process.communicate(timeout=45)
+            finally:
+                if run.is_symlink():
+                    run.unlink()
+                if backup.exists():
+                    backup.rename(run)
+
+            self.assertTrue(replaced, "test did not observe output parent replacement")
+            self.assertNotEqual(process.returncode, 0, stdout)
+            self.assertIn("E_OUTPUT_PATH", stderr)
+            self.assertEqual((run / output.name).read_bytes(), b"last-good-svg")
+            self.assertEqual((run / metadata.name).read_bytes(), b"last-good-metadata")
+            self.assertEqual(outside_output.read_bytes(), b"outside-sentinel-svg")
+            self.assertEqual(
+                outside_metadata.read_bytes(), b"outside-sentinel-metadata"
+            )
+
+    def test_real_directory_replacement_preserves_last_good_and_cleans_temp(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            run = base / "run"
+            outside = base / "outside"
+            run.mkdir()
+            outside.mkdir()
+            input_path = run / "diagram.diagram.json"
+            shutil.copyfile(FIXTURES / "architecture.json", input_path)
+            output = run / "diagram.svg"
+            metadata = run / "diagram.engine.json"
+            output.write_bytes(b"last-good-svg")
+            metadata.write_bytes(b"last-good-metadata")
+            outside_output = outside / output.name
+            outside_metadata = outside / metadata.name
+            outside_output.write_bytes(b"outside-sentinel-svg")
+            outside_metadata.write_bytes(b"outside-sentinel-metadata")
+
+            copied_skill = base / "skill"
+            shutil.copytree(REPO_ROOT / "skill", copied_skill)
+            adapter = copied_skill / "scripts/render_elk.mjs"
+            source = adapter.read_text(encoding="utf-8")
+            marker = '    await assertDirectoryIdentity(parent);\n    await validateDestination(parent.path, name, "E_OUTPUT_PATH");'
+            self.assertIn(marker, source)
+            adapter.write_text(
+                source.replace(
+                    marker,
+                    '    await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));\n'
+                    f"{marker}",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+            process = subprocess.Popen(
+                [
+                    "node",
+                    str(adapter),
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(output),
+                    "--metadata",
+                    str(metadata),
+                ],
+                cwd=REPO_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env={**os.environ, "GITHUB_TOKEN": "must-not-reach-worker"},
+            )
+            replaced = False
+            original = base / "run-original"
+            replacement_output = b"replacement-sentinel-svg"
+            replacement_metadata = b"replacement-sentinel-metadata"
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline and process.poll() is None:
+                if any(run.glob(".diagram.svg.tmp-*")):
+                    run.rename(original)
+                    run.mkdir()
+                    (run / output.name).write_bytes(replacement_output)
+                    (run / metadata.name).write_bytes(replacement_metadata)
+                    replaced = True
+                    break
+                time.sleep(0.001)
+            try:
+                stdout, stderr = process.communicate(timeout=45)
+            finally:
+                replacement = base / "run-replacement"
+                if run.exists() and not run.is_symlink():
+                    run.rename(replacement)
+                if original.exists():
+                    original.rename(run)
+
+            self.assertTrue(replaced, "test did not observe real output-parent replacement")
+            self.assertNotEqual(process.returncode, 0, stdout)
+            self.assertIn("E_OUTPUT_PATH", stderr)
+            self.assertEqual(output.read_bytes(), b"last-good-svg")
+            self.assertEqual(metadata.read_bytes(), b"last-good-metadata")
+            self.assertEqual(outside_output.read_bytes(), b"outside-sentinel-svg")
+            self.assertEqual(
+                outside_metadata.read_bytes(), b"outside-sentinel-metadata"
+            )
+            self.assertEqual(
+                list(run.glob(".diagram.svg.tmp-*"))
+                + list(run.glob(".diagram.engine.json.tmp-*")),
+                [],
+            )
 
     def test_all_allowed_types_render_with_exact_metadata_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -86,6 +347,11 @@ class ELKAdapterTests(unittest.TestCase):
                     self.assertEqual(metadata["license_spdx"], "EPL-2.0")
                     self.assertEqual(metadata["output_sha256"], digest)
                     self.assertEqual(metadata["run_hashes"], [digest, digest])
+                    self.assertEqual(digest, LEGACY_HASHES[input_name])
+                    self.assertEqual(
+                        metadata["renderer_sha256"],
+                        hashlib.sha256(ADAPTER.read_bytes()).hexdigest(),
+                    )
                     self.assertNotIn("must-not-reach-worker", json.dumps(metadata))
 
     def test_help_documents_self_contained_cli(self) -> None:
