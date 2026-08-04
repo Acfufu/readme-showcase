@@ -9,14 +9,20 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from skill.scripts.pipeline_contracts import (
+    ContractError,
     canonical_sha256,
     write_canonical_json_atomic,
 )
+from skill.scripts.readme_showcase.orchestration import runner as runner_module
+from skill.scripts.readme_showcase.orchestration import stages as stages_module
+from skill.scripts.readme_showcase.orchestration.logging import StageLogger
 from tests import test_bundle_contracts as bundle_contracts
 from tests import test_elk_adapter as elk_adapter
 from tests import test_pr_bundle as pr_bundle
+from tests import test_pipeline_contracts as pipeline_contracts
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -396,6 +402,93 @@ class OfflinePipelineE2ETests(unittest.TestCase):
             self.assertFalse(rejected_output.exists())
             self.assertEqual((target / "README.md").read_bytes(), before)
             self.assertEqual((target / ".git/index").read_bytes(), index_before)
+
+    def test_compiled_v3_runner_lifecycle_and_failed_compile_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            target, _ = self.target(base)
+            (target / "README.md").write_text("# Demo\n", encoding="utf-8")
+            git = pr_bundle.PrBundleTests(methodName="runTest")
+            git.git(target, "add", "README.md")
+            git.git(target, "commit", "-m", "compiled fixture")
+            workspace = base / "workspace"
+            plan, candidate, _, _ = pipeline_contracts.BundleAssembleStageTests._compiled_inputs_with_v1_evidence()
+            plan_path = base / "readme-plan-v3.json"
+            write_canonical_json_atomic(plan_path, plan)
+
+            started = self.cli(
+                "run", "--root", str(target), "--workspace", str(workspace),
+                "--mode", "readme", "--project-type", "developer-tool", "--locale", "en",
+                "--plan", str(plan_path),
+            )
+            self.assertEqual(started.returncode, 0, started.stderr)
+            self.assertEqual(json.loads(started.stdout)["status"], "waiting-for-candidate")
+            candidate_root = workspace / "stages/05-candidate"
+            for relative, raw in candidate.items():
+                destination = candidate_root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(raw)
+
+            completed = self.cli("resume", "--workspace", str(workspace))
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            manifest = json.loads((workspace / "run-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["status"], "complete")
+            self.assertEqual(tuple(stage["name"] for stage in manifest["stages"]), pipeline_contracts.STAGE_NAMES)
+            self.assertEqual(len(manifest["stages"]), 8)
+            self.assertEqual([stage["attempt"] for stage in manifest["stages"]], [1, 1, 1, 1, 0, 1, 1, 1])
+            stage6 = workspace / "stages/06-bundle-assemble"
+            self.assertTrue((stage6 / "attempts/1/compiled/visual-spec.json").is_file())
+            self.assertTrue((stage6 / "attempts/1/assets/readme-showcase/en/desktop.svg").is_file())
+            validation = json.loads((workspace / "stages/07-validation/attempts/1/validation-report.json").read_text(encoding="utf-8"))
+            evaluation = json.loads((workspace / "stages/08-evaluation/attempts/1/evaluation-report.json").read_text(encoding="utf-8"))
+            self.assertEqual(validation["status"], "pass")
+            self.assertEqual(evaluation["schema_version"], 3)
+            self.assertEqual(evaluation["status"], "pass")
+
+            unchanged = self.cli("resume", "--workspace", str(workspace), "--log-format", "json")
+            self.assertEqual(unchanged.returncode, 0, unchanged.stderr)
+            self.assertEqual(manifest["stages"], json.loads((workspace / "run-manifest.json").read_text(encoding="utf-8"))["stages"])
+            skipped = [json.loads(line) for line in unchanged.stderr.splitlines() if line]
+            self.assertEqual([record["event"] for record in skipped], ["stage.skipped"] * 8)
+            self.assertEqual([record["stage"] for record in skipped], list(pipeline_contracts.STAGE_NAMES))
+
+            stage6_before = {
+                path.relative_to(stage6).as_posix(): path.read_bytes()
+                for path in stage6.rglob("*") if path.is_file()
+            }
+            # Test setup marks downstream stages stale to force one public retry.
+            manifest["stages"][5]["status"] = "stale"
+            manifest["stages"][6]["status"] = "stale"
+            manifest["stages"][7]["status"] = "stale"
+            write_canonical_json_atomic(workspace / "run-manifest.json", manifest)
+            with mock.patch.object(
+                stages_module,
+                "compile_visual",
+                side_effect=ContractError("E_OUTPUT_GEOMETRY", "forced compiler failure"),
+            ):
+                with self.assertRaises(ContractError):
+                    runner_module.resume_run(
+                        workspace_path=workspace,
+                        plan=None,
+                        stop_after=None,
+                        logger=StageLogger(verbosity="quiet"),
+                    )
+            failed_manifest = json.loads((workspace / "run-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(failed_manifest["stages"][5]["attempt"], 1)
+            self.assertEqual((stage6 / "current.json").read_bytes(), stage6_before["current.json"])
+            self.assertFalse((stage6 / "attempts/2").exists())
+            self.assertEqual(stage6_before, {
+                path.relative_to(stage6).as_posix(): path.read_bytes()
+                for path in stage6.rglob("*") if path.is_file()
+            })
+
+            retried = self.cli("resume", "--workspace", str(workspace))
+            self.assertEqual(retried.returncode, 0, retried.stderr)
+            self.assertEqual(
+                json.loads((workspace / "run-manifest.json").read_text(encoding="utf-8"))["status"],
+                "complete",
+                retried.stdout + retried.stderr,
+            )
 
 
 if __name__ == "__main__":
