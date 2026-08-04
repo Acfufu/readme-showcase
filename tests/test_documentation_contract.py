@@ -1,10 +1,51 @@
 from __future__ import annotations
 
+import re
+import tempfile
 import unittest
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+VISUAL_KERNEL_ROOT = REPO_ROOT / "skill/scripts/readme_showcase/visual_kernel"
+_RUNTIME_SUFFIXES = {".cjs", ".js", ".mjs", ".py", ".ts", ".tsx"}
+_IMPORT_STATEMENT = re.compile(
+    r"(?:\bfrom\s+|\bimport(?:\s|[\"'])|\brequire\s*\()", re.IGNORECASE
+)
+_FORBIDDEN_IMPORT_TOKENS = ("archscribe", "rough.js", "roughjs", "font", "icon")
+
+
+def _visual_kernel_boundary_violations(root: Path) -> list[str]:
+    """Return runtime clean-room violations under one kernel package root."""
+
+    if not root.exists():
+        return []
+
+    violations: list[str] = []
+    vendor = root / "vendor"
+    if vendor.exists():
+        violations.append("vendor/")
+
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in _RUNTIME_SUFFIXES:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if line.lstrip().startswith(("#", "//", "/*", "*")):
+                continue
+            if not _IMPORT_STATEMENT.search(line):
+                continue
+            lowered = line.casefold()
+            if any(token in lowered for token in _FORBIDDEN_IMPORT_TOKENS):
+                relative = path.relative_to(root)
+                violations.append(f"{relative}:{line_number}")
+    return violations
+
+
+def _assert_visual_kernel_clean(root: Path) -> None:
+    violations = _visual_kernel_boundary_violations(root)
+    if violations:
+        raise AssertionError("visual kernel clean-room violations: " + ", ".join(violations))
 
 
 class DocumentationContractTests(unittest.TestCase):
@@ -87,6 +128,30 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotIn("`691/692", delta)
         self.assertNotIn("`711`", delta)
         self.assertIn("stop at a local PR bundle", metadata)
+
+    def test_visual_kernel_clean_room_rejects_runtime_payload_mutations(self) -> None:
+        _assert_visual_kernel_clean(VISUAL_KERNEL_ROOT)
+
+        with tempfile.TemporaryDirectory(prefix="visual-kernel-clean-room-") as temporary:
+            fixture = Path(temporary) / "visual_kernel"
+            fixture.mkdir()
+            forbidden_imports = (
+                "from archscribe import render",
+                'import "rough.js";',
+                "import fontkit",
+                'import icons from "icon-package";',
+            )
+            for index, source in enumerate(forbidden_imports):
+                with self.subTest(source=source):
+                    runtime_file = fixture / f"mutation_{index}.py"
+                    runtime_file.write_text(source + "\n", encoding="utf-8")
+                    with self.assertRaises(AssertionError):
+                        _assert_visual_kernel_clean(fixture)
+                    runtime_file.unlink()
+
+            (fixture / "vendor").mkdir()
+            with self.assertRaises(AssertionError):
+                _assert_visual_kernel_clean(fixture)
 
 
 if __name__ == "__main__":
