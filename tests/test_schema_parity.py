@@ -182,10 +182,10 @@ class SchemaParityTests(unittest.TestCase):
         self.assertEqual(importlib.metadata.version("jsonschema"), "4.26.0")
         self.assertEqual(self.index["draft"], "https://json-schema.org/draft/2020-12/schema")
         entries = self.index["schemas"]
-        self.assertEqual(len(entries), 25)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 25)
-        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 25)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 50)
+        self.assertEqual(len(entries), 26)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 26)
+        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 26)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 52)
         self.assertEqual(INDEX.read_bytes(), canonical_json_bytes(self.index))
         self.assertEqual(
             [entry["schema"] for entry in entries],
@@ -274,6 +274,37 @@ class SchemaParityTests(unittest.TestCase):
                     self.assertEqual(case.get("semantic") is True, semantic)
                     if semantic:
                         self.assertEqual(errors, [])
+                    else:
+                        self.assertTrue(errors)
+
+    def test_pr_bundle_v2_hostile_cases_keep_schema_and_python_parity(self) -> None:
+        entry = next(item for item in self.index["schemas"] if item["schema"] == "pr-bundle.v2.schema.json")
+        schema = _load(SCHEMAS / entry["schema"])
+        draft = Draft202012Validator(schema)
+        fixture = _load(FIXTURES / entry["invalid_fixture"])
+        expected = {
+            "stale-fingerprint": ("E_PR_FINGERPRINT", True),
+            "internal-artifact-path": ("E_PR_PATH", False),
+            "unknown-field": ("E_SCHEMA_UNKNOWN_FIELD", False),
+            "malformed-branch": ("E_PUBLISH_BRANCH", False),
+            "malformed-hash": ("E_PUBLISH_HASH", False),
+            "failed-evaluation-status": ("E_PR_EVALUATION", True),
+        }
+        self.assertEqual({case["name"] for case in fixture["cases"]}, set(expected))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for case in fixture["cases"]:
+                payload = self._payload(case["payload"])
+                errors = list(draft.iter_errors(payload))
+                python_ok, python_code = self._python_result(entry, payload, root, valid=False)
+                expected_code, semantic = expected[case["name"]]
+                with self.subTest(case=case["name"]):
+                    self.assertFalse(python_ok)
+                    self.assertEqual(python_code, expected_code)
+                    self.assertEqual(case.get("semantic") is True, semantic)
+                    if semantic:
+                        self.assertEqual(errors, [])
+                        self.assertIn(expected_code, self._declared_codes(schema))
                     else:
                         self.assertTrue(errors)
 

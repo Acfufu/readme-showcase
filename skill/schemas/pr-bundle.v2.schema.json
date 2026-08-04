@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://readme-showcase.local/schemas/pr-bundle.v2.schema.json",
+  "title": "Compiled README PR Bundle v2",
+  "$comment": "Closed PR projection for compiled visual delivery. Python validation supplements candidate ordering, change/hash relations, exclusion policy, and canonical fingerprint binding.",
+  "x-python-semantic-validation": {
+    "validator": "skill.scripts.readme_showcase.delivery.legacy.validate_pr_bundle",
+    "codes": [
+      "E_PR_BASE",
+      "E_PR_BUNDLE",
+      "E_PR_EVALUATION",
+      "E_PR_FINGERPRINT",
+      "E_PR_NO_CHANGES",
+      "E_PR_PATH",
+      "E_PR_TARGET",
+      "E_PUBLISH_BRANCH",
+      "E_PUBLISH_HASH",
+      "E_DATASET_EMBEDDED_CONTENT",
+      "E_DATASET_TEXT"
+    ]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "mode",
+    "target",
+    "candidate_files",
+    "semantic_sources",
+    "evaluation",
+    "compiled",
+    "metadata",
+    "exclusions",
+    "status",
+    "fingerprint"
+  ],
+  "properties": {
+    "schema_version": {"const": 2},
+    "mode": {"enum": ["readme", "asset-only"]},
+    "target": {"$ref": "#/$defs/target"},
+    "candidate_files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {"$ref": "#/$defs/candidate"}
+    },
+    "semantic_sources": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {"$ref": "#/$defs/semanticSource"}
+    },
+    "evaluation": {"$ref": "#/$defs/evaluation"},
+    "compiled": {"$ref": "#/$defs/compiled"},
+    "metadata": {"$ref": "#/$defs/metadata"},
+    "exclusions": {
+      "const": [
+        ".omo/**",
+        "evaluation-only/**",
+        "node_modules/**",
+        "previews/**",
+        "run-artifacts/**"
+      ]
+    },
+    "status": {"const": "ready"},
+    "fingerprint": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})/[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})$"
+    },
+    "branch": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?![-/.])(?!.*(?:\\.\\.|//|@\\{|\\\\| ))(?!.*(?:/|\\.|\\.lock)$)[A-Za-z0-9._/-]+$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "base_sha", "branch"],
+      "properties": {
+        "repository": {"$ref": "#/$defs/repository"},
+        "base_sha": {"$ref": "#/$defs/commit"},
+        "branch": {"$ref": "#/$defs/branch"}
+      }
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/|~/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\\\\\u0000]+$"
+    },
+    "candidatePath": {
+      "allOf": [
+        {"$ref": "#/$defs/path"},
+        {
+          "oneOf": [
+            {"const": "README.md"},
+            {"const": "README_zh.md"},
+            {
+              "type": "string",
+              "pattern": "^assets/readme-showcase/[^/]+/(?:desktop|mobile)\\.svg$"
+            }
+          ]
+        }
+      ]
+    },
+    "semanticPath": {
+      "allOf": [
+        {"$ref": "#/$defs/path"},
+        {
+          "type": "string",
+          "pattern": "^assets/readme/(?:[^/]+/)*[^/]+\\.diagram\\.json$"
+        }
+      ]
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "before_sha256", "after_sha256", "change"],
+      "properties": {
+        "path": {"$ref": "#/$defs/candidatePath"},
+        "before_sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "after_sha256": {"$ref": "#/$defs/sha256"},
+        "change": {"enum": ["add", "modify", "unchanged"]}
+      }
+    },
+    "semanticSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "before_sha256", "after_sha256", "change"],
+      "properties": {
+        "path": {"$ref": "#/$defs/semanticPath"},
+        "before_sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "after_sha256": {"$ref": "#/$defs/sha256"},
+        "change": {"enum": ["add", "modify", "unchanged"]}
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "bundle_sha256", "report_sha256"],
+      "properties": {
+        "status": {"enum": ["pass", "fail"]},
+        "bundle_sha256": {"$ref": "#/$defs/sha256"},
+        "report_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "compiled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventory", "fingerprint"],
+      "properties": {
+        "inventory": {
+          "allOf": [
+            {"$ref": "#/$defs/reference"},
+            {"properties": {"path": {"const": "compiled/inventory.json"}}}
+          ]
+        },
+        "fingerprint": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit_message", "pull_request_title", "pull_request_body"],
+      "properties": {
+        "commit_message": {"$ref": "#/$defs/metadataText"},
+        "pull_request_title": {"$ref": "#/$defs/metadataText"},
+        "pull_request_body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1200,
+          "pattern": "^[^\\u0000]+$"
+        }
+      }
+    },
+    "metadataText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^[^\\u0000]+$"
+    }
+  }
+}
