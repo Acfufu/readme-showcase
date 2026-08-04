@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 from skill.scripts.readme_showcase.orchestration.workspace import RunWorkspace
+from skill.scripts.readme_showcase.orchestration.runner import _attempt_output_sha256
 from skill.scripts.pipeline_contracts import write_canonical_json_atomic
 
 
@@ -124,6 +125,29 @@ class ResumablePipelineTests(unittest.TestCase):
         explain = self.cli("explain", "--workspace", str(self.workspace), "--format", "json")
         self.assertEqual(json.loads(status.stdout)["run_id"], after["run_id"])
         self.assertEqual(json.loads(explain.stdout), after)
+
+    def test_nested_attempt_output_projection_matches_append_hash(self) -> None:
+        workspace = RunWorkspace(self.workspace, self.target)
+        workspace.initialize(
+            repository="local/repository",
+            base_sha="a" * 40,
+            configuration={
+                "mode": "readme",
+                "project_type": "developer-tool",
+                "locales": ["en"],
+                "scanner_profile": "balanced",
+            },
+            clock=lambda: "2026-08-05T00:00:00Z",
+        )
+        files = {
+            "compiled/visual-spec.json": b'{"schema_version":1}\n',
+            "compiled/scenes/en/desktop.json": b'{"scene":"desktop"}\n',
+            "assets/readme-showcase/en/desktop.svg": b"<svg/>\n",
+        }
+        workspace.append_attempt(6, "bundle-assemble", files)
+        expected = workspace.read_manifest()["stages"][5]["output_sha256"]
+        self.assertEqual(_attempt_output_sha256(workspace, 5, 1), expected)
+        self.assertEqual(_attempt_output_sha256(workspace, 5, 1), expected)
 
     def test_json_logs_lock_and_bad_options_are_safe(self) -> None:
         run = self.cli(*self.run_arguments("--log-format", "json", "--verbosity", "debug"))
