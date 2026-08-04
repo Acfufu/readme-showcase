@@ -45,12 +45,27 @@ Dataset revision 2 contains 10 production `train` patterns and two isolated
 repository commits and per-source license evidence; they contain no copied
 README text, code, assets, or benchmark answers.
 
-Run one visible, ordered artifact flow in a temporary run directory outside
-candidate paths:
+Run one ordered artifact flow in orchestrator-managed central state. Never
+create `.readme-showcase-run-*` or another run directory in or beside the target
+repository. The default location is
+`${CODEX_HOME:-$HOME/.codex}/state/readme-showcase/`, keyed by target repository:
 
 ```bash
 README_SHOWCASE_SKILL="${CODEX_HOME:-$HOME/.codex}/skills/readme-showcase"
+python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" run \
+  --root "$TARGET" \
+  --mode readme \
+  --project-type "$PROJECT_TYPE" \
+  --locale en \
+  --verbosity debug
 ```
+
+The debug result exposes the selected internal workspace when plan or candidate
+inputs must be written; use that path as `$RUN` below. Resume with
+`resume --root "$TARGET"`. Omit debug verbosity from user-facing status and
+handoff output. Use explicit `--workspace` only when the user requests a custom
+absolute location. Never create a per-run virtual environment; use the existing
+runtime and remove temporary files before returning.
 
 1. Validate licensed retrieval patterns:
 

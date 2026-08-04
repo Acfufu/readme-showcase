@@ -73,24 +73,30 @@ $readme-showcase 围绕已验证行为和可运行快速开始，重新设计这
 
 ## 运行可恢复流水线
 
-编排器记录每个确定性阶段，并在明确的输入边界等待，不会自行虚构候选：
+编排器记录每个确定性阶段，并在明确的输入边界等待，不会自行虚构候选。默认运行
+状态集中保存在 `${CODEX_HOME:-$HOME/.codex}/state/readme-showcase/`，并按目标
+仓库分组，因此不会污染仓库及其父目录：
 
 ```bash
 python3 skill/scripts/readme_pipeline.py run \
   --root . \
-  --workspace ../readme-showcase-run \
   --mode readme \
   --project-type developer-tool \
   --locale en \
   --locale zh-Hans
 
-python3 skill/scripts/readme_pipeline.py status \
-  --workspace ../readme-showcase-run
-python3 skill/scripts/readme_pipeline.py resume \
-  --workspace ../readme-showcase-run
-python3 skill/scripts/readme_pipeline.py preview \
-  --workspace ../readme-showcase-run
+python3 skill/scripts/readme_pipeline.py status
+python3 skill/scripts/readme_pipeline.py resume
+python3 skill/scripts/readme_pipeline.py preview
 ```
+
+`resume`、`status`、`explain` 和 `preview` 会自动定位当前仓库最近一次运行。正常
+输出隐藏内部路径；仅在排障时使用 `--verbosity debug` 查看。高级用户仍可通过
+`--workspace /absolute/path` 显式覆盖默认位置。
+
+中央状态属于可恢复的持久数据，不是临时垃圾。编排器不会创建每次运行专属的
+虚拟环境，并会在返回前删除预览临时文件；不可变运行记录会保留，直到运维方另行
+制定并执行保留策略。
 
 13 个 CLI 表面按职责分组：
 

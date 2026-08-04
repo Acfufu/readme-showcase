@@ -77,24 +77,32 @@ composition remain explicit opt-ins. ELK is reserved for relationship-heavy
 ## Run the resumable pipeline
 
 The orchestrator records each deterministic stage and waits at explicit input
-boundaries instead of inventing a candidate:
+boundaries instead of inventing a candidate. By default, run state is kept
+under `${CODEX_HOME:-$HOME/.codex}/state/readme-showcase/`, keyed by the target
+repository, so the repository and its parent stay clean:
 
 ```bash
 python3 skill/scripts/readme_pipeline.py run \
   --root . \
-  --workspace ../readme-showcase-run \
   --mode readme \
   --project-type developer-tool \
   --locale en \
   --locale zh-Hans
 
-python3 skill/scripts/readme_pipeline.py status \
-  --workspace ../readme-showcase-run
-python3 skill/scripts/readme_pipeline.py resume \
-  --workspace ../readme-showcase-run
-python3 skill/scripts/readme_pipeline.py preview \
-  --workspace ../readme-showcase-run
+python3 skill/scripts/readme_pipeline.py status
+python3 skill/scripts/readme_pipeline.py resume
+python3 skill/scripts/readme_pipeline.py preview
 ```
+
+`resume`, `status`, `explain`, and `preview` find the latest run for the current
+repository. Normal output hides the internal path; `--verbosity debug` exposes
+it for troubleshooting. `--workspace /absolute/path` remains an explicit expert
+override.
+
+Central state is durable recovery data, not scratch space. The orchestrator
+creates no per-run virtual environment and removes preview temporary files
+before returning; immutable run attempts remain until an operator applies a
+separate retention policy.
 
 The 13 CLI surfaces divide cleanly:
 
