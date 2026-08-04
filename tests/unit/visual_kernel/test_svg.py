@@ -15,7 +15,7 @@ from skill.scripts.readme_showcase.visual_kernel.scene import Scene
 from skill.scripts.readme_showcase.visual_kernel.svg import serialize_svg
 from skill.scripts.readme_showcase.visual_kernel.theme import resolve_theme
 
-from .test_scene import _build
+from tests.unit.visual_kernel.test_scene import _build
 
 
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
