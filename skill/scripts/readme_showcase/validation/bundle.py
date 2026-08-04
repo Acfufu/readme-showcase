@@ -49,12 +49,29 @@ def validate_generated_bundle(
     *,
     validate_v1: Callable[[Any, Path], dict[str, object]],
 ) -> dict[str, object]:
-    if (
-        isinstance(payload, dict)
-        and payload.get("schema_version") == 2
-        and set(payload) != {"schema_version"}
-    ):
-        from ..generation.assembler import validate_generated_bundle_v2
+    if isinstance(payload, dict) and "schema_version" in payload:
+        if set(payload) == {"schema_version"}:
+            raise ContractError(
+                "E_SCHEMA_VERSION",
+                "generated bundle requires a versioned body",
+            )
+        version = payload["schema_version"]
+        if type(version) is not int:
+            raise ContractError(
+                "E_SCHEMA_VERSION",
+                "generated bundle schema_version must be an integer",
+            )
+        if version == 2:
+            from ..generation.assembler import validate_generated_bundle_v2
 
-        return cast(dict[str, object], validate_generated_bundle_v2(payload, artifact_root))
+            return cast(dict[str, object], validate_generated_bundle_v2(payload, artifact_root))
+        if version == 3:
+            from ..generation.assembler import validate_generated_bundle_v3
+
+            return cast(dict[str, object], validate_generated_bundle_v3(payload, artifact_root))
+        if version != 1:
+            raise ContractError(
+                "E_SCHEMA_VERSION",
+                "generated bundle schema_version is unsupported",
+            )
     return validate_v1(payload, artifact_root)

@@ -16,6 +16,12 @@ from unittest import mock
 
 _CONTRACTS = importlib.import_module("skill.scripts.pipeline_contracts")
 _CORE = importlib.import_module("skill.scripts.pipeline_core")
+_BUNDLE_DISPATCH = importlib.import_module(
+    "skill.scripts.readme_showcase.validation.bundle"
+)
+_ASSEMBLER = importlib.import_module(
+    "skill.scripts.readme_showcase.generation.assembler"
+)
 ContractError = _CONTRACTS.ContractError
 canonical_sha256 = _CONTRACTS.canonical_sha256
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
@@ -946,6 +952,83 @@ class BundleContractTests(unittest.TestCase):
         self.assertEqual(CLAIM_MAP_SCHEMA_VERSION, 2)
         self.assertEqual(ASSET_MANIFEST_SCHEMA_VERSION, 2)
         self.assertEqual(GENERATED_BUNDLE_SCHEMA_VERSION, 2)
+
+    def test_generated_bundle_dispatch_routes_v1_and_v2_without_legacy_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            validate_v1 = mock.Mock(return_value={"schema_version": 1, "status": "v1"})
+            with mock.patch.object(
+                _ASSEMBLER,
+                "validate_generated_bundle_v2",
+                return_value={"schema_version": 2, "status": "v2"},
+            ) as validate_v2:
+                self.assertEqual(
+                    _BUNDLE_DISPATCH.validate_generated_bundle(
+                        {"schema_version": 1, "mode": "readme"},
+                        root,
+                        validate_v1=validate_v1,
+                    )["status"],
+                    "v1",
+                )
+                self.assertEqual(
+                    _BUNDLE_DISPATCH.validate_generated_bundle(
+                        {"schema_version": 2, "mode": "readme"},
+                        root,
+                        validate_v1=validate_v1,
+                    )["status"],
+                    "v2",
+                )
+            validate_v1.assert_called_once_with({"schema_version": 1, "mode": "readme"}, root)
+            validate_v2.assert_called_once_with({"schema_version": 2, "mode": "readme"}, root)
+
+    def test_generated_bundle_dispatch_routes_real_v3_once(self) -> None:
+        from tests.contract.test_bundle_v3 import BundleV3ContractTests
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = BundleV3ContractTests().make_bundle(root)
+            with mock.patch.object(
+                _ASSEMBLER,
+                "validate_generated_bundle_v3",
+                wraps=_ASSEMBLER.validate_generated_bundle_v3,
+            ) as validate_v3:
+                report = validate_generated_bundle(bundle, root)
+            self.assertEqual(report["schema_version"], 3)
+            self.assertEqual(report["status"], "pass")
+            validate_v3.assert_called_once_with(bundle, root)
+
+    def test_generated_bundle_dispatch_rejects_ambiguous_and_unknown_versions(self) -> None:
+        cases = (
+            ("version-only-v2", {"schema_version": 2}),
+            ("version-only-v3", {"schema_version": 3}),
+            (
+                "v3-shaped-as-v2",
+                {
+                    "schema_version": 2,
+                    "mode": "readme",
+                    "target": {},
+                    "candidate": {"readmes": []},
+                    "artifacts": {},
+                    "compiled": {},
+                },
+            ),
+            ("float", {"schema_version": 2.0, "mode": "readme"}),
+            ("unknown", {"schema_version": 4}),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name, payload in cases:
+                with self.subTest(case=name):
+                    validate_v1 = mock.Mock(return_value={"status": "legacy"})
+                    with self.assertRaises(ContractError) as raised:
+                        _BUNDLE_DISPATCH.validate_generated_bundle(
+                            payload,
+                            root,
+                            validate_v1=validate_v1,
+                        )
+                    if name.startswith("version-only"):
+                        self.assertEqual(raised.exception.code, "E_SCHEMA_VERSION")
+                    validate_v1.assert_not_called()
 
 
 if __name__ == "__main__":
