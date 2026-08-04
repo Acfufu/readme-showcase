@@ -12,7 +12,6 @@ import unittest
 from pathlib import Path
 
 from skill.scripts.readme_showcase.orchestration.workspace import RunWorkspace
-from skill.scripts.readme_showcase.orchestration.runner import _attempt_output_sha256
 from skill.scripts.pipeline_contracts import write_canonical_json_atomic
 
 
@@ -146,8 +145,8 @@ class ResumablePipelineTests(unittest.TestCase):
         }
         workspace.append_attempt(6, "bundle-assemble", files)
         expected = workspace.read_manifest()["stages"][5]["output_sha256"]
-        self.assertEqual(_attempt_output_sha256(workspace, 5, 1), expected)
-        self.assertEqual(_attempt_output_sha256(workspace, 5, 1), expected)
+        self.assertEqual(workspace.attempt_output_sha256(5, 1), expected)
+        self.assertEqual(workspace.attempt_output_sha256(5, 1), expected)
 
     def test_json_logs_lock_and_bad_options_are_safe(self) -> None:
         run = self.cli(*self.run_arguments("--log-format", "json", "--verbosity", "debug"))

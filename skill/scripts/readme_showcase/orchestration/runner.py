@@ -20,12 +20,11 @@ from ...pipeline_contracts import (
     _absolute,
     _open_directory,
     canonical_json_bytes,
-    canonical_sha256,
     read_json_object_bytes,
     read_regular_bytes,
     write_canonical_json_atomic,
 )
-from ..contracts.run import STAGE_NAMES, canonical_repository
+from ..contracts.run import canonical_repository
 from ..errors import AGGREGATABLE_CODES
 from ..generation.request import (
     MAX_GENERATION_REQUEST_BYTES,
@@ -223,144 +222,6 @@ def _copy_plan(workspace: RunWorkspace, plan: Path | None) -> None:
     if raw != canonical_json_bytes(value):
         raise ContractError("E_RUN_INPUT", "README plan must use canonical JSON bytes")
     write_canonical_json_atomic(workspace.root / "inputs/readme-plan.json", value)
-
-
-def _attempt_output_sha256(workspace: RunWorkspace, stage_index: int, attempt: int) -> str | None:
-    if attempt == 0:
-        return None
-    root = workspace.root / "stages" / f"{stage_index + 1:02d}-{STAGE_NAMES[stage_index]}" / "attempts" / str(attempt)
-    try:
-        root_info = root.lstat()
-        if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
-            return None
-    except OSError:
-        return None
-    try:
-        descriptor = _open_directory(root, create=False, code="E_RUN_PATH")
-    except (ContractError, OSError):
-        return None
-
-    projection: dict[str, str] = {}
-
-    def read_file(parent: int, name: str, expected: os.stat_result) -> str | None:
-        file_descriptor = -1
-        try:
-            file_descriptor = os.open(
-                name,
-                os.O_RDONLY
-                | getattr(os, "O_NOFOLLOW", 0)
-                | getattr(os, "O_NONBLOCK", 0),
-                dir_fd=parent,
-            )
-            opened = os.fstat(file_descriptor)
-            expected_identity = (expected.st_dev, expected.st_ino, expected.st_size, expected.st_mtime_ns)
-            opened_identity = (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
-            if not stat.S_ISREG(opened.st_mode) or opened_identity != expected_identity:
-                return None
-            digest = hashlib.sha256()
-            while True:
-                chunk = os.read(file_descriptor, 64 * 1024)
-                if not chunk:
-                    break
-                digest.update(chunk)
-            after = os.fstat(file_descriptor)
-            if (
-                not stat.S_ISREG(after.st_mode)
-                or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) != opened_identity
-            ):
-                return None
-            return digest.hexdigest()
-        except OSError:
-            return None
-        finally:
-            if file_descriptor >= 0:
-                os.close(file_descriptor)
-
-    def visit(parent: int, prefix: str) -> bool | None:
-        try:
-            names = sorted(os.listdir(parent))
-        except OSError:
-            return None
-        if not names:
-            return False
-        found = False
-        for name in names:
-            if not isinstance(name, str) or not name or "/" in name or "\\" in name:
-                return None
-            relative = f"{prefix}/{name}" if prefix else name
-            try:
-                expected = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            except OSError:
-                return None
-            if stat.S_ISLNK(expected.st_mode):
-                return None
-            if stat.S_ISDIR(expected.st_mode):
-                child = -1
-                try:
-                    child = os.open(
-                        name,
-                        os.O_RDONLY
-                        | getattr(os, "O_DIRECTORY", 0)
-                        | getattr(os, "O_NOFOLLOW", 0),
-                        dir_fd=parent,
-                    )
-                    opened = os.fstat(child)
-                    if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
-                        return None
-                    child_found = visit(child, relative)
-                    if child_found is not True:
-                        return None
-                except OSError:
-                    return None
-                finally:
-                    if child >= 0:
-                        os.close(child)
-                found = True
-            elif stat.S_ISREG(expected.st_mode):
-                digest = read_file(parent, name, expected)
-                if digest is None:
-                    return None
-                projection[relative] = digest
-                found = True
-            else:
-                return None
-            try:
-                current = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            except OSError:
-                return None
-            if (current.st_dev, current.st_ino, current.st_mode, current.st_size, current.st_mtime_ns) != (
-                expected.st_dev,
-                expected.st_ino,
-                expected.st_mode,
-                expected.st_size,
-                expected.st_mtime_ns,
-            ):
-                return None
-        try:
-            if sorted(os.listdir(parent)) != names:
-                return None
-        except OSError:
-            return None
-        return found
-
-    try:
-        if visit(descriptor, "") is not True:
-            return None
-        try:
-            after_root = root.lstat()
-        except OSError:
-            return None
-        if (
-            stat.S_ISLNK(after_root.st_mode)
-            or (after_root.st_dev, after_root.st_ino, after_root.st_mode, after_root.st_mtime_ns)
-            != (root_info.st_dev, root_info.st_ino, root_info.st_mode, root_info.st_mtime_ns)
-        ):
-            return None
-    finally:
-        os.close(descriptor)
-    return canonical_sha256(
-        [{"path": path, "sha256": projection[path]} for path in sorted(projection)]
-    )
 
 
 def _write_state(workspace: RunWorkspace, manifest: dict[str, Any]) -> dict[str, Any]:
@@ -795,7 +656,7 @@ def _drive(workspace: RunWorkspace, logger: StageLogger, stop_after: str | None)
         stored_output = (
             input_sha256
             if isinstance(adapter, CandidateImportStage) and stage["attempt"] == 0
-            else _attempt_output_sha256(workspace, index, stage["attempt"])
+            else workspace.attempt_output_sha256(index, stage["attempt"])
         )
         if stage["status"] == "pass" and stage["input_sha256"] == input_sha256 and stored_output == stage["output_sha256"]:
             logger.emit("stage.skipped", run_id=manifest["run_id"], stage=adapter.name, status="pass", input_sha256=input_sha256, output_sha256=stage["output_sha256"])
