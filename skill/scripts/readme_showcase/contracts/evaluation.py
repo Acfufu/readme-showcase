@@ -7,11 +7,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ...pipeline_contracts import ContractError, canonical_json_bytes, read_regular_bytes
-from ..evaluation.contract import validate_advisory_metrics
+from ..evaluation.contract import validate_advisory_metrics, validate_metric
 
 
 COMMAND_OBSERVATION_SCHEMA_VERSION = 1
 EVALUATION_REPORT_SCHEMA_VERSION = 2
+EVALUATION_REPORT_V3_SCHEMA_VERSION = 3
 MAX_COMMAND_BYTES = 4_096
 MAX_INPUT_HASHES = 128
 MAX_OBSERVATION_JSON_BYTES = 1_048_576
@@ -27,6 +28,15 @@ _OBSERVATION_FIELDS = {
 _REPORT_FIELDS = {
     "schema_version", "status", "decision_basis", "bundle_sha256",
     "hard_gate", "advisory", "behavior", "behavior_required",
+}
+_COMPILED_REPORT_FIELDS = {
+    "gate_pass", "element_evidence_coverage", "variant_completeness",
+    "determinism", "resource_budgets",
+}
+_REPORT_V3_FIELDS = {
+    "schema_version", "status", "decision_basis", "bundle_sha256",
+    "compiled_fingerprint", "hard_gate", "compiled", "advisory",
+    "behavior", "behavior_required",
 }
 
 
@@ -178,6 +188,79 @@ def validate_evaluation_report_v2(payload: Any) -> dict[str, Any]:
     if value["status"] != expected:
         raise ContractError("E_EVALUATION_REPORT", "report status does not match gates")
     result = copy.deepcopy(value)
+    result["advisory"] = advisory
+    result["behavior"] = behavior
+    return result
+
+
+def validate_evaluation_report_v3(payload: Any) -> dict[str, Any]:
+    """Validate the closed Evaluation Report v3 projection.
+
+    The compiled measures are deliberately ordinary bounded metrics.  Their
+    semantic meaning is owned by the evaluator, while this boundary keeps the
+    report canonical and prevents a caller from manufacturing a passing report
+    with missing measures or an unbound inventory identity.
+    """
+
+    _reject_float(payload)
+    value = _strict_object(payload, _REPORT_V3_FIELDS, "evaluation report", "E_EVALUATION_REPORT")
+    if (
+        value["schema_version"] != EVALUATION_REPORT_V3_SCHEMA_VERSION
+        or value["status"] not in {"pass", "fail"}
+        or value["decision_basis"] != "hard-compiled-gates-with-configured-behavior"
+    ):
+        raise ContractError("E_EVALUATION_REPORT", "evaluation report decision fields are invalid")
+    for name in ("bundle_sha256", "compiled_fingerprint"):
+        if not isinstance(value[name], str) or not _SHA256.fullmatch(value[name]):
+            raise ContractError("E_EVALUATION_REPORT", f"{name} is invalid")
+
+    hard_gate = value["hard_gate"]
+    if not isinstance(hard_gate, dict) or set(hard_gate) != {"status", "findings"} or hard_gate["status"] not in {"pass", "fail"}:
+        raise ContractError("E_EVALUATION_REPORT", "hard_gate is invalid")
+    findings = hard_gate["findings"]
+    if not isinstance(findings, list) or any(
+        not isinstance(item, dict) or set(item) != {"code", "message"}
+        or not isinstance(item["code"], str) or not item["code"]
+        or not isinstance(item["message"], str) or not item["message"]
+        for item in findings
+    ):
+        raise ContractError("E_EVALUATION_REPORT", "hard_gate findings are invalid")
+    ordered_findings = sorted(findings, key=lambda item: (item["code"], item["message"]))
+    if findings != ordered_findings:
+        raise ContractError("E_EVALUATION_REPORT", "hard_gate findings are not canonically ordered")
+    if (hard_gate["status"] == "pass") != (not findings):
+        raise ContractError("E_EVALUATION_REPORT", "hard_gate status and findings disagree")
+
+    compiled = _strict_object(value["compiled"], _COMPILED_REPORT_FIELDS, "evaluation report.compiled", "E_EVALUATION_REPORT")
+    normalized_compiled: dict[str, dict[str, object]] = {}
+    for name in sorted(_COMPILED_REPORT_FIELDS):
+        metric = validate_metric(compiled[name], f"compiled.{name}")
+        # Every compiled measure has a concrete inventory-backed denominator;
+        # a missing variant or empty artifact set is a failure, not N/A.
+        if metric["total"] == 0:
+            raise ContractError("E_EVALUATION_REPORT", f"compiled metric {name} must be measured")
+        normalized_compiled[name] = metric
+
+    advisory = validate_advisory_metrics(value["advisory"])
+    behavior = validate_behavior_result(value["behavior"])
+    if type(value["behavior_required"]) is not bool:
+        raise ContractError("E_EVALUATION_REPORT", "behavior_required must be boolean")
+    compiled_pass = all(
+        metric["status"] == "measured" and metric["basis_points"] == 10_000
+        for metric in normalized_compiled.values()
+    )
+    expected = (
+        "pass"
+        if hard_gate["status"] == "pass"
+        and compiled_pass
+        and (not value["behavior_required"] or behavior["status"] == "pass")
+        else "fail"
+    )
+    if value["status"] != expected:
+        raise ContractError("E_EVALUATION_REPORT", "report status does not match compiled gates")
+
+    result = copy.deepcopy(value)
+    result["compiled"] = normalized_compiled
     result["advisory"] = advisory
     result["behavior"] = behavior
     return result

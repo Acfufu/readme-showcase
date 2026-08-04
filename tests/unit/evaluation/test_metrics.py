@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import tempfile
 import threading
@@ -9,13 +10,89 @@ from pathlib import Path
 from typing import Any
 
 from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes, canonical_sha256, write_canonical_json_atomic
+from skill.scripts.readme_showcase.contracts.evaluation import validate_evaluation_report_v3
 from skill.scripts.readme_showcase.contracts.evidence import build_fact
 from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
 from skill.scripts.readme_showcase.evaluation.contract import validate_advisory_metrics, validate_metric
 from skill.scripts.readme_showcase.evaluation.metrics import compute_advisory_metrics
+from skill.scripts.pipeline_core import evaluate_generated_bundle
+from skill.scripts.readme_showcase.visual_kernel.fingerprint import build_layered_fingerprint
+from tests.contract.test_bundle_v3 import BundleV3ContractTests
 
 
 class AdvisoryMetricTests(unittest.TestCase):
+    @staticmethod
+    def rewrite_gate_noncanonical(
+        root: Path,
+        bundle: dict[str, Any],
+        *,
+        canonical: bool = False,
+        failed: bool = False,
+    ) -> None:
+        gate_path = root / "compiled/gates/en/desktop.json"
+        gate_value = json.loads(gate_path.read_bytes())
+        if failed:
+            gate_value["status"] = "fail"
+            gate_value["diagnostics"] = [{
+                "code": "E_VISUAL_TEXT_FIT",
+                "severity": "error",
+                "path": "$.svg.title",
+                "element_ids": [],
+                "message": "forced gate failure",
+            }]
+        gate_raw = (
+            canonical_json_bytes(gate_value)
+            if canonical
+            else json.dumps(gate_value, separators=(", ", ": ")).encode("utf-8")
+        )
+        gate_path.write_bytes(gate_raw)
+        gate_sha256 = hashlib.sha256(gate_raw).hexdigest()
+
+        inventory = json.loads((root / "compiled/inventory.json").read_bytes())
+        layers = inventory["layers"]
+        gates = copy.deepcopy(layers[4]["records"])
+        timelines = copy.deepcopy(layers[5]["records"])
+        interactions = copy.deepcopy(layers[6]["records"])
+        artifacts = copy.deepcopy(layers[7]["records"])
+        for record in gates:
+            if record["locale"] == "en" and record["variant"] == "desktop":
+                record["sha256"] = gate_sha256
+        for record in timelines:
+            if record["locale"] == "en" and record["variant"] == "desktop":
+                record["prior_sha256"] = gate_sha256
+        for record in artifacts:
+            if record["path"] == "compiled/gates/en/desktop.json":
+                record["sha256"] = gate_sha256
+        reports_prior = canonical_sha256({
+            "gates": gates,
+            "timelines": timelines,
+            "interactions": interactions,
+        })
+        for record in artifacts:
+            record["prior_sha256"] = reports_prior
+        fingerprint = build_layered_fingerprint(
+            layers[0]["sha256"], layers[1]["records"], layers[2]["sha256"],
+            layers[3]["values"], gates, timelines, interactions, artifacts,
+        )
+        inventory_raw = canonical_json_bytes(fingerprint.as_dict())
+        (root / "compiled/inventory.json").write_bytes(inventory_raw)
+        inventory_sha256 = hashlib.sha256(inventory_raw).hexdigest()
+
+        manifest = json.loads((root / "asset-manifest.json").read_bytes())
+        for record in manifest["compiled"]["gates"]:
+            if record["locale"] == "en" and record["variant"] == "desktop":
+                record["sha256"] = gate_sha256
+        for asset in manifest["assets"]:
+            if asset["locale"] == "en" and asset["variant"] == "desktop":
+                asset["gate_sha256"] = gate_sha256
+        manifest["compiled"]["inventory"]["sha256"] = inventory_sha256
+        manifest_raw = canonical_json_bytes(manifest)
+        (root / "asset-manifest.json").write_bytes(manifest_raw)
+
+        bundle["compiled"]["inventory"]["sha256"] = inventory_sha256
+        bundle["compiled"]["fingerprint"] = fingerprint.inventory_sha256
+        bundle["artifacts"]["asset_manifest"]["sha256"] = hashlib.sha256(manifest_raw).hexdigest()
+
     @staticmethod
     def write_inputs(root: Path) -> None:
         source = b"source evidence\n"
@@ -283,6 +360,104 @@ class AdvisoryMetricTests(unittest.TestCase):
             self.assertEqual(len(set(outputs)), 1)
             self.assertEqual(canonical_json_bytes(list(values)), before)
             validate_advisory_metrics(json.loads(outputs[0]))
+
+    def test_compiled_bundle_v3_evaluation_passes_all_hard_measures(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = BundleV3ContractTests("runTest").make_bundle(root)
+            before = {
+                path: (root / path).read_bytes()
+                for path in (
+                    "compiled/inventory.json",
+                    "compiled/gates/en/desktop.json",
+                    "compiled/gates/en/mobile.json",
+                )
+            }
+            first = evaluate_generated_bundle(bundle, root)
+            second = evaluate_generated_bundle(copy.deepcopy(bundle), root)
+            self.assertEqual(first["schema_version"], 3)
+            self.assertEqual(first["status"], "pass")
+            self.assertEqual(first["hard_gate"], {"status": "pass", "findings": []})
+            for name, compiled_metric in first["compiled"].items():
+                with self.subTest(metric=name):
+                    self.assertEqual(compiled_metric["basis_points"], 10_000)
+            self.assertEqual(canonical_json_bytes(first), canonical_json_bytes(second))
+            self.assertEqual(first, validate_evaluation_report_v3(first))
+            self.assertEqual(
+                {path: (root / path).read_bytes() for path in before},
+                before,
+            )
+
+    def test_compiled_bundle_v3_evaluation_fails_closed_for_reader_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = BundleV3ContractTests("runTest").make_bundle(root)
+            stale = copy.deepcopy(bundle)
+            stale["compiled"]["fingerprint"] = "0" * 64
+            report = evaluate_generated_bundle(stale, root)
+            self.assertEqual(report["schema_version"], 3)
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["hard_gate"]["status"], "fail")
+            self.assertEqual(report["hard_gate"]["findings"][0]["code"], "E_VISUAL_FINGERPRINT")
+            self.assertEqual(report, validate_evaluation_report_v3(report))
+
+            missing = copy.deepcopy(bundle)
+            (root / "compiled/scenes/en/mobile.json").unlink()
+            missing_report = evaluate_generated_bundle(missing, root)
+            self.assertEqual(missing_report["status"], "fail")
+            self.assertIn(
+                missing_report["hard_gate"]["findings"][0]["code"],
+                {"E_PATH", "E_VISUAL_FINGERPRINT", "E_VISUAL_PATH"},
+            )
+
+    def test_compiled_bundle_v3_rejects_author_and_gate_byte_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = BundleV3ContractTests("runTest").make_bundle(root)
+
+            invalid_candidate = copy.deepcopy(bundle)
+            invalid_candidate["candidate"]["readmes"][0]["path"] = "missing.md"
+            invalid_report = evaluate_generated_bundle(invalid_candidate, root)
+            self.assertEqual(invalid_report["status"], "fail")
+            self.assertEqual(invalid_report["hard_gate"]["status"], "fail")
+
+            noncanonical = copy.deepcopy(bundle)
+            self.rewrite_gate_noncanonical(root, noncanonical)
+            noncanonical_report = evaluate_generated_bundle(noncanonical, root)
+            self.assertEqual(noncanonical_report["status"], "fail")
+            self.assertIn(
+                "E_VISUAL_DETERMINISM",
+                {item["code"] for item in noncanonical_report["hard_gate"]["findings"]},
+            )
+
+    def test_compiled_bundle_v3_unobserved_behavior_counts_planned_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = BundleV3ContractTests("runTest").make_bundle(root)
+            plan_path = root / "readme-plan.json"
+            plan = json.loads(plan_path.read_bytes())
+            plan["commands"] = ["printf hello"]
+            plan_raw = canonical_json_bytes(plan)
+            plan_path.write_bytes(plan_raw)
+            bundle["artifacts"]["plan"]["sha256"] = hashlib.sha256(plan_raw).hexdigest()
+
+            report = evaluate_generated_bundle(bundle, root)
+            self.assertEqual(report["status"], "pass")
+            self.assertFalse(report["behavior_required"])
+            self.assertEqual(report["behavior"]["total_commands"], 1)
+            self.assertEqual(report["advisory"]["observable_commands"]["total"], 1)
+
+    def test_compiled_bundle_v3_failed_gate_is_a_hard_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = BundleV3ContractTests("runTest").make_bundle(root)
+            self.rewrite_gate_noncanonical(root, bundle, canonical=True, failed=True)
+
+            report = evaluate_generated_bundle(bundle, root)
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["hard_gate"]["status"], "fail")
+            self.assertEqual(report["compiled"]["gate_pass"]["covered"], 1)
+            self.assertEqual(report["compiled"]["gate_pass"]["total"], 2)
 
 
 def _walk(value: Any) -> list[Any]:
