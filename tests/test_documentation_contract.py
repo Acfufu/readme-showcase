@@ -48,10 +48,82 @@ def _assert_visual_kernel_clean(root: Path) -> None:
         raise AssertionError("visual kernel clean-room violations: " + ", ".join(violations))
 
 
+def _assert_public_readme_boundary(text: str) -> None:
+    """Reject stale, copied, or remote-write claims in public README prose."""
+
+    lowered = text.casefold()
+    stale_markers = ("2fb0f2a", "e77c1c3", "19/19", "649/692", "691/692", "711")
+    for marker in stale_markers:
+        if marker.casefold() in lowered:
+            raise AssertionError(f"stale baseline marker in README: {marker}")
+
+    if re.search(
+        r"(?im)(?:^\s*9\s*[.)]\s*(?:`[^`]+`|(?:stage|step|阶段))"
+        r"|\bninth\s+stage\b|\bnine\s+stages?\b|第九阶段|9\s*个阶段)",
+        text,
+    ):
+        raise AssertionError("README must preserve the eight-stage pipeline")
+
+    if re.search(
+        r"(?i)(?:\$TARGET|target/)[^\n`]{0,80}/(?:state/readme-showcase|\.readme-showcase-run-)",
+        text,
+    ) or re.search(
+        r"(?i)/(?:state/readme-showcase|\.readme-showcase-run-)[^\n`]{0,80}(?:\$TARGET|target/)",
+        text,
+    ):
+        raise AssertionError("README state must not be target-adjacent")
+
+    for token in ("archscribe", "rough.js", "roughjs", "lazypay/"):
+        if token in lowered:
+            raise AssertionError(f"copied visual-runtime claim in README: {token}")
+
+    if re.search(
+        r"(?i)\blive(?:[- ](?:providers?|delivery|publication|publish|write))\b"
+        r"|\b(?:browser|production)[- ](?:validated|tested|ready)\b",
+        text,
+    ):
+        raise AssertionError("README must not claim live, browser, or production proof")
+
+
+def _assert_compiled_readme_contract(text: str, *, language: str) -> None:
+    required = (
+        "Plan v3",
+        'diagram_route: "compiled"',
+        "`none`",
+        "`static`",
+        "`elk`",
+        "state/readme-showcase/",
+        "stages/06-bundle-assemble/attempts/<attempt>/compiled/",
+        "desktop",
+        "mobile",
+        "1,200",
+        "900 px",
+        "720",
+        "360 px",
+        "dry-run",
+        "visual-compiler.md",
+    )
+    for marker in required:
+        if marker not in text:
+            raise AssertionError(f"compiled README contract is missing: {marker}")
+    language_markers = {
+        "en": ("deterministic", "eight-stage", "local-only"),
+        "zh": ("确定性的", "八阶段", "单一 README Agent", "只在本地运行"),
+    }
+    for marker in language_markers[language]:
+        if marker not in text:
+            raise AssertionError(f"{language} README contract is missing: {marker}")
+    if language == "en" and re.search(r"one\s+README Agent", text) is None:
+        raise AssertionError("en README contract is missing: one README Agent")
+    _assert_public_readme_boundary(text)
+
+
 class DocumentationContractTests(unittest.TestCase):
     def test_bilingual_readmes_publish_evidence_first_homepage(self) -> None:
         english = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         chinese = (REPO_ROOT / "README_zh.md").read_text(encoding="utf-8")
+        _assert_compiled_readme_contract(english, language="en")
+        _assert_compiled_readme_contract(chinese, language="zh")
         for text in (english, chinese):
             self.assertEqual(text.count("```mermaid"), 0)
             self.assertIn("22", text)
@@ -152,6 +224,20 @@ class DocumentationContractTests(unittest.TestCase):
             (fixture / "vendor").mkdir()
             with self.assertRaises(AssertionError):
                 _assert_visual_kernel_clean(fixture)
+
+    def test_public_readme_negative_contract_rejects_boundary_mutations(self) -> None:
+        baseline = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        mutations = {
+            "stale_baseline": "\nThis page still reports baseline 2fb0f2a.\n",
+            "ninth_stage": "\n9. `publish`\n",
+            "target_adjacent_state": "\nRun state: $TARGET/.readme-showcase-run-bad/\n",
+            "copied_archscribe_claim": "\nArchscribe output is production-ready.\n",
+            "live_write": "\nThe compiled route writes to live providers.\n",
+        }
+        for name, injection in mutations.items():
+            with self.subTest(mutation=name):
+                with self.assertRaises(AssertionError):
+                    _assert_public_readme_boundary(baseline + injection)
 
 
 if __name__ == "__main__":

@@ -102,7 +102,10 @@ override.
 Central state is durable recovery data, not scratch space. The orchestrator
 creates no per-run virtual environment and removes preview temporary files
 before returning; immutable run attempts remain until an operator applies a
-separate retention policy.
+separate retention policy. When Plan v3 opts into `diagram_route: "compiled"`,
+its Stage 6 outputs stay in the immutable
+`stages/06-bundle-assemble/attempts/<attempt>/compiled/` directory inside that
+central workspace, outside the target repository.
 
 The 13 CLI surfaces divide cleanly:
 
@@ -129,6 +132,16 @@ visual sources, evaluation output, and preview files beside the candidate.
   beside the derived GIF.
 - Vendored ELK uses exact Node `22.22.3`; no `node_modules`, Docker, credentials,
   or runtime download is required.
+- Compiled diagrams are an opt-in Plan v3 route (`diagram_route: "compiled"`).
+  The existing `none`, `static`, and `elk` routes, eight-stage order, and one
+  README Agent remain compatible; see [`visual-compiler.md`](skill/references/visual-compiler.md).
+- Compiled local previews emit deterministic static SVG and independent
+  `desktop`/`mobile` projections. Desktop uses a 1,200-wide viewBox checked at
+  900 px; mobile is planned independently at most 720 wide and checked at
+  360 px.
+- `preview`, `build-pr-bundle`, and delivery `--dry-run` are local-only. They
+  do not push, open a pull request, publish, or call an external provider;
+  remote writes still require separate explicit approval.
 
 </details>
 

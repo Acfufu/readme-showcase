@@ -96,7 +96,9 @@ python3 skill/scripts/readme_pipeline.py preview
 
 中央状态属于可恢复的持久数据，不是临时垃圾。编排器不会创建每次运行专属的
 虚拟环境，并会在返回前删除预览临时文件；不可变运行记录会保留，直到运维方另行
-制定并执行保留策略。
+制定并执行保留策略。Plan v3 选择 `diagram_route: "compiled"` 时，Stage 6
+产物会留在该中央工作区内不可变的
+`stages/06-bundle-assemble/attempts/<attempt>/compiled/` 目录，并位于目标仓库之外。
 
 13 个 CLI 表面按职责分组：
 
@@ -120,6 +122,14 @@ python3 skill/scripts/readme_pipeline.py preview
 - 已验收 ELK 字节不做后编辑；不一致时保留最近一次可靠资产。
 - GIF 从已批准 SVG 生成；motion JSON 和 SVG 与派生 GIF 并存。
 - 内置 ELK 精确使用 Node `22.22.3`；不需要 `node_modules`、Docker、凭据或运行时下载。
+- 编译图形是显式可选的 Plan v3 路线（`diagram_route: "compiled"`）。既有
+  `none`、`static`、`elk` 路线、八阶段顺序和单一 README Agent 保持兼容；详见
+  [`visual-compiler.md`](skill/references/visual-compiler.md)。
+- 编译本地预览输出确定性的静态 SVG，以及独立规划的 `desktop`/`mobile` 投影。
+  Desktop 使用宽度 1,200 的 viewBox 并在 900 px 检查；mobile 独立规划且最多宽
+  720，在 360 px 检查。
+- `preview`、`build-pr-bundle` 与交付 `--dry-run` 只在本地运行；不会推送、打开
+  Pull Request、发布或调用外部服务。远端写入仍需另行明确批准。
 
 </details>
 
