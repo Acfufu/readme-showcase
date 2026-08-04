@@ -59,7 +59,8 @@ _COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}\Z")
 _SCHEME_RE = re.compile(r"(?i)(?:^|[^a-z0-9_])(?:https?|ftp|file|data|javascript|mailto):")
 _PATH_FIELD_NAMES = frozenset({"file", "files", "href", "path", "src", "url", "urls"})
 _RESOURCE_FIELD_NAMES = frozenset(
-    {"asset", "assets", "css", "font", "fonts", "icon", "icons", "import", "script", "scripts"}
+    {"asset", "assets", "css", "font", "fonts", "icon", "icons",
+     "import", "script", "scripts"}
 )
 _GEOMETRY_FIELD_NAMES = frozenset(
     {"coordinate", "coordinates", "height", "view_box", "viewbox", "width", "x", "y"}
