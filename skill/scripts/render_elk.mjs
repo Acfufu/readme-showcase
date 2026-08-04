@@ -20,6 +20,7 @@ const MAX_INPUT_BYTES = 256 * 1024;
 const MAX_ENGINE_BYTES = 2 * 1024 * 1024;
 const MAX_METADATA_BYTES = 64 * 1024;
 const MAX_SVG_BYTES = 2 * 1024 * 1024;
+const MAX_GEOMETRY_BYTES = 2 * 1024 * 1024;
 const MAX_PROCESS_BYTES = 1024 * 1024;
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const VENDOR_ROOT = resolve(SCRIPT_DIR, "../vendor/elkjs");
@@ -29,7 +30,7 @@ const LICENSE_PATH = join(VENDOR_ROOT, "LICENSE.md");
 const HELP = `Usage:
   node skill/scripts/render_elk.mjs \\
     --input RUN_DIR/diagram.diagram.json \\
-    --output RUN_DIR/diagram.svg \\
+    (--output RUN_DIR/diagram.svg | --geometry RUN_DIR/diagram.geometry.json) \\
     --metadata RUN_DIR/diagram.engine.json
 
 Exit codes:
@@ -490,6 +491,345 @@ function renderSvg(layout, input) {
   return Buffer.from(output.join("\n"), "utf8");
 }
 
+function geometryCoordinate(value, context) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 20_000) {
+    fail("E_OUTPUT_GEOMETRY", `${context} must be a finite non-negative number at most 20000`);
+  }
+  return value;
+}
+
+function geometryInteger(value, context) {
+  const checked = geometryCoordinate(value, context);
+  const rounded = Math.round(checked);
+  if (!Number.isFinite(rounded) || rounded < 0 || rounded > 20_000) {
+    fail("E_OUTPUT_GEOMETRY", `${context} is outside the geometry bounds`);
+  }
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+function encodedGeometryInteger(value, context) {
+  if (typeof value !== "number" || !Number.isInteger(value) || !Number.isFinite(value) || value < 0 || value > 20_000) {
+    fail("E_OUTPUT_GEOMETRY", `${context} must be a bounded integer`);
+  }
+  return value;
+}
+
+function compareIds(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function geometryPoint(point, offsetX, offsetY, context) {
+  if (!point || typeof point !== "object" || Array.isArray(point)) {
+    fail("E_OUTPUT_GEOMETRY", `${context} is required`);
+  }
+  const x = geometryCoordinate(point.x, `${context}.x`);
+  const y = geometryCoordinate(point.y, `${context}.y`);
+  return {
+    x: geometryInteger(offsetX + x, `${context}.x`),
+    y: geometryInteger(offsetY + y, `${context}.y`),
+  };
+}
+
+function geometryEngineIdentity(rendererRaw) {
+  return {
+    engine_kind: "elk",
+    package_name: "elkjs",
+    package_version: ELK_VERSION,
+    package_sha256: PACKAGE_SHA256,
+    module_sha256: MODULE_SHA256,
+    node_version: process.versions.node,
+    renderer_sha256: sha256(rendererRaw),
+  };
+}
+
+function renderGeometry(layout, input, rendererRaw) {
+  if (!layout || typeof layout !== "object" || Array.isArray(layout)) {
+    fail("E_OUTPUT_GEOMETRY", "ELK returned no layout");
+  }
+  const canvas = {
+    width: geometryInteger(layout.width, "canvas.width"),
+    height: geometryInteger(layout.height, "canvas.height"),
+  };
+  if (!Array.isArray(layout.children)) fail("E_OUTPUT_GEOMETRY", "layout.children is required");
+
+  const groupById = new Map(input.groups.map((item) => [item.id, item]));
+  const nodeById = new Map(input.nodes.map((item) => [item.id, item]));
+  const groups = [];
+  const nodes = [];
+  const ports = [];
+  const positions = new Map([["root", { x: 0, y: 0 }]]);
+  const seenGroups = new Set();
+  const seenNodes = new Set();
+  const seenPorts = new Set();
+
+  function walk(children, parentX, parentY, parentId) {
+    if (!Array.isArray(children)) fail("E_OUTPUT_GEOMETRY", "layout.children must be an array");
+    for (const child of children) {
+      if (!child || typeof child !== "object" || Array.isArray(child) || typeof child.id !== "string") {
+        fail("E_OUTPUT_GEOMETRY", "laid-out element id is required");
+      }
+      const localX = geometryCoordinate(child.x, `${child.id}.x`);
+      const localY = geometryCoordinate(child.y, `${child.id}.y`);
+      const x = parentX + localX;
+      const y = parentY + localY;
+      const position = { x, y };
+      positions.set(child.id, position);
+      if (groupById.has(child.id)) {
+        const semantic = groupById.get(child.id);
+        if (seenGroups.has(child.id) || semantic.parent_id !== parentId) {
+          fail("E_OUTPUT_GEOMETRY", `group ${child.id} does not preserve semantic containment`);
+        }
+        seenGroups.add(child.id);
+        groups.push({
+          id: semantic.id,
+          parent_id: semantic.parent_id,
+          x: geometryInteger(x, `${child.id}.x`),
+          y: geometryInteger(y, `${child.id}.y`),
+          width: geometryInteger(child.width, `${child.id}.width`),
+          height: geometryInteger(child.height, `${child.id}.height`),
+        });
+        walk(child.children ?? [], x, y, child.id);
+      } else if (nodeById.has(child.id)) {
+        const semantic = nodeById.get(child.id);
+        if (seenNodes.has(child.id) || semantic.group_id !== parentId) {
+          fail("E_OUTPUT_GEOMETRY", `node ${child.id} does not preserve semantic containment`);
+        }
+        seenNodes.add(child.id);
+        nodes.push({
+          id: semantic.id,
+          parent_id: semantic.group_id,
+          x: geometryInteger(x, `${child.id}.x`),
+          y: geometryInteger(y, `${child.id}.y`),
+          width: geometryInteger(child.width, `${child.id}.width`),
+          height: geometryInteger(child.height, `${child.id}.height`),
+        });
+        if (child.children !== undefined && (!Array.isArray(child.children) || child.children.length > 0)) {
+          fail("E_OUTPUT_GEOMETRY", `node ${child.id} has unexpected children`);
+        }
+        if (child.ports === undefined) continue;
+        if (!Array.isArray(child.ports)) fail("E_OUTPUT_GEOMETRY", `${child.id}.ports must be an array`);
+        for (const port of child.ports) {
+          if (!port || typeof port !== "object" || Array.isArray(port) || typeof port.id !== "string") {
+            fail("E_OUTPUT_GEOMETRY", `${child.id} port id is required`);
+          }
+          if (seenPorts.has(port.id)) fail("E_OUTPUT_GEOMETRY", `port ${port.id} is duplicated`);
+          seenPorts.add(port.id);
+          const portX = geometryCoordinate(port.x, `${port.id}.x`);
+          const portY = geometryCoordinate(port.y, `${port.id}.y`);
+          ports.push({
+            id: port.id,
+            node_id: semantic.id,
+            x: geometryInteger(x + portX, `${port.id}.x`),
+            y: geometryInteger(y + portY, `${port.id}.y`),
+            width: geometryInteger(port.width, `${port.id}.width`),
+            height: geometryInteger(port.height, `${port.id}.height`),
+          });
+        }
+      } else {
+        fail("E_OUTPUT_GEOMETRY", `unknown laid-out element ${child.id}`);
+      }
+    }
+  }
+
+  walk(layout.children, 0, 0, null);
+  if (seenGroups.size !== input.groups.length || seenNodes.size !== input.nodes.length) {
+    fail("E_OUTPUT_GEOMETRY", "ELK omitted a semantic group or node");
+  }
+
+  if (!Array.isArray(layout.edges)) fail("E_OUTPUT_GEOMETRY", "layout.edges is required");
+  const expectedEdges = input.edges.map((_, index) => `edge-${index}`);
+  const edges = [];
+  const seenEdges = new Set();
+  for (const edge of layout.edges) {
+    if (!edge || typeof edge !== "object" || Array.isArray(edge) || typeof edge.id !== "string") {
+      fail("E_OUTPUT_GEOMETRY", "laid-out edge id is required");
+    }
+    if (!expectedEdges.includes(edge.id) || seenEdges.has(edge.id)) {
+      fail("E_OUTPUT_GEOMETRY", `edge ${edge.id} is not a semantic edge`);
+    }
+    seenEdges.add(edge.id);
+    if (!Array.isArray(edge.sections) || edge.sections.length === 0) {
+      fail("E_OUTPUT_GEOMETRY", `edge ${edge.id} has no sections`);
+    }
+    const offset = positions.get(edge.container ?? "root");
+    if (!offset) fail("E_OUTPUT_GEOMETRY", `edge ${edge.id} has an unknown container`);
+    const sections = edge.sections.map((section, index) => {
+      if (!section || typeof section !== "object" || Array.isArray(section)) {
+        fail("E_OUTPUT_GEOMETRY", `edge ${edge.id} section ${index} is required`);
+      }
+      if (!Array.isArray(section.bendPoints ?? [])) {
+        fail("E_OUTPUT_GEOMETRY", `edge ${edge.id} section ${index}.bendPoints must be an array`);
+      }
+      return {
+        start: geometryPoint(section.startPoint, offset.x, offset.y, `edge ${edge.id} section ${index}.start`),
+        bends: (section.bendPoints ?? []).map((point, pointIndex) => geometryPoint(
+          point,
+          offset.x,
+          offset.y,
+          `edge ${edge.id} section ${index}.bend${pointIndex}`,
+        )),
+        end: geometryPoint(section.endPoint, offset.x, offset.y, `edge ${edge.id} section ${index}.end`),
+      };
+    });
+    edges.push({ id: edge.id, sections });
+  }
+  if (seenEdges.size !== expectedEdges.length) fail("E_OUTPUT_GEOMETRY", "ELK omitted a semantic edge");
+
+  groups.sort((left, right) => compareIds(left.id, right.id));
+  nodes.sort((left, right) => compareIds(left.id, right.id));
+  ports.sort((left, right) => compareIds(left.id, right.id));
+  edges.sort((left, right) => compareIds(left.id, right.id));
+  return {
+    schema_version: 1,
+    engine: geometryEngineIdentity(rendererRaw),
+    canvas,
+    groups,
+    nodes,
+    ports,
+    edges,
+  };
+}
+
+const GEOMETRY_FIELDS = new Set(["schema_version", "engine", "canvas", "groups", "nodes", "ports", "edges"]);
+const GEOMETRY_ENGINE_FIELDS = new Set([
+  "engine_kind",
+  "package_name",
+  "package_version",
+  "package_sha256",
+  "module_sha256",
+  "node_version",
+  "renderer_sha256",
+]);
+const GEOMETRY_CANVAS_FIELDS = new Set(["width", "height"]);
+const GEOMETRY_GROUP_FIELDS = new Set(["id", "parent_id", "x", "y", "width", "height"]);
+const GEOMETRY_NODE_FIELDS = new Set(["id", "parent_id", "x", "y", "width", "height"]);
+const GEOMETRY_PORT_FIELDS = new Set(["id", "node_id", "x", "y", "width", "height"]);
+const GEOMETRY_EDGE_FIELDS = new Set(["id", "sections"]);
+const GEOMETRY_SECTION_FIELDS = new Set(["start", "bends", "end"]);
+const GEOMETRY_POINT_FIELDS = new Set(["x", "y"]);
+
+function geometryObject(value, fields, context) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    fail("E_OUTPUT_GEOMETRY", `${context} must be an object`);
+  }
+  if (Object.keys(value).some((field) => !fields.has(field)) || [...fields].some((field) => !(field in value))) {
+    fail("E_OUTPUT_GEOMETRY", `${context} has an invalid field set`);
+  }
+  return value;
+}
+
+function validateGeometry(raw, input, expectedRendererSha256) {
+  if (!Buffer.isBuffer(raw) || raw.length < 1 || raw.length > MAX_GEOMETRY_BYTES) {
+    fail("E_OUTPUT_GEOMETRY", "geometry exceeds byte contract");
+  }
+  const text = raw.toString("utf8");
+  if (Buffer.byteLength(text, "utf8") !== raw.length || text.includes("\uFFFD")) {
+    fail("E_OUTPUT_GEOMETRY", "geometry must be valid UTF-8");
+  }
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    fail("E_OUTPUT_GEOMETRY", "geometry is not valid JSON");
+  }
+  if (canonical(value) + "\n" !== text) fail("E_OUTPUT_GEOMETRY", "geometry must be canonical JSON");
+  geometryObject(value, GEOMETRY_FIELDS, "geometry");
+  if (value.schema_version !== 1) fail("E_OUTPUT_GEOMETRY", "geometry.schema_version must be 1");
+  const engine = geometryObject(value.engine, GEOMETRY_ENGINE_FIELDS, "geometry.engine");
+  if (
+    engine.engine_kind !== "elk"
+    || engine.package_name !== "elkjs"
+    || engine.package_version !== ELK_VERSION
+    || engine.package_sha256 !== PACKAGE_SHA256
+    || engine.module_sha256 !== MODULE_SHA256
+    || engine.node_version !== NODE_VERSION
+    || engine.renderer_sha256 !== expectedRendererSha256
+  ) {
+    fail("E_OUTPUT_GEOMETRY", "geometry engine identity does not match the pinned adapter");
+  }
+  const canvas = geometryObject(value.canvas, GEOMETRY_CANVAS_FIELDS, "geometry.canvas");
+  encodedGeometryInteger(canvas.width, "geometry.canvas.width");
+  encodedGeometryInteger(canvas.height, "geometry.canvas.height");
+
+  const groupIds = new Set(input.groups.map((item) => item.id));
+  const nodeIds = new Set(input.nodes.map((item) => item.id));
+  const groupParents = new Map(input.groups.map((item) => [item.id, item.parent_id]));
+  const nodeParents = new Map(input.nodes.map((item) => [item.id, item.group_id]));
+  const checkRect = (item, fields, context, parentField, allowedParents) => {
+    geometryObject(item, fields, context);
+    if (typeof item.id !== "string") fail("E_OUTPUT_GEOMETRY", `${context}.id is required`);
+    if (item[parentField] !== null && !allowedParents.has(item[parentField])) {
+      fail("E_OUTPUT_GEOMETRY", `${context}.${parentField} is unknown`);
+    }
+    encodedGeometryInteger(item.x, `${context}.x`);
+    encodedGeometryInteger(item.y, `${context}.y`);
+    encodedGeometryInteger(item.width, `${context}.width`);
+    encodedGeometryInteger(item.height, `${context}.height`);
+  };
+  if (!Array.isArray(value.groups) || !Array.isArray(value.nodes) || !Array.isArray(value.ports) || !Array.isArray(value.edges)) {
+    fail("E_OUTPUT_GEOMETRY", "geometry arrays are required");
+  }
+  const validateSortedUnique = (items, context) => {
+    const ids = items.map((item, index) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        fail("E_OUTPUT_GEOMETRY", `${context}[${index}] must be an object`);
+      }
+      return item.id;
+    });
+    if (ids.some((id) => typeof id !== "string") || new Set(ids).size !== ids.length) {
+      fail("E_OUTPUT_GEOMETRY", `${context} IDs must be unique`);
+    }
+    const sorted = [...ids].sort(compareIds);
+    if (canonical(ids) !== canonical(sorted)) fail("E_OUTPUT_GEOMETRY", `${context} must be sorted by ID`);
+    return new Set(ids);
+  };
+  const actualGroupIds = validateSortedUnique(value.groups, "geometry.groups");
+  const actualNodeIds = validateSortedUnique(value.nodes, "geometry.nodes");
+  const actualPortIds = validateSortedUnique(value.ports, "geometry.ports");
+  const actualEdgeIds = validateSortedUnique(value.edges, "geometry.edges");
+  if (canonical([...actualGroupIds].sort()) !== canonical([...groupIds].sort()) || canonical([...actualNodeIds].sort()) !== canonical([...nodeIds].sort())) {
+    fail("E_OUTPUT_GEOMETRY", "geometry omitted or changed semantic IDs");
+  }
+  for (const item of value.groups) {
+    checkRect(item, GEOMETRY_GROUP_FIELDS, `geometry.groups.${item.id}`, "parent_id", groupIds);
+    if (groupParents.get(item.id) !== item.parent_id) fail("E_OUTPUT_GEOMETRY", `geometry group ${item.id} changed parent_id`);
+  }
+  for (const item of value.nodes) {
+    checkRect(item, GEOMETRY_NODE_FIELDS, `geometry.nodes.${item.id}`, "parent_id", groupIds);
+    if (nodeParents.get(item.id) !== item.parent_id) fail("E_OUTPUT_GEOMETRY", `geometry node ${item.id} changed parent_id`);
+  }
+  for (const item of value.ports) {
+    geometryObject(item, GEOMETRY_PORT_FIELDS, `geometry.ports.${item.id}`);
+    if (typeof item.id !== "string" || !nodeIds.has(item.node_id)) fail("E_OUTPUT_GEOMETRY", "geometry port identity is invalid");
+    encodedGeometryInteger(item.x, `geometry.ports.${item.id}.x`);
+    encodedGeometryInteger(item.y, `geometry.ports.${item.id}.y`);
+    encodedGeometryInteger(item.width, `geometry.ports.${item.id}.width`);
+    encodedGeometryInteger(item.height, `geometry.ports.${item.id}.height`);
+  }
+  const expectedEdgeIds = input.edges.map((_, index) => `edge-${index}`).sort(compareIds);
+  if (canonical([...actualEdgeIds].sort()) !== canonical(expectedEdgeIds)) fail("E_OUTPUT_GEOMETRY", "geometry omitted or changed semantic edges");
+  for (const edge of value.edges) {
+    geometryObject(edge, GEOMETRY_EDGE_FIELDS, `geometry.edges.${edge.id}`);
+    if (!Array.isArray(edge.sections) || edge.sections.length === 0) fail("E_OUTPUT_GEOMETRY", `geometry edge ${edge.id} has no sections`);
+    for (const section of edge.sections) {
+      geometryObject(section, GEOMETRY_SECTION_FIELDS, `geometry.edges.${edge.id}.section`);
+      geometryObject(section.start, GEOMETRY_POINT_FIELDS, "geometry edge start");
+      geometryObject(section.end, GEOMETRY_POINT_FIELDS, "geometry edge end");
+      encodedGeometryInteger(section.start.x, "geometry edge start.x");
+      encodedGeometryInteger(section.start.y, "geometry edge start.y");
+      encodedGeometryInteger(section.end.x, "geometry edge end.x");
+      encodedGeometryInteger(section.end.y, "geometry edge end.y");
+      if (!Array.isArray(section.bends)) fail("E_OUTPUT_GEOMETRY", "geometry edge bends must be an array");
+      for (const bend of section.bends) {
+        geometryObject(bend, GEOMETRY_POINT_FIELDS, "geometry edge bend");
+        encodedGeometryInteger(bend.x, "geometry edge bend.x");
+        encodedGeometryInteger(bend.y, "geometry edge bend.y");
+      }
+    }
+  }
+  return value;
+}
+
 function decodeXml(value) {
   return value
     .replaceAll("&lt;", "<")
@@ -709,9 +1049,11 @@ async function syncDirectory(snapshot) {
   await assertDirectoryIdentity(snapshot);
 }
 
-async function validateOutputPaths(inputPath, outputPath, metadataPath) {
-  const outputParent = await safeDirectory(dirname(outputPath), "E_OUTPUT_PATH", 2);
-  const metadataParent = await safeDirectory(dirname(metadataPath), "E_OUTPUT_PATH", 2);
+async function validateOutputPaths(inputPath, outputPath, metadataPath, geometry = false) {
+  const outputCode = geometry ? "E_OUTPUT_GEOMETRY" : "E_OUTPUT_PATH";
+  const runCode = geometry ? "E_RUN_PATH" : "E_OUTPUT_PATH";
+  const outputParent = await safeDirectory(dirname(outputPath), runCode, 2);
+  const metadataParent = await safeDirectory(dirname(metadataPath), runCode, 2);
   const inputParent = await safeDirectory(dirname(inputPath), "E_INPUT_PATH", 2);
   if (
     outputParent.realPath !== metadataParent.realPath
@@ -719,15 +1061,15 @@ async function validateOutputPaths(inputPath, outputPath, metadataPath) {
     || !sameDirectoryIdentity(outputParent.identity, metadataParent.identity)
     || !sameDirectoryIdentity(outputParent.identity, inputParent.identity)
   ) {
-    fail("E_OUTPUT_PATH", "input, output, and metadata must share one real run root", 2);
+    fail(runCode, "input, output, and metadata must share one real run root", 2);
   }
   const outputName = basename(outputPath);
   const metadataName = basename(metadataPath);
   if (!outputName || !metadataName || outputName === metadataName) {
-    fail("E_OUTPUT_PATH", "output and metadata must be distinct files", 2);
+    fail(runCode, "output and metadata must be distinct files", 2);
   }
-  await validateDestination(outputParent.realPath, outputName, "E_OUTPUT_PATH", 2);
-  await validateDestination(metadataParent.realPath, metadataName, "E_OUTPUT_PATH", 2);
+  await validateDestination(outputParent.realPath, outputName, outputCode, 2);
+  await validateDestination(metadataParent.realPath, metadataName, outputCode, 2);
   return {
     inputPath: join(inputParent.realPath, basename(inputPath)),
     outputPath: join(outputParent.realPath, outputName),
@@ -739,19 +1081,19 @@ async function validateOutputPaths(inputPath, outputPath, metadataPath) {
   };
 }
 
-async function validateSingleOutput(path, runRoot = null) {
-  const parent = await safeDirectory(dirname(path), "E_OUTPUT_PATH", 1);
+async function validateSingleOutput(path, runRoot = null, outputCode = "E_OUTPUT_PATH", runCode = outputCode) {
+  const parent = await safeDirectory(dirname(path), runCode, 1);
   if (runRoot !== null) {
-    await assertDirectoryIdentity(runRoot);
+    await assertDirectoryIdentity(runRoot, runCode, 1);
     if (
       parent.realPath !== runRoot.path
       || !sameDirectoryIdentity(parent.identity, runRoot.identity)
     ) {
-      fail("E_OUTPUT_PATH", "destination escaped its real run root");
+      fail(runCode, "destination escaped its real run root");
     }
   }
   const name = basename(path);
-  await validateDestination(parent.realPath, name, "E_OUTPUT_PATH", 1);
+  await validateDestination(parent.realPath, name, outputCode, 1);
   return {
     path: join(parent.realPath, name),
     runRoot: runRoot ?? { path: parent.realPath, identity: parent.identity },
@@ -759,7 +1101,7 @@ async function validateSingleOutput(path, runRoot = null) {
 }
 
 function parseArguments(raw, worker = false) {
-  const allowed = new Set(["--input", "--output", "--metadata", ...(worker ? ["--worker-output"] : [])]);
+  const allowed = new Set(["--input", "--output", "--geometry", "--metadata", ...(worker ? ["--worker-output"] : [])]);
   const values = {};
   for (let index = 0; index < raw.length; index += 2) {
     const key = raw[index];
@@ -769,14 +1111,17 @@ function parseArguments(raw, worker = false) {
     }
     values[key] = value;
   }
-  for (const key of allowed) {
+  for (const key of ["--input", "--metadata", ...(worker ? ["--worker-output"] : [])]) {
     if (!(key in values)) fail("E_USAGE", `${key} is required`, 2);
+  }
+  if (("--output" in values) === ("--geometry" in values)) {
+    fail("E_USAGE", "exactly one of --output or --geometry is required", 2);
   }
   return values;
 }
 
-async function atomicWrite(path, raw, runRoot = null, previousRaw = undefined) {
-  const destination = await validateSingleOutput(path, runRoot);
+async function atomicWrite(path, raw, runRoot = null, previousRaw = undefined, outputCode = "E_OUTPUT_PATH", runCode = outputCode) {
+  const destination = await validateSingleOutput(path, runRoot, outputCode, runCode);
   const parent = destination.runRoot;
   const name = basename(destination.path);
   const temporary = join(parent.path, `.${name}.tmp-${process.pid}-${Date.now()}`);
@@ -790,6 +1135,7 @@ async function atomicWrite(path, raw, runRoot = null, previousRaw = undefined) {
     } finally {
       await handle.close();
     }
+    if (outputCode !== "E_OUTPUT_PATH") await validateDestination(parent.path, name, outputCode);
     await assertDirectoryIdentity(parent);
     await validateDestination(parent.path, name, "E_OUTPUT_PATH");
     await assertDirectoryIdentity(parent);
@@ -806,7 +1152,7 @@ async function atomicWrite(path, raw, runRoot = null, previousRaw = undefined) {
           await rm(restorePath, { force: true });
           await syncDirectory(recovered);
         } else {
-          await atomicWrite(restorePath, previousRaw, recovered);
+          await atomicWrite(restorePath, previousRaw, recovered, undefined, outputCode, runCode);
         }
       } catch {
         // Keep original error; pair-level rollback reports if restoration failed.
@@ -818,12 +1164,12 @@ async function atomicWrite(path, raw, runRoot = null, previousRaw = undefined) {
   }
 }
 
-async function readExisting(path, maximum, runRoot = null) {
-  const destination = await validateSingleOutput(path, runRoot);
-  await assertDirectoryIdentity(destination.runRoot);
+async function readExisting(path, maximum, runRoot = null, outputCode = "E_OUTPUT_PATH", runCode = outputCode) {
+  const destination = await validateSingleOutput(path, runRoot, outputCode, runCode);
+  await assertDirectoryIdentity(destination.runRoot, runCode, 1);
   try {
     const previous = await readBounded(destination.path, maximum, "E_ATOMIC_WRITE");
-    await assertDirectoryIdentity(destination.runRoot);
+    await assertDirectoryIdentity(destination.runRoot, runCode, 1);
     return previous;
   } catch (error) {
     if (error instanceof AdapterError && error.message.endsWith(" is unavailable")) return null;
@@ -831,20 +1177,24 @@ async function readExisting(path, maximum, runRoot = null) {
   }
 }
 
-async function atomicWritePair(outputPath, outputRaw, metadataPath, metadataRaw, runRoot) {
-  await assertDirectoryIdentity(runRoot);
+async function atomicWritePair(outputPath, outputRaw, metadataPath, metadataRaw, runRoot, options = {}) {
+  const outputCode = options.outputCode ?? "E_OUTPUT_PATH";
+  const runCode = options.runCode ?? outputCode;
+  const metadataCode = options.metadataCode ?? outputCode;
+  const metadataRunCode = options.metadataRunCode ?? runCode;
+  await assertDirectoryIdentity(runRoot, runCode, 1);
   const [previousOutput, previousMetadata] = await Promise.all([
-    readExisting(outputPath, MAX_SVG_BYTES, runRoot),
-    readExisting(metadataPath, MAX_METADATA_BYTES, runRoot),
+    readExisting(outputPath, options.outputMaximum ?? MAX_SVG_BYTES, runRoot, outputCode, runCode),
+    readExisting(metadataPath, MAX_METADATA_BYTES, runRoot, metadataCode, metadataRunCode),
   ]);
-  await assertDirectoryIdentity(runRoot);
+  await assertDirectoryIdentity(runRoot, runCode, 1);
   let outputWritten = false;
   try {
-    await atomicWrite(outputPath, outputRaw, runRoot, previousOutput);
+    await atomicWrite(outputPath, outputRaw, runRoot, previousOutput, outputCode, runCode);
     outputWritten = true;
-    await assertDirectoryIdentity(runRoot);
-    await atomicWrite(metadataPath, metadataRaw, runRoot, previousMetadata);
-    await assertDirectoryIdentity(runRoot);
+    await assertDirectoryIdentity(runRoot, runCode, 1);
+    await atomicWrite(metadataPath, metadataRaw, runRoot, previousMetadata, metadataCode, metadataRunCode);
+    await assertDirectoryIdentity(runRoot, runCode, 1);
   } catch (error) {
     if (outputWritten) {
       try {
@@ -854,9 +1204,16 @@ async function atomicWritePair(outputPath, outputRaw, metadataPath, metadataRaw,
           await rm(outputDestination, { force: true });
           await syncDirectory(recovered);
         }
-        else await atomicWrite(outputDestination, previousOutput, recovered);
+        else await atomicWrite(outputDestination, previousOutput, recovered, undefined, outputCode, runCode);
         if (previousMetadata !== null) {
-          await atomicWrite(join(recovered.path, basename(metadataPath)), previousMetadata, recovered);
+          await atomicWrite(
+            join(recovered.path, basename(metadataPath)),
+            previousMetadata,
+            recovered,
+            undefined,
+            metadataCode,
+            metadataRunCode,
+          );
         }
         await syncDirectory(recovered);
       } catch {
@@ -894,9 +1251,17 @@ async function runWorker(args) {
     } catch (error) {
       fail("E_ENGINE_RENDER", `ELK layout failed: ${error instanceof Error ? error.message : "unknown error"}`);
     }
-    const rawSvg = renderSvg(layout, input);
-    validateSvg(rawSvg, input, true);
-    await atomicWrite(outputDestination.path, rawSvg, outputDestination.runRoot);
+    if (args["--geometry"] !== undefined) {
+      const rendererRaw = await readBounded(fileURLToPath(import.meta.url), MAX_ENGINE_BYTES, "E_ENGINE_IDENTITY");
+      const geometry = renderGeometry(layout, input, rendererRaw);
+      const rawGeometry = Buffer.from(`${canonical(geometry)}\n`, "utf8");
+      validateGeometry(rawGeometry, input, geometry.engine.renderer_sha256);
+      await atomicWrite(outputDestination.path, rawGeometry, outputDestination.runRoot);
+    } else {
+      const rawSvg = renderSvg(layout, input);
+      validateSvg(rawSvg, input, true);
+      await atomicWrite(outputDestination.path, rawSvg, outputDestination.runRoot);
+    }
   } finally {
     await rm(vendorSnapshot, { recursive: true, force: true });
   }
@@ -905,11 +1270,12 @@ async function runWorker(args) {
 async function runIsolatedWorker(args, outputPath) {
   const script = resolve(process.argv[1]);
   const work = await mkdtemp(join(tmpdir(), "readme-showcase-elk-"));
+  const mode = args["--geometry"] !== undefined ? "--geometry" : "--output";
   const childArgs = [
     script,
     "--worker",
     "--input", args["--input"],
-    "--output", args["--output"],
+    mode, args[mode],
     "--metadata", args["--metadata"],
     "--worker-output", outputPath,
   ];
@@ -958,15 +1324,17 @@ function workerFailure(result) {
 }
 
 async function runController(args) {
+  const geometry = args["--geometry"] !== undefined;
+  const artifactArgument = geometry ? args["--geometry"] : args["--output"];
   const [inputPath, outputPath, metadataPath] = await Promise.all([
     canonicalPath(args["--input"]),
-    canonicalPath(args["--output"]),
+    canonicalPath(artifactArgument),
     canonicalPath(args["--metadata"]),
   ]);
   if (new Set([inputPath, outputPath, metadataPath]).size !== 3) {
     fail("E_USAGE", "input, output, and metadata must be distinct files in one directory", 2);
   }
-  const paths = await validateOutputPaths(inputPath, outputPath, metadataPath);
+  const paths = await validateOutputPaths(inputPath, outputPath, metadataPath, geometry);
   const [{ raw: inputRaw, value: rawInput }] = await Promise.all([
     parseJson(paths.inputPath, MAX_INPUT_BYTES, "E_INPUT_SCHEMA"),
     verifyEngine(),
@@ -977,21 +1345,26 @@ async function runController(args) {
     const snapshotInput = join(work, "input.json");
     await writeFile(snapshotInput, inputRaw, { flag: "wx", mode: 0o600 });
     const snapshotArgs = { ...args, "--input": snapshotInput };
-    const firstPath = join(work, "first.svg");
-    const secondPath = join(work, "second.svg");
+    const firstPath = join(work, geometry ? "first.geometry.json" : "first.svg");
+    const secondPath = join(work, geometry ? "second.geometry.json" : "second.svg");
     const first = await runIsolatedWorker(snapshotArgs, firstPath);
     if (first.code !== 0) throw workerFailure(first);
     const second = await runIsolatedWorker(snapshotArgs, secondPath);
     if (second.code !== 0) throw workerFailure(second);
     const [firstRaw, secondRaw] = await Promise.all([
-      readBounded(firstPath, MAX_SVG_BYTES, "E_SVG_UNSAFE"),
-      readBounded(secondPath, MAX_SVG_BYTES, "E_SVG_UNSAFE"),
+      readBounded(firstPath, geometry ? MAX_GEOMETRY_BYTES : MAX_SVG_BYTES, geometry ? "E_OUTPUT_GEOMETRY" : "E_SVG_UNSAFE"),
+      readBounded(secondPath, geometry ? MAX_GEOMETRY_BYTES : MAX_SVG_BYTES, geometry ? "E_OUTPUT_GEOMETRY" : "E_SVG_UNSAFE"),
     ]);
     const runHashes = [sha256(firstRaw), sha256(secondRaw)];
     if (!firstRaw.equals(secondRaw)) {
       fail("E_ENGINE_NONDETERMINISTIC", "ELK output differs across fresh runs", 1, "nondeterministic");
     }
-    validateSvg(firstRaw, input, true);
+    if (geometry) {
+      const rendererRaw = await readBounded(fileURLToPath(import.meta.url), MAX_ENGINE_BYTES, "E_ENGINE_IDENTITY");
+      validateGeometry(firstRaw, input, sha256(rendererRaw));
+    } else {
+      validateSvg(firstRaw, input, true);
+    }
     const rendererRaw = await readBounded(fileURLToPath(import.meta.url), MAX_ENGINE_BYTES, "E_ENGINE_IDENTITY");
     const metadata = {
       schema_version: 1,
@@ -1014,7 +1387,22 @@ async function runController(args) {
       fallback_state: "preserved",
     };
     const metadataRaw = Buffer.from(`${canonical(metadata)}\n`, "utf8");
-    await atomicWritePair(paths.outputPath, firstRaw, paths.metadataPath, metadataRaw, paths.runRoot);
+    await atomicWritePair(
+      paths.outputPath,
+      firstRaw,
+      paths.metadataPath,
+      metadataRaw,
+      paths.runRoot,
+      geometry
+        ? {
+          outputCode: "E_OUTPUT_GEOMETRY",
+          metadataCode: "E_OUTPUT_GEOMETRY",
+          runCode: "E_RUN_PATH",
+          metadataRunCode: "E_RUN_PATH",
+          outputMaximum: MAX_GEOMETRY_BYTES,
+        }
+        : undefined,
+    );
     process.stdout.write(`${JSON.stringify({
       schema_version: 1,
       status: "available",

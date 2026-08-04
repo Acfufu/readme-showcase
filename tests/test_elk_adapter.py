@@ -58,6 +58,33 @@ class ELKAdapterTests(unittest.TestCase):
             env={**os.environ, "GITHUB_TOKEN": "must-not-reach-worker"},
         )
 
+    def invoke_geometry(
+        self,
+        input_path: Path,
+        geometry_path: Path,
+        metadata_path: Path,
+        *,
+        adapter: Path = ADAPTER,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                "node",
+                str(adapter),
+                "--input",
+                str(input_path),
+                "--geometry",
+                str(geometry_path),
+                "--metadata",
+                str(metadata_path),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=45,
+            env={**os.environ, "GITHUB_TOKEN": "must-not-reach-worker"},
+        )
+
     def run_adapter(
         self,
         root: Path,
@@ -80,6 +107,22 @@ class ELKAdapterTests(unittest.TestCase):
         metadata = run_dir / "diagram.engine.json"
         result = self.invoke_adapter(input_path, output, metadata, adapter=adapter)
         return result, output, metadata
+
+    def run_geometry(
+        self,
+        root: Path,
+        input_name: str,
+        *,
+        adapter: Path = ADAPTER,
+    ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+        run_dir = root / "run"
+        run_dir.mkdir(exist_ok=True)
+        input_path = run_dir / "diagram.diagram.json"
+        shutil.copyfile(FIXTURES / input_name, input_path)
+        geometry = run_dir / "diagram.geometry.json"
+        metadata = run_dir / "diagram.engine.json"
+        result = self.invoke_geometry(input_path, geometry, metadata, adapter=adapter)
+        return result, geometry, metadata
 
     def test_symlinked_output_parent_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -418,6 +461,114 @@ class ELKAdapterTests(unittest.TestCase):
             self.assertIn("E_ENGINE_IDENTITY", result.stderr)
             self.assertEqual(output.read_bytes(), b"last-good-svg")
             self.assertEqual(metadata.read_bytes(), b"last-good-metadata")
+
+    def test_geometry_mode_is_canonical_and_deterministic(self) -> None:
+        for input_name in ("architecture.json", "flowchart.json", "c4.json"):
+            with self.subTest(input_name=input_name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                first, geometry, metadata_path = self.run_geometry(root, input_name)
+                self.assertEqual(first.returncode, 0, first.stderr)
+                first_raw = geometry.read_bytes()
+                first_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                parsed = json.loads(first_raw)
+                self.assertEqual(
+                    set(parsed), {"schema_version", "engine", "canvas", "groups", "nodes", "ports", "edges"}
+                )
+                self.assertEqual(parsed["schema_version"], 1)
+                self.assertEqual(
+                    set(parsed["engine"]),
+                    {
+                        "engine_kind",
+                        "package_name",
+                        "package_version",
+                        "package_sha256",
+                        "module_sha256",
+                        "node_version",
+                        "renderer_sha256",
+                    },
+                )
+                self.assertEqual(parsed["engine"]["engine_kind"], "elk")
+                self.assertEqual(parsed["engine"]["package_version"], "0.9.3")
+                self.assertEqual(first_metadata["output_sha256"], hashlib.sha256(first_raw).hexdigest())
+                self.assertEqual(first_metadata["run_hashes"], [first_metadata["output_sha256"]] * 2)
+                for collection in ("groups", "nodes", "ports", "edges"):
+                    ids = [item["id"] for item in parsed[collection]]
+                    self.assertEqual(ids, sorted(ids))
+                    self.assertEqual(len(ids), len(set(ids)))
+                for item in [*parsed["groups"], *parsed["nodes"], *parsed["ports"]]:
+                    for field in ("x", "y", "width", "height"):
+                        self.assertIsInstance(item[field], int)
+                        self.assertGreaterEqual(item[field], 0)
+                        self.assertLessEqual(item[field], 20_000)
+                root2 = root / "second"
+                root2.mkdir()
+                second, geometry2, _ = self.run_geometry(root2, input_name)
+                self.assertEqual(second.returncode, 0, second.stderr)
+                self.assertEqual(first_raw, geometry2.read_bytes())
+
+    def test_geometry_output_path_errors_preserve_last_good(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            run = base / "run"
+            outside = base / "outside"
+            run.mkdir()
+            outside.mkdir()
+            input_path = run / "diagram.diagram.json"
+            shutil.copyfile(FIXTURES / "architecture.json", input_path)
+            geometry = run / "diagram.geometry.json"
+            metadata = run / "diagram.engine.json"
+            geometry.write_bytes(b"last-good-geometry")
+            metadata.write_bytes(b"last-good-metadata")
+            sentinel = outside / geometry.name
+            sentinel.write_bytes(b"outside-sentinel")
+            geometry.unlink()
+            geometry.symlink_to(sentinel)
+            result = self.invoke_geometry(input_path, geometry, metadata)
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertTrue(geometry.is_symlink())
+            self.assertIn("E_OUTPUT_GEOMETRY", result.stderr)
+            self.assertEqual(sentinel.read_bytes(), b"outside-sentinel")
+            self.assertEqual(metadata.read_bytes(), b"last-good-metadata")
+
+            linked_parent = base / "linked-run"
+            linked_parent.symlink_to(run, target_is_directory=True)
+            result = self.invoke_geometry(
+                linked_parent / input_path.name,
+                linked_parent / geometry.name,
+                linked_parent / metadata.name,
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("E_RUN_PATH", result.stderr)
+
+    def test_geometry_validation_rejects_malformed_layout_and_cleans_temps(self) -> None:
+        mutations = {
+            "missing": "delete layout.children[0].width;",
+            "nan": "layout.children[0].x = Number.NaN;",
+            "negative": "layout.children[0].x = -1;",
+            "oversize": "layout.children[0].x = 20001;",
+        }
+        for name, mutation in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                copied_skill = base / "skill"
+                shutil.copytree(REPO_ROOT / "skill", copied_skill)
+                adapter = copied_skill / "scripts/render_elk.mjs"
+                source = adapter.read_text(encoding="utf-8")
+                marker = "    if (args[\"--geometry\"] !== undefined) {\n"
+                self.assertIn(marker, source)
+                adapter.write_text(source.replace(marker, f"    {mutation}\n{marker}", 1), encoding="utf-8")
+                run = base / "run"
+                run.mkdir()
+                geometry = run / "diagram.geometry.json"
+                metadata = run / "diagram.engine.json"
+                geometry.write_bytes(b"last-good-geometry")
+                metadata.write_bytes(b"last-good-metadata")
+                result, _, _ = self.run_geometry(base, "architecture.json", adapter=adapter)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("E_OUTPUT_GEOMETRY", result.stderr)
+                self.assertEqual(geometry.read_bytes(), b"last-good-geometry")
+                self.assertEqual(metadata.read_bytes(), b"last-good-metadata")
+                self.assertEqual(list(run.glob(".diagram.geometry.json.tmp-*")), [])
 
 
 if __name__ == "__main__":
