@@ -16,6 +16,7 @@ from typing import Any, Iterable, Sequence
 
 from ...pipeline_contracts import ContractError, MAX_JSON_BYTES, canonical_sha256, read_regular_bytes
 from ..contracts.evidence import validate_evidence_graph
+from ..validation.legacy import validate_generated_bundle
 from .bundle import build_delivery_result
 
 
@@ -23,6 +24,9 @@ _COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _REPOSITORY = re.compile(r"[^/\s]+/[^/\s]+\Z")
 _FILTER_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
+_V3_SVG_PATH = re.compile(
+    r"assets/readme-showcase/[^/]+/(?:desktop|mobile)\.svg\Z"
+)
 _TEMP_PREFIX = "readme-showcase-delivery-"
 _MARKER = ".readme-showcase-delivery-root"
 _GIT_OUTPUT_LIMIT = 16 * 1024 * 1024
@@ -264,9 +268,43 @@ def _filter_configurations(
     )
 
 
-def _candidate_references(payload: Any) -> tuple[str, str, list[dict[str, str]], str]:
+def _candidate_references(
+    payload: Any,
+    artifact_root: Path | None = None,
+) -> tuple[str, str, list[dict[str, str]], str]:
+    if isinstance(payload, dict) and payload.get("schema_version") == 3:
+        if artifact_root is None:
+            _fail("E_PR_PATH", "compiled delivery requires an artifact root")
+        validation = validate_generated_bundle(payload, artifact_root)
+        target = payload.get("target")
+        candidate = payload.get("candidate")
+        if not isinstance(target, dict) or not isinstance(candidate, dict):
+            _fail("E_SCHEMA_TYPE", "compiled delivery bundle target and candidate must be objects")
+        readmes = candidate.get("readmes")
+        assets = candidate.get("assets")
+        if not isinstance(readmes, list) or not isinstance(assets, list):
+            _fail("E_SCHEMA_TYPE", "compiled delivery candidate readmes and assets must be lists")
+        values = [*readmes, *assets]
+        references: list[dict[str, str]] = []
+        for index, value in enumerate(values):
+            if not isinstance(value, dict) or set(value) != {"path", "sha256"}:
+                _fail("E_SCHEMA_TYPE", f"compiled candidate reference {index} must contain path and sha256")
+            path = _safe_path(value["path"], f"compiled candidate reference {index}")
+            if path.name not in {"README.md", "README_zh.md"} and _V3_SVG_PATH.fullmatch(path.as_posix()) is None:
+                _fail("E_PR_PATH", f"compiled candidate is not a README or stage-6 SVG: {path.as_posix()}")
+            digest = value["sha256"]
+            if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+                _fail("E_BUNDLE_HASH", f"compiled candidate reference {index} must use lowercase SHA-256")
+            references.append({"path": path.as_posix(), "sha256": digest})
+        if not references:
+            _fail("E_PR_NO_CHANGES", "compiled delivery bundle contains no candidates")
+        target_repository = target.get("repository")
+        base_sha = target.get("base_sha")
+        if not isinstance(target_repository, str) or not isinstance(base_sha, str):
+            _fail("E_SCHEMA_TYPE", "compiled delivery target is malformed")
+        return target_repository, base_sha, references, str(validation["candidate_sha256"])
     if not isinstance(payload, dict) or payload.get("schema_version") != 2:
-        _fail("E_SCHEMA_VERSION", "delivery preparation requires generated bundle schema_version 2")
+        _fail("E_SCHEMA_VERSION", "delivery preparation requires generated bundle schema_version 2 or 3")
     if set(payload) != {"schema_version", "mode", "target", "candidate", "artifacts"}:
         _fail("E_SCHEMA_UNKNOWN_FIELD", "delivery bundle fields must match generated bundle v2")
     target = payload.get("target")
@@ -578,7 +616,7 @@ def prepare_delivery_worktree(
     retention_reason: str | None = None,
     temporary_parent: Path | None = None,
 ) -> dict[str, object]:
-    """Prepare and inspect v2 candidates in an external detached worktree."""
+    """Prepare v2 or compiled v3 candidates in an external detached worktree."""
 
     if audit_retain_failure and (not isinstance(retention_reason, str) or not retention_reason.strip()):
         _fail("E_PR_PATH", "audited failure retention requires a nonempty reason")
@@ -594,7 +632,7 @@ def prepare_delivery_worktree(
     if not git_info.is_dir() or git_info.is_symlink():
         _fail("E_PR_TARGET", "target repository .git must be a real directory")
 
-    repository_name, base_sha, references, candidate_sha = _candidate_references(payload)
+    repository_name, base_sha, references, candidate_sha = _candidate_references(payload, artifacts)
     candidates = _read_candidates(artifacts, references)
     _validate_allowlist(allowed_paths, candidates)
     origin = _run_git(repository, "remote", "get-url", "origin", code="E_PR_TARGET")[1].decode("utf-8").strip()

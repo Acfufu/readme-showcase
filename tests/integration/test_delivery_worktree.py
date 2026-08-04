@@ -326,6 +326,71 @@ class DeliveryWorktreeIntegrationTests(unittest.TestCase):
             cleanup_delivery_worktree(repository, retained)
             self.assertFalse(retained.exists())
 
+    def test_compiled_bundle_projects_only_readme_and_svg_candidates(self) -> None:
+        from skill.scripts.readme_showcase.delivery import prepare_delivery_worktree
+        from tests.contract.test_bundle_v3 import BundleV3ContractTests
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository, _ = self.repository(root)
+            for index in range(1, 8):
+                (repository / f"scene-evidence-{index}.md").write_bytes(f"scene-evidence-{index}".encode())
+            self.git(repository, "add", ".")
+            self.git(repository, "commit", "-m", "compiled evidence")
+            base_sha = self.git(repository, "rev-parse", "HEAD")
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+            bundle = BundleV3ContractTests(methodName="runTest").make_bundle(artifacts)
+            bundle["target"] = {"repository": "owner/repo", "base_sha": base_sha}
+            allowed = {item["path"] for item in [*bundle["candidate"]["readmes"], *bundle["candidate"]["assets"]]}
+
+            first = prepare_delivery_worktree(bundle, artifacts, repository, allowed)
+            second = prepare_delivery_worktree(bundle, artifacts, repository, allowed)
+
+            self.assertEqual(first, second)
+            self.assertEqual(first["target"]["base_sha"], base_sha)
+            paths = [item["path"] for item in first["candidate_files"]]
+            self.assertEqual(paths, sorted(allowed))
+            self.assertTrue(all(path.endswith(("README.md", "README_zh.md", "desktop.svg", "mobile.svg")) for path in paths))
+            diff = bytes.fromhex(first["diff_hex"])
+            self.assertNotIn(b"compiled/scenes", diff)
+            self.assertNotIn(b"compiled/gates", diff)
+            self.assertNotIn(b"compiled/timeline", diff)
+            self.assertNotIn(b"compiled/interaction", diff)
+
+    def test_compiled_bundle_rejects_internal_and_stale_candidates(self) -> None:
+        from skill.scripts.readme_showcase.delivery import prepare_delivery_worktree
+        from tests.contract.test_bundle_v3 import BundleV3ContractTests
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository, _ = self.repository(root)
+            for index in range(1, 8):
+                (repository / f"scene-evidence-{index}.md").write_bytes(f"scene-evidence-{index}".encode())
+            self.git(repository, "add", ".")
+            self.git(repository, "commit", "-m", "compiled evidence")
+            base_sha = self.git(repository, "rev-parse", "HEAD")
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+            bundle = BundleV3ContractTests(methodName="runTest").make_bundle(artifacts)
+            bundle["target"] = {"repository": "owner/repo", "base_sha": base_sha}
+            allowed = {item["path"] for item in [*bundle["candidate"]["readmes"], *bundle["candidate"]["assets"]]}
+
+            internal = dict(bundle)
+            internal["candidate"] = dict(bundle["candidate"])
+            internal["candidate"]["assets"] = [dict(bundle["candidate"]["assets"][0])]
+            internal["candidate"]["assets"][0]["path"] = "compiled/scenes/en/desktop.json"
+            internal["candidate"]["candidate_sha256"] = canonical_sha256({"readmes": internal["candidate"]["readmes"], "assets": internal["candidate"]["assets"]})
+            self.assert_code("E_BUNDLE_ASSET", prepare_delivery_worktree, internal, artifacts, repository, allowed)
+
+            stale = dict(bundle)
+            stale["candidate"] = dict(bundle["candidate"])
+            stale["candidate"]["readmes"] = [dict(item) for item in bundle["candidate"]["readmes"]]
+            stale["candidate"]["readmes"][0]["sha256"] = "0" * 64
+            stale["candidate"]["candidate_sha256"] = canonical_sha256({"readmes": stale["candidate"]["readmes"], "assets": stale["candidate"]["assets"]})
+            stale_allowed = {item["path"] for item in [*stale["candidate"]["readmes"], *stale["candidate"]["assets"]]}
+            self.assert_code("E_BUNDLE_HASH", prepare_delivery_worktree, stale, artifacts, repository, stale_allowed)
+
 
 if __name__ == "__main__":
     unittest.main()
