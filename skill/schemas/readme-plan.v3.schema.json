@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/readme-plan.v3.schema.json",
+  "title": "README Plan v3",
+  "x-python-semantic-validation": {
+    "codes": ["E_SCHEMA_FLOAT", "E_LOCALE", "E_README_PATH"],
+    "validator": "skill.scripts.readme_showcase.contracts.plan.validate_readme_plan"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode", "locales", "sections", "visual_intent", "diagram_route", "commands", "evidence_ids"],
+  "properties": {
+    "schema_version": {"const": 3},
+    "mode": {"enum": ["readme", "asset-only", "audit-only"]},
+    "locales": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/localeMapping"}},
+    "sections": {"$ref": "#/$defs/textArray"},
+    "visual_intent": {"$ref": "#/$defs/text"},
+    "diagram_route": {"enum": ["none", "static", "elk", "compiled"]},
+    "commands": {"$ref": "#/$defs/textArray"},
+    "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}}
+  },
+  "$defs": {
+    "locale": {"enum": ["en", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de"]},
+    "path": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!/|~/)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\\\u0000]+$"},
+    "localeMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tag", "readme_path"],
+      "properties": {"tag": {"$ref": "#/$defs/locale"}, "readme_path": {"$ref": "#/$defs/path"}}
+    },
+    "text": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000]+$"},
+    "textArray": {"type": "array", "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}}
+  }
+}

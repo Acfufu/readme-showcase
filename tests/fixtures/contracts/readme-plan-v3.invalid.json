@@ -1,0 +1,48 @@
+{
+  "cases": [
+    {
+      "name": "v2-compiled-route",
+      "code": "E_BUNDLE_PLAN",
+      "payload": {
+        "schema_version": 2,
+        "mode": "readme",
+        "locales": [{"tag": "en", "readme_path": "README.md"}],
+        "sections": ["overview"],
+        "visual_intent": "project-structure",
+        "diagram_route": "compiled",
+        "commands": [],
+        "evidence_ids": ["FACT_ID"]
+      }
+    },
+    {
+      "name": "v3-unknown-field",
+      "code": "E_SCHEMA_UNKNOWN_FIELD",
+      "payload": {
+        "schema_version": 3,
+        "mode": "readme",
+        "locales": [{"tag": "en", "readme_path": "README.md"}],
+        "sections": ["overview"],
+        "visual_intent": "project-structure",
+        "diagram_route": "compiled",
+        "commands": [],
+        "evidence_ids": ["FACT_ID"],
+        "unknown": true
+      }
+    },
+    {
+      "name": "v3-float",
+      "code": "E_SCHEMA_FLOAT",
+      "semantic": true,
+      "payload": {
+        "schema_version": 3.0,
+        "mode": "readme",
+        "locales": [{"tag": "en", "readme_path": "README.md"}],
+        "sections": ["overview"],
+        "visual_intent": "project-structure",
+        "diagram_route": "compiled",
+        "commands": [],
+        "evidence_ids": ["FACT_ID"]
+      }
+    }
+  ]
+}

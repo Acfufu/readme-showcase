@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib
 import importlib.metadata
 import json
@@ -85,10 +86,10 @@ class SchemaParityTests(unittest.TestCase):
         self.assertEqual(importlib.metadata.version("jsonschema"), "4.26.0")
         self.assertEqual(self.index["draft"], "https://json-schema.org/draft/2020-12/schema")
         entries = self.index["schemas"]
-        self.assertEqual(len(entries), 20)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 20)
-        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 20)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 40)
+        self.assertEqual(len(entries), 21)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 21)
+        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 21)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 42)
         self.assertEqual(INDEX.read_bytes(), canonical_json_bytes(self.index))
         self.assertEqual(
             [entry["schema"] for entry in entries],
@@ -150,6 +151,19 @@ class SchemaParityTests(unittest.TestCase):
         structural = next(case for case in invalid["cases"] if case["name"] == "unknown-field")
         self.assertIsNot(structural.get("semantic"), True)
         self.assertTrue(list(Draft202012Validator(schema).iter_errors(structural["payload"])))
+
+    def test_readme_plan_v1_v2_schema_and_fixture_bytes_remain_unchanged(self) -> None:
+        expected = {
+            "skill/schemas/readme-plan.v1.schema.json": "f9936697c6aee37ec337edd5a6e929bf230a7759323cb43512196fe41045afc9",
+            "skill/schemas/readme-plan.v2.schema.json": "671d22233a76882ed7209cf6cda65bb4133c1dfbb57022777aa687868dae26b6",
+            "tests/fixtures/contracts/readme-plan-v1.valid.json": "ecfd65f67dabb6ea688ddd99db9b472863ffb3a338c39e786a94cbf85648a3e6",
+            "tests/fixtures/contracts/readme-plan-v1.invalid.json": "4cd8a573d310e4dd0e521e24d2ab9a5d866b3f1fa9ba8c3b8d0787f3c573b10d",
+            "tests/fixtures/contracts/readme-plan-v2.valid.json": "0505e851996c2343590afdee622ab5468e382a1ff5f7aba401d12d8dc0a0993c",
+            "tests/fixtures/contracts/readme-plan-v2.invalid.json": "6fb138e0ff1348f88673321104a84cf33784a56ccf347776e8636adaafe92474",
+        }
+        for relative, digest in expected.items():
+            with self.subTest(path=relative):
+                self.assertEqual(hashlib.sha256((ROOT / relative).read_bytes()).hexdigest(), digest)
 
     def test_visual_scene_semantic_builder_errors_are_declared(self) -> None:
         entry = next(item for item in self.index["schemas"] if item["schema"] == "visual-scene.v1.schema.json")
