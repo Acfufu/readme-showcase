@@ -17,10 +17,12 @@ from ...pipeline_contracts import (
     canonical_sha256,
     read_json_object_bytes,
     read_regular_bytes,
+    write_bytes_atomic,
 )
 from ..contracts.run import STAGE_NAMES
 from ..contracts.plan import validate_readme_plan
 from ..contracts.assets import validate_asset_manifest
+from ..contracts.common import normalize_posix_path
 from ..evidence.adapters import adapt_v1_repository_evidence
 from ..generation.assembler import assemble_generated_bundle_v3
 from ..generation.request import (
@@ -29,6 +31,7 @@ from ..generation.request import (
     canonical_generation_request,
 )
 from ..visual_kernel import compile_visual
+from ..visual_kernel.reader import load_compiled_visual
 from .workspace import RunWorkspace
 
 _CORE = importlib.import_module(
@@ -510,7 +513,162 @@ class BundleAssembleStage:
 
 
 def _materialize(context: RunContext, root: Path) -> dict[str, Any]:
-    _, bundle = _canonical_object(context.attempt_file(5, "generated-readme-bundle.json"))
+    bundle_path = context.attempt_file(5, "generated-readme-bundle.json")
+    _, bundle = _canonical_object(bundle_path)
+    _, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
+    if type(bundle.get("schema_version")) is int and bundle["schema_version"] == 3:
+        validate_readme_plan(plan, mode=context.manifest["configuration"]["mode"])
+        if plan["schema_version"] != 3 or plan["diagram_route"] != "compiled":
+            raise ContractError("E_BUNDLE_PLAN", "compiled bundle requires README Plan v3")
+
+        artifacts = bundle.get("artifacts")
+        required_artifacts = {"plan", "retrieval", "evidence", "claim_map", "visual_spec", "asset_manifest"}
+        if not isinstance(artifacts, Mapping) or set(artifacts) != required_artifacts:
+            raise ContractError("E_SCHEMA_FIELDS", "generated bundle v3 artifacts are not closed")
+
+        def reference(name: str, expected_path: str) -> str:
+            value = artifacts.get(name)
+            if not isinstance(value, Mapping) or set(value) != {"path", "sha256"}:
+                raise ContractError("E_SCHEMA_FIELDS", f"generated bundle.artifacts.{name} is invalid")
+            if value.get("path") != expected_path:
+                raise ContractError("E_VISUAL_PATH", f"generated bundle.artifacts.{name}.path is invalid")
+            digest = value.get("sha256")
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+            ):
+                raise ContractError("E_BUNDLE_HASH", f"generated bundle.artifacts.{name}.sha256 is invalid")
+            return digest
+
+        projection: dict[str, bytes] = {}
+
+        def project_bytes(relative: str, raw: bytes, digest: str) -> None:
+            try:
+                normalized = normalize_posix_path(relative)
+            except ContractError:
+                raise ContractError("E_VISUAL_PATH", "materialized path must be a safe relative POSIX path") from None
+            if normalized != relative:
+                raise ContractError("E_VISUAL_PATH", "materialized path must be a normalized relative POSIX path")
+            if normalized in projection:
+                raise ContractError("E_RUN_PATH", f"materialized path is duplicated: {normalized}")
+            if hashlib.sha256(raw).hexdigest() != digest:
+                raise ContractError("E_BUNDLE_HASH", f"materialized bytes differ from reference: {normalized}")
+            projection[normalized] = raw
+
+        def project_source(relative: str, source: Path, digest: str) -> None:
+            project_bytes(relative, read_regular_bytes(source, maximum=MAX_CANDIDATE_BYTES), digest)
+
+        project_source("readme-plan.json", context.attempt_file(2, "readme-plan.json"), reference("plan", "readme-plan.json"))
+        project_source("retrieval-packet.json", context.attempt_file(1, "retrieval-packet.json"), reference("retrieval", "retrieval-packet.json"))
+
+        evidence_raw, evidence = _canonical_object(context.attempt_file(0, "repository-evidence.json"))
+        evidence_graph = _v3_evidence_graph(evidence)
+        canonical_evidence = evidence_raw if evidence.get("schema_version") == 2 else canonical_json_bytes(evidence_graph)
+        project_bytes("repository-evidence.json", canonical_evidence, reference("evidence", "repository-evidence.json"))
+
+        candidate_root = context.workspace.root / "stages/05-candidate"
+        project_source("claim-map.json", candidate_root / "claim-map.json", reference("claim_map", "claim-map.json"))
+        spec_digest = reference("visual_spec", "visual-spec.json")
+        spec_raw = read_regular_bytes(candidate_root / "visual-spec.json", maximum=MAX_CANDIDATE_BYTES)
+        project_bytes("visual-spec.json", spec_raw, spec_digest)
+
+        stage6_root = bundle_path.parent
+        compiled = load_compiled_visual(stage6_root, bundle)
+        compiled_artifacts = dict(compiled.artifacts)
+        compiled_spec = compiled_artifacts.get("compiled/visual-spec.json")
+        if compiled_spec is None or compiled_spec != spec_raw:
+            raise ContractError("E_VISUAL_FINGERPRINT", "stage-6 compiled Visual Spec differs from stage-5 source")
+        for relative, raw in sorted(compiled_artifacts.items(), key=lambda item: item[0].encode("utf-8")):
+            project_bytes(relative, raw, hashlib.sha256(raw).hexdigest())
+
+        project_source(
+            "asset-manifest.json",
+            stage6_root / "asset-manifest.json",
+            reference("asset_manifest", "asset-manifest.json"),
+        )
+
+        candidate = bundle.get("candidate")
+        if not isinstance(candidate, Mapping) or set(candidate) != {"readmes", "assets", "candidate_sha256"}:
+            raise ContractError("E_SCHEMA_FIELDS", "generated bundle v3 candidate is not closed")
+        readme_refs = candidate.get("readmes")
+        asset_refs = candidate.get("assets")
+        if not isinstance(readme_refs, list) or not isinstance(asset_refs, list):
+            raise ContractError("E_SCHEMA_TYPE", "generated bundle v3 candidate references must be arrays")
+        expected_readmes = [entry["readme_path"] for entry in plan["locales"]]
+        if bundle.get("mode") == "readme" and [item.get("path") for item in readme_refs if isinstance(item, Mapping)] != expected_readmes:
+            raise ContractError("E_CLAIM_LANGUAGE", "generated bundle README references differ from Plan v3")
+        if bundle.get("mode") != "readme" and readme_refs:
+            raise ContractError("E_BUNDLE_MODE", "non-readme bundle cannot contain README references")
+
+        candidate_body: dict[str, list[dict[str, str]]] = {"readmes": [], "assets": []}
+        for index, item in enumerate(readme_refs):
+            if not isinstance(item, Mapping) or set(item) != {"path", "sha256"}:
+                raise ContractError("E_SCHEMA_FIELDS", f"generated bundle.candidate.readmes[{index}] is invalid")
+            path = item.get("path")
+            digest = item.get("sha256")
+            if not isinstance(path, str) or not isinstance(digest, str):
+                raise ContractError("E_SCHEMA_TYPE", f"generated bundle.candidate.readmes[{index}] is invalid")
+            try:
+                normalized = normalize_posix_path(path)
+            except ContractError:
+                raise ContractError("E_VISUAL_PATH", "generated bundle README path is unsafe") from None
+            if normalized != path:
+                raise ContractError("E_VISUAL_PATH", "generated bundle README path is not normalized")
+            if path not in expected_readmes or path in {entry["path"] for entry in candidate_body["readmes"]}:
+                raise ContractError("E_CLAIM_LANGUAGE", "generated bundle README references are not closed")
+            if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+                raise ContractError("E_BUNDLE_HASH", "generated bundle README hash is invalid")
+            project_source(path, candidate_root / path, digest)
+            candidate_body["readmes"].append({"path": path, "sha256": digest})
+
+        for index, item in enumerate(asset_refs):
+            if not isinstance(item, Mapping) or set(item) != {"path", "sha256"}:
+                raise ContractError("E_SCHEMA_FIELDS", f"generated bundle.candidate.assets[{index}] is invalid")
+            path = item.get("path")
+            digest = item.get("sha256")
+            if not isinstance(path, str) or not isinstance(digest, str):
+                raise ContractError("E_SCHEMA_TYPE", f"generated bundle.candidate.assets[{index}] is invalid")
+            try:
+                normalized = normalize_posix_path(path)
+            except ContractError:
+                raise ContractError("E_VISUAL_PATH", "generated bundle SVG path is unsafe") from None
+            if normalized != path or not path.startswith("assets/readme-showcase/"):
+                raise ContractError("E_BUNDLE_ASSET", "generated bundle candidate asset is not a stage-6 SVG")
+            if path in {entry["path"] for entry in candidate_body["assets"]}:
+                raise ContractError("E_BUNDLE_ASSET", "generated bundle candidate assets contain duplicates")
+            raw = compiled_artifacts.get(path)
+            if raw is None:
+                raise ContractError("E_BUNDLE_ASSET", "generated bundle candidate SVG is absent from stage-6 inventory")
+            project_digest = hashlib.sha256(raw).hexdigest()
+            if digest != project_digest:
+                raise ContractError("E_BUNDLE_HASH", "generated bundle candidate SVG hash differs from stage-6 bytes")
+            candidate_body["assets"].append({"path": path, "sha256": digest})
+
+        if candidate.get("candidate_sha256") != canonical_sha256(candidate_body):
+            raise ContractError("E_BUNDLE_HASH", "generated bundle candidate hash differs from references")
+
+        try:
+            root_info = root.lstat()
+        except FileNotFoundError:
+            root_info = None
+        if root_info is not None and (stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode)):
+            raise ContractError("E_OUTPUT_PATH", "materialization root must be a real directory")
+        for relative in projection:
+            parent = root
+            for part in PurePosixPath(relative).parts[:-1]:
+                parent /= part
+                try:
+                    info = parent.lstat()
+                except FileNotFoundError:
+                    break
+                if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                    raise ContractError("E_OUTPUT_PATH", "materialization destination ancestry must be real directories")
+        for relative in sorted(projection, key=lambda item: item.encode("utf-8")):
+            destination = root.joinpath(*PurePosixPath(relative).parts)
+            write_bytes_atomic(destination, projection[relative])
+        return bundle
+
     sources = {
         "repository-evidence.json": context.attempt_file(0, "repository-evidence.json"),
         "retrieval-packet.json": context.attempt_file(1, "retrieval-packet.json"),
@@ -518,7 +676,6 @@ def _materialize(context: RunContext, root: Path) -> dict[str, Any]:
         "claim-map.json": context.workspace.root / "stages/05-candidate/claim-map.json",
         "asset-manifest.json": context.workspace.root / "stages/05-candidate/asset-manifest.json",
     }
-    _, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
     readme_paths = (
         [entry["readme_path"] for entry in plan["locales"]]
         if plan["schema_version"] == 2
@@ -532,8 +689,7 @@ def _materialize(context: RunContext, root: Path) -> dict[str, Any]:
         sources[item["path"]] = context.workspace.root / "stages/05-candidate" / item["path"]
     for relative, source in sources.items():
         destination = root.joinpath(*PurePosixPath(relative).parts)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(read_regular_bytes(source, maximum=MAX_CANDIDATE_BYTES))
+        write_bytes_atomic(destination, read_regular_bytes(source, maximum=MAX_CANDIDATE_BYTES))
     return bundle
 
 

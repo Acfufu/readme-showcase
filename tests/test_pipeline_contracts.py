@@ -3,11 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from unittest import mock
 
@@ -32,6 +33,8 @@ from skill.scripts.readme_showcase.orchestration.stages import (
     CandidateImportStage,
     GenerationRequestStage,
     STAGES,
+    ValidateStage,
+    _materialize,
     candidate_files,
 )
 from skill.scripts.readme_showcase.contracts.run import STAGE_NAMES
@@ -917,6 +920,225 @@ class BundleAssembleStageTests(unittest.TestCase):
                 },
                 stage5_before,
             )
+
+
+class MaterializeStageTests(unittest.TestCase):
+    @staticmethod
+    def _context(
+        root: Path,
+        *,
+        evidence: dict[str, object] | None = None,
+    ) -> tuple[SimpleNamespace, Path, dict[str, bytes], dict[str, bytes]]:
+        if evidence is not None and evidence.get("schema_version") == 1:
+            plan, candidate, _, _ = BundleAssembleStageTests._compiled_inputs_with_v1_evidence()
+        else:
+            plan, candidate = BundleAssembleStageTests._compiled_inputs()
+        context = BundleAssembleStageTests._context(
+            root,
+            plan,
+            candidate=candidate,
+            mode="readme",
+            evidence=evidence,
+        )
+        result = BundleAssembleStage().execute(context)
+        stage6 = root / "stages/06-bundle-assemble/attempts/1"
+        for relative, raw in result.files.items():
+            destination = stage6.joinpath(*PurePosixPath(relative).parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(raw)
+        previous_attempt_file = context.attempt_file
+        context.attempt_file = lambda index, name: (
+            stage6 / name if index == 5 else previous_attempt_file(index, name)
+        )
+        stage5 = {
+            name: (root / "stages/05-candidate" / name).read_bytes()
+            for name in candidate
+        }
+        stage1 = {
+            "repository-evidence.json": context.attempt_file(0, "repository-evidence.json").read_bytes()
+        }
+        return context, stage6, stage5, stage1
+
+    @staticmethod
+    def _files(root: Path) -> dict[str, bytes]:
+        return {
+            path.relative_to(root).as_posix(): path.read_bytes()
+            for path in root.rglob("*")
+            if path.is_file()
+        }
+
+    def test_legacy_v1_v2_materialization_bytes_remain_unchanged(self) -> None:
+        asset = b"<svg>legacy\n</svg>\n"
+        for version in (1, 2):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                plan: dict[str, object] = {
+                    "schema_version": version,
+                    "mode": "readme",
+                    "sections": ["overview"],
+                    "visual_intent": "project-structure",
+                    "diagram_route": "static",
+                    "commands": [],
+                    "evidence_ids": ["file:" + "a" * 64],
+                }
+                if version == 1:
+                    plan["languages"] = ["en"]
+                else:
+                    plan["locales"] = [{"tag": "en", "readme_path": "README.md"}]
+                candidate = {
+                    "claim-map.json": b"claim-map\n",
+                    "asset-manifest.json": canonical_json_bytes(
+                        {
+                            "schema_version": 2,
+                            "assets": [{"path": "assets/diagram.svg", "sha256": hashlib.sha256(asset).hexdigest()}],
+                        }
+                    ),
+                    "README.md": b"# Legacy\n",
+                    "assets/diagram.svg": asset,
+                }
+                context = BundleAssembleStageTests._context(
+                    root,
+                    plan,
+                    candidate=candidate,
+                    mode="readme",
+                )
+                result = BundleAssembleStage().execute(context)
+                stage6 = root / "stages/06-bundle-assemble/attempts/1"
+                for relative, raw in result.files.items():
+                    destination = stage6.joinpath(*PurePosixPath(relative).parts)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_bytes(raw)
+                previous_attempt_file = context.attempt_file
+                context.attempt_file = lambda index, name: (
+                    stage6 / name if index == 5 else previous_attempt_file(index, name)
+                )
+                destination = root / "materialized"
+                destination.mkdir()
+                _materialize(context, destination)
+                expected = {
+                    "repository-evidence.json": context.attempt_file(0, "repository-evidence.json").read_bytes(),
+                    "retrieval-packet.json": context.attempt_file(1, "retrieval-packet.json").read_bytes(),
+                    "readme-plan.json": context.attempt_file(2, "readme-plan.json").read_bytes(),
+                    "claim-map.json": candidate["claim-map.json"],
+                    "asset-manifest.json": candidate["asset-manifest.json"],
+                    "README.md": candidate["README.md"],
+                    "assets/diagram.svg": asset,
+                }
+                self.assertEqual(self._files(destination), expected)
+
+    def test_v3_validation_materializes_stage6_compiled_and_stage5_author_origins(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context, stage6, stage5_before, stage1_before = self._context(root)
+            # Stage-5 extras must not shadow the committed stage-6 manifest/SVGs.
+            (root / "stages/05-candidate/asset-manifest.json").write_bytes(b"stale-stage5-manifest\n")
+            for variant in ("desktop", "mobile"):
+                wrong = root / f"stages/05-candidate/assets/readme-showcase/en/{variant}.svg"
+                wrong.parent.mkdir(parents=True, exist_ok=True)
+                wrong.write_bytes(b"stale-stage5-svg\n")
+            stage5_after_setup = self._files(root / "stages/05-candidate")
+
+            destination = root / "materialized"
+            destination.mkdir()
+            bundle = _materialize(context, destination)
+            self.assertEqual(bundle["schema_version"], 3)
+            self.assertEqual(
+                (destination / "asset-manifest.json").read_bytes(),
+                (stage6 / "asset-manifest.json").read_bytes(),
+            )
+            self.assertEqual(
+                (destination / "visual-spec.json").read_bytes(),
+                (root / "stages/05-candidate/visual-spec.json").read_bytes(),
+            )
+            self.assertEqual(
+                (destination / "compiled/visual-spec.json").read_bytes(),
+                (stage6 / "compiled/visual-spec.json").read_bytes(),
+            )
+            self.assertNotIn("assets/readme-showcase/en/desktop.svg", {
+                path.relative_to(destination).as_posix()
+                for path in destination.rglob("*")
+                if path.is_file() and path.read_bytes() == b"stale-stage5-svg\n"
+            })
+            report = ValidateStage().execute(context)
+            self.assertEqual(report.status, "pass")
+            self.assertEqual(
+                self._files(root / "stages/05-candidate"),
+                stage5_after_setup,
+            )
+            self.assertEqual(
+                context.attempt_file(0, "repository-evidence.json").read_bytes(),
+                stage1_before["repository-evidence.json"],
+            )
+
+    def test_v3_v1_evidence_projects_canonical_v2_without_mutating_stage1(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            v1 = CandidateFilesVersionTests._v1_scan_evidence()
+            expected_v2 = adapt_v1_repository_evidence(v1)
+            context, _, _, stage1_before = self._context(root, evidence=v1)
+            destination = root / "materialized"
+            destination.mkdir()
+            _materialize(context, destination)
+            self.assertEqual(
+                (destination / "repository-evidence.json").read_bytes(),
+                canonical_json_bytes(expected_v2),
+            )
+            self.assertNotEqual(
+                (destination / "repository-evidence.json").read_bytes(),
+                stage1_before["repository-evidence.json"],
+            )
+            self.assertEqual(
+                context.attempt_file(0, "repository-evidence.json").read_bytes(),
+                stage1_before["repository-evidence.json"],
+            )
+
+    def test_v3_hostile_stage6_inputs_fail_before_destination_acceptance(self) -> None:
+        cases = ("hash", "extra", "missing", "symlink", "missing-manifest")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                context, stage6, stage5_before, stage1_before = self._context(root)
+                if case == "hash":
+                    target = stage6 / "compiled/scenes/en/desktop.json"
+                    target.write_bytes(target.read_bytes() + b"drift\n")
+                    expected_code = "E_VISUAL_FINGERPRINT"
+                elif case == "extra":
+                    (stage6 / "compiled/extra.json").write_bytes(b"extra\n")
+                    expected_code = "E_VISUAL_FINGERPRINT"
+                elif case == "missing":
+                    (stage6 / "compiled/gates/en/mobile.json").unlink()
+                    expected_code = "E_VISUAL_FINGERPRINT"
+                elif case == "symlink":
+                    outside = root / "outside-scenes"
+                    outside.mkdir()
+                    shutil.move(stage6 / "compiled/scenes", outside / "scenes")
+                    (stage6 / "compiled/scenes").symlink_to(outside / "scenes", target_is_directory=True)
+                    expected_code = "E_VISUAL_PATH"
+                else:
+                    (stage6 / "asset-manifest.json").unlink()
+                    (root / "stages/05-candidate/asset-manifest.json").write_bytes(b"stage5-only\n")
+                    expected_code = "E_VISUAL_PATH"
+
+                stage5_after_setup = self._files(root / "stages/05-candidate")
+                stage6_before = self._files(stage6)
+                destination = root / "materialized"
+                destination.mkdir()
+                sentinel = destination / "sentinel.txt"
+                sentinel.write_bytes(b"keep\n")
+                with self.assertRaises(ContractError) as raised:
+                    _materialize(context, destination)
+                self.assertEqual(raised.exception.code, expected_code)
+                self.assertEqual(sentinel.read_bytes(), b"keep\n")
+                self.assertEqual(self._files(destination), {"sentinel.txt": b"keep\n"})
+                self.assertEqual(
+                    self._files(root / "stages/05-candidate"),
+                    stage5_after_setup,
+                )
+                self.assertEqual(
+                    context.attempt_file(0, "repository-evidence.json").read_bytes(),
+                    stage1_before["repository-evidence.json"],
+                )
+                self.assertEqual(self._files(stage6), stage6_before)
 
 
 class PipelineCliTests(unittest.TestCase):
