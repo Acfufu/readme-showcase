@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/generated-bundle.v3.schema.json",
+  "title": "Generated README Bundle v3",
+  "$comment": "Python semantic validation reads one real artifact root and binds every candidate, stage artifact, compiled inventory, fingerprint, mode, and provenance boundary.",
+  "x-python-semantic-validation": {
+    "validator": "skill.scripts.readme_showcase.generation.assembler.validate_generated_bundle_v3",
+    "codes": ["E_BUNDLE_ASSET", "E_BUNDLE_HASH", "E_BUNDLE_MODE", "E_BUNDLE_PLAN", "E_CLAIM_EVIDENCE", "E_CLAIM_LANGUAGE", "E_PATH", "E_VISUAL_FINGERPRINT", "E_VISUAL_PATH"]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode", "target", "candidate", "artifacts", "compiled"],
+  "properties": {
+    "schema_version": {"const": 3},
+    "mode": {"enum": ["readme", "asset-only", "audit-only"]},
+    "target": {"$ref": "#/$defs/target"},
+    "candidate": {"$ref": "#/$defs/candidate"},
+    "artifacts": {"$ref": "#/$defs/artifacts"},
+    "compiled": {"$ref": "#/$defs/compiled"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"mode": {"const": "readme"}}},
+      "then": {"properties": {"candidate": {"properties": {"readmes": {"minItems": 1}, "assets": {"minItems": 1}}}}}
+    },
+    {
+      "if": {"properties": {"mode": {"const": "asset-only"}}},
+      "then": {"properties": {"candidate": {"properties": {"readmes": {"maxItems": 0}, "assets": {"minItems": 1}}}}}
+    },
+    {
+      "if": {"properties": {"mode": {"const": "audit-only"}}},
+      "then": {"properties": {"candidate": {"properties": {"readmes": {"maxItems": 0}, "assets": {"maxItems": 0}}}}}
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "sha1": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/|~/)(?!.*(?:^|/)\\.\\.?(?:/|$))[^\\\\\\u0000]+$"
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"$ref": "#/$defs/path"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "svgReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.svg$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "base_sha"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1, "pattern": "^[^/]+/[^/]+$"},
+        "base_sha": {"$ref": "#/$defs/sha1"}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["readmes", "assets", "candidate_sha256"],
+      "properties": {
+        "readmes": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/reference"}},
+        "assets": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/svgReference"}},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "artifactReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"type": "string"}, "sha256": {"$ref": "#/$defs/sha256"}}
+    },
+    "planReference": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactReference"},
+        {"properties": {"path": {"const": "readme-plan.json"}}}
+      ]
+    },
+    "retrievalReference": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactReference"},
+        {"properties": {"path": {"const": "retrieval-packet.json"}}}
+      ]
+    },
+    "evidenceReference": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactReference"},
+        {"properties": {"path": {"const": "repository-evidence.json"}}}
+      ]
+    },
+    "claimMapReference": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactReference"},
+        {"properties": {"path": {"const": "claim-map.json"}}}
+      ]
+    },
+    "visualSpecReference": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactReference"},
+        {"properties": {"path": {"const": "visual-spec.json"}}}
+      ]
+    },
+    "assetManifestReference": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactReference"},
+        {"properties": {"path": {"const": "asset-manifest.json"}}}
+      ]
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan", "retrieval", "evidence", "claim_map", "visual_spec", "asset_manifest"],
+      "properties": {
+        "plan": {"$ref": "#/$defs/planReference"},
+        "retrieval": {"$ref": "#/$defs/retrievalReference"},
+        "evidence": {"$ref": "#/$defs/evidenceReference"},
+        "claim_map": {"$ref": "#/$defs/claimMapReference"},
+        "visual_spec": {"$ref": "#/$defs/visualSpecReference"},
+        "asset_manifest": {"$ref": "#/$defs/assetManifestReference"}
+      }
+    },
+    "inventoryReference": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactReference"},
+        {"properties": {"path": {"const": "compiled/inventory.json"}}}
+      ]
+    },
+    "compiled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventory", "fingerprint", "retention"],
+      "properties": {
+        "inventory": {"$ref": "#/$defs/inventoryReference"},
+        "fingerprint": {"$ref": "#/$defs/sha256"},
+        "retention": {"const": "manual"}
+      }
+    }
+  }
+}

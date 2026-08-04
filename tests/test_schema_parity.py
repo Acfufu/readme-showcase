@@ -153,6 +153,13 @@ class SchemaParityTests(unittest.TestCase):
                     generated = BundleV2ContractTests().make_bundle(root)
                     self.assertEqual(generated, payload)
                 validator(payload, root)
+            elif entry["adapter"] == "artifact_root_v3":
+                from tests.contract.test_bundle_v3 import BundleV3ContractTests
+
+                generated = BundleV3ContractTests().make_bundle(root)
+                if valid:
+                    self.assertEqual(generated, payload)
+                validator(payload, root)
             elif entry["adapter"] == "asset_manifest_v3":
                 valid_fixture = self._payload(_load(FIXTURES / "asset-manifest-v3.valid.json"))
                 manifest_root = root / "asset-manifest-v3"
@@ -175,10 +182,10 @@ class SchemaParityTests(unittest.TestCase):
         self.assertEqual(importlib.metadata.version("jsonschema"), "4.26.0")
         self.assertEqual(self.index["draft"], "https://json-schema.org/draft/2020-12/schema")
         entries = self.index["schemas"]
-        self.assertEqual(len(entries), 23)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 23)
-        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 23)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 46)
+        self.assertEqual(len(entries), 24)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 24)
+        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 24)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 48)
         self.assertEqual(INDEX.read_bytes(), canonical_json_bytes(self.index))
         self.assertEqual(
             [entry["schema"] for entry in entries],
@@ -240,6 +247,35 @@ class SchemaParityTests(unittest.TestCase):
         structural = next(case for case in invalid["cases"] if case["name"] == "unknown-field")
         self.assertIsNot(structural.get("semantic"), True)
         self.assertTrue(list(Draft202012Validator(schema).iter_errors(structural["payload"])))
+
+    def test_generated_bundle_v3_hostile_cases_keep_schema_and_python_parity(self) -> None:
+        entry = next(item for item in self.index["schemas"] if item["schema"] == "generated-bundle.v3.schema.json")
+        schema = _load(SCHEMAS / entry["schema"])
+        draft = Draft202012Validator(schema)
+        fixture = _load(FIXTURES / entry["invalid_fixture"])
+        expected = {
+            "missing-compiled": ("E_SCHEMA_MISSING_FIELD", False),
+            "stale-fingerprint": ("E_VISUAL_FINGERPRINT", True),
+            "stage-origin-mismatch": ("E_VISUAL_PATH", False),
+            "unknown-field": ("E_SCHEMA_UNKNOWN_FIELD", False),
+            "v3-shaped-labeled-v2": ("E_SCHEMA_VERSION", False),
+        }
+        self.assertEqual({case["name"] for case in fixture["cases"]}, set(expected))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for case in fixture["cases"]:
+                payload = self._payload(case["payload"])
+                errors = list(draft.iter_errors(payload))
+                python_ok, python_code = self._python_result(entry, payload, root, valid=False)
+                expected_code, semantic = expected[case["name"]]
+                with self.subTest(case=case["name"]):
+                    self.assertFalse(python_ok)
+                    self.assertEqual(python_code, expected_code)
+                    self.assertEqual(case.get("semantic") is True, semantic)
+                    if semantic:
+                        self.assertEqual(errors, [])
+                    else:
+                        self.assertTrue(errors)
 
     def test_readme_plan_v1_v2_schema_and_fixture_bytes_remain_unchanged(self) -> None:
         expected = {
