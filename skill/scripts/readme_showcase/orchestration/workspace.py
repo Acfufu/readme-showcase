@@ -19,6 +19,7 @@ from ...pipeline_contracts import (
     read_json_object_bytes,
     write_canonical_json_atomic,
 )
+from ..contracts.common import normalize_posix_path
 from ..contracts.run import (
     RUN_SCHEMA_VERSION,
     STAGE_NAMES,
@@ -32,6 +33,92 @@ from .state import RunState, StageState, initial_stages
 
 
 Clock = Callable[[], str]
+
+
+def _normalize_attempt_files(files: Mapping[str, bytes]) -> dict[str, bytes]:
+    normalized: dict[str, bytes] = {}
+    for name, data in files.items():
+        try:
+            path = normalize_posix_path(name)
+        except ContractError as exc:
+            raise ContractError("E_RUN_PATH", "attempt file names must be safe relative POSIX paths") from exc
+        if not isinstance(data, bytes):
+            raise ContractError("E_RUN_ATTEMPT", "attempt file values must be bytes")
+        if path in normalized:
+            raise ContractError("E_RUN_PATH", "attempt file names must be unique after normalization")
+        normalized[path] = data
+    return normalized
+
+
+def _open_attempt_directory(parent: int, name: str) -> int:
+    descriptor = -1
+    try:
+        expected = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        try:
+            os.mkdir(name, mode=0o700, dir_fd=parent)
+        except FileExistsError:
+            pass
+        expected = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    if not stat.S_ISDIR(expected.st_mode):
+        raise ContractError("E_RUN_PATH", "attempt directory ancestry must contain real directories")
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent,
+        )
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
+            raise ContractError("E_RUN_PATH", "attempt directory ancestry changed during traversal")
+        if not stat.S_ISDIR(opened.st_mode):
+            raise ContractError("E_RUN_PATH", "attempt directory ancestry must contain real directories")
+        os.fchmod(descriptor, 0o700)
+        return descriptor
+    except ContractError:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise
+    except OSError as exc:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise ContractError("E_RUN_PATH", "attempt directory ancestry contains an unavailable or linked directory") from exc
+
+
+def _remove_tree_entry(parent: int, name: str) -> None:
+    descriptor = -1
+    try:
+        expected = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISDIR(expected.st_mode):
+        os.unlink(name, dir_fd=parent)
+        os.fsync(parent)
+        return
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent,
+        )
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
+            raise ContractError("E_RUN_PATH", "attempt rollback ancestry changed during traversal")
+        for child in os.listdir(descriptor):
+            _remove_tree_entry(descriptor, child)
+        os.fsync(descriptor)
+    except ContractError:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise
+    except OSError as exc:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise ContractError("E_RUN_PATH", "cannot recursively roll back stage attempt") from exc
+    else:
+        os.close(descriptor)
+        os.rmdir(name, dir_fd=parent)
+        os.fsync(parent)
 
 
 def _assert_attempt_consistency(root: Path, manifest: Mapping[str, Any]) -> None:
@@ -89,17 +176,7 @@ def _rollback_attempt(stage_root: Path, attempt: int, names: list[str], previous
 
     attempts = _open_directory(stage_root / "attempts", create=False, code="E_RUN_PATH")
     try:
-        committed = os.open(
-            str(attempt),
-            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-            dir_fd=attempts,
-        )
-        try:
-            for name in names:
-                os.unlink(name, dir_fd=committed)
-        finally:
-            os.close(committed)
-        os.rmdir(str(attempt), dir_fd=attempts)
+        _remove_tree_entry(attempts, str(attempt))
         os.fsync(attempts)
     finally:
         os.close(attempts)
@@ -312,11 +389,7 @@ class RunWorkspace:
             raise ContractError("E_RUN_STAGE", "stage number and name do not match")
         if not isinstance(files, Mapping) or not files:
             raise ContractError("E_RUN_ATTEMPT", "attempt must contain at least one file")
-        for name, data in files.items():
-            if not isinstance(name, str) or name in {"", ".", ".."} or Path(name).name != name:
-                raise ContractError("E_RUN_PATH", "attempt file names must be single safe path components")
-            if not isinstance(data, bytes):
-                raise ContractError("E_RUN_ATTEMPT", "attempt file values must be bytes")
+        normalized_files = _normalize_attempt_files(files)
 
         stage_root = self.root / "stages" / f"{stage_number:02d}-{stage_name}"
         with self.lock():
@@ -326,8 +399,8 @@ class RunWorkspace:
             next_attempt = current_attempt + 1 if attempt is None else attempt
             attempts = _open_directory(stage_root / "attempts", create=True, code="E_RUN_PATH")
             temporary = f".{next_attempt}.{secrets.token_hex(8)}.tmp"
-            written_names: list[str] = []
             temporary_created = False
+            directory_descriptors: dict[tuple[str, ...], int] = {}
             try:
                 try:
                     os.stat(str(next_attempt), dir_fd=attempts, follow_symlinks=False)
@@ -339,54 +412,69 @@ class RunWorkspace:
                     raise ContractError("E_RUN_ATTEMPT_SEQUENCE", "attempts must append in one-based order")
                 os.mkdir(temporary, mode=0o700, dir_fd=attempts)
                 temporary_created = True
-                temporary_descriptor = os.open(
-                    temporary,
-                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-                    dir_fd=attempts,
-                )
-                try:
-                    for name in sorted(files):
-                        descriptor = os.open(
-                            name,
-                            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
-                            0o600,
-                            dir_fd=temporary_descriptor,
-                        )
-                        try:
-                            view = memoryview(files[name])
-                            written = 0
-                            while written < len(view):
-                                written += os.write(descriptor, view[written:])
-                            os.fsync(descriptor)
-                        finally:
-                            os.close(descriptor)
-                        written_names.append(name)
-                    os.fsync(temporary_descriptor)
-                finally:
-                    os.close(temporary_descriptor)
+                temporary_descriptor = _open_attempt_directory(attempts, temporary)
+                directory_descriptors[()] = temporary_descriptor
+                for name in sorted(normalized_files):
+                    parts = tuple(name.split("/"))
+                    parent_key: tuple[str, ...] = ()
+                    parent_descriptor = temporary_descriptor
+                    for part in parts[:-1]:
+                        child_key = parent_key + (part,)
+                        child_descriptor = directory_descriptors.get(child_key)
+                        if child_descriptor is None:
+                            child_descriptor = _open_attempt_directory(parent_descriptor, part)
+                            directory_descriptors[child_key] = child_descriptor
+                        parent_descriptor = child_descriptor
+                        parent_key = child_key
+                    descriptor = os.open(
+                        parts[-1],
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                        0o600,
+                        dir_fd=parent_descriptor,
+                    )
+                    try:
+                        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                            raise ContractError("E_RUN_PATH", "attempt artifacts must be regular files")
+                        os.fchmod(descriptor, 0o600)
+                        view = memoryview(normalized_files[name])
+                        written = 0
+                        while written < len(view):
+                            count = os.write(descriptor, view[written:])
+                            if count <= 0:
+                                raise ContractError("E_RUN_PATH", "attempt artifact write made no progress")
+                            written += count
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
+                for _, descriptor in sorted(
+                    directory_descriptors.items(), key=lambda item: len(item[0]), reverse=True
+                ):
+                    os.fsync(descriptor)
+                for descriptor in directory_descriptors.values():
+                    os.close(descriptor)
+                directory_descriptors.clear()
                 os.rename(temporary, str(next_attempt), src_dir_fd=attempts, dst_dir_fd=attempts)
+                try:
+                    os.fsync(attempts)
+                except OSError:
+                    temporary_created = False
+                    _remove_tree_entry(attempts, str(next_attempt))
+                    raise
                 temporary_created = False
-                os.fsync(attempts)
             except OSError as exc:
                 raise ContractError("E_RUN_PATH", f"cannot append stage attempt: {stage_root}") from exc
             finally:
+                for descriptor in directory_descriptors.values():
+                    os.close(descriptor)
+                directory_descriptors.clear()
                 if temporary_created:
-                    temporary_descriptor = os.open(temporary, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0), dir_fd=attempts)
-                    try:
-                        for name in written_names:
-                            try:
-                                os.unlink(name, dir_fd=temporary_descriptor)
-                            except FileNotFoundError:
-                                pass
-                    finally:
-                        os.close(temporary_descriptor)
-                    os.rmdir(temporary, dir_fd=attempts)
+                    _remove_tree_entry(attempts, temporary)
                 os.close(attempts)
 
             timestamp = self._clock() if self._clock is not None else manifest["updated_at"]
             output_projection = [
-                {"path": name, "sha256": hashlib.sha256(files[name]).hexdigest()}
-                for name in sorted(files)
+                {"path": name, "sha256": hashlib.sha256(normalized_files[name]).hexdigest()}
+                for name in sorted(normalized_files)
             ]
             stage = manifest["stages"][stage_number - 1]
             stage.update(
@@ -413,6 +501,6 @@ class RunWorkspace:
                     committed = None
                 if committed == manifest:
                     return stage_root / "attempts" / str(next_attempt)
-                _rollback_attempt(stage_root, next_attempt, written_names, current_attempt)
+                _rollback_attempt(stage_root, next_attempt, [], current_attempt)
                 raise
             return stage_root / "attempts" / str(next_attempt)

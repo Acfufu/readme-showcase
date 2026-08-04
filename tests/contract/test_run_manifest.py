@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -172,6 +173,126 @@ class RunManifestContractTests(unittest.TestCase):
         second = workspace.append_attempt(1, "scan", {"result.json": b'{"ok":false}\n'})
         self.assertEqual(second.name, "2")
         self.assertEqual((attempt / "result.json").read_bytes(), b'{"ok":true}\n')
+
+    def test_nested_attempt_has_canonical_tree_and_private_modes(self) -> None:
+        workspace = self.create()
+        attempt = workspace.append_attempt(
+            1,
+            "scan",
+            {
+                "compiled/scenes/en/mobile.json": b"mobile\n",
+                "compiled/scenes/zh/desktop.json": b"desktop\n",
+            },
+        )
+        self.assertEqual(
+            sorted(path.relative_to(attempt).as_posix() for path in attempt.rglob("*")),
+            [
+                "compiled",
+                "compiled/scenes",
+                "compiled/scenes/en",
+                "compiled/scenes/en/mobile.json",
+                "compiled/scenes/zh",
+                "compiled/scenes/zh/desktop.json",
+            ],
+        )
+        self.assertEqual((attempt / "compiled/scenes/en/mobile.json").read_bytes(), b"mobile\n")
+        self.assertEqual((attempt / "compiled/scenes/zh/desktop.json").read_bytes(), b"desktop\n")
+        for directory in (
+            attempt,
+            attempt / "compiled",
+            attempt / "compiled/scenes",
+            attempt / "compiled/scenes/en",
+            attempt / "compiled/scenes/zh",
+        ):
+            self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o700)
+        for file in (
+            attempt / "compiled/scenes/en/mobile.json",
+            attempt / "compiled/scenes/zh/desktop.json",
+        ):
+            self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
+
+    def test_nested_attempt_rejects_unsafe_and_duplicate_normalized_paths(self) -> None:
+        workspace = self.create()
+        for path in ("", ".", "..", "a/../b", "a//b", "a/./b", "/absolute", "~/home", r"a\b", "a\x00b"):
+            with self.subTest(path=path), self.assertRaises(ContractError) as raised:
+                workspace.append_attempt(1, "scan", {path: b"bad"})
+            self.assertEqual(raised.exception.code, "E_RUN_PATH")
+        with self.assertRaises(ContractError) as raised:
+            workspace.append_attempt(
+                1,
+                "scan",
+                {"caf\u00e9/result.json": b"one", "cafe\u0301/result.json": b"two"},
+            )
+        self.assertEqual(raised.exception.code, "E_RUN_PATH")
+        self.assertFalse((self.workspace_path / "stages/01-scan/attempts/1").exists())
+
+    def test_nested_attempt_rejects_symlink_ancestor_and_rolls_back(self) -> None:
+        workspace = self.create()
+        outside = self.root / "outside"
+        outside.mkdir()
+        stage = self.workspace_path / "stages/01-scan"
+        (stage / "attempts").symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(ContractError) as raised:
+            workspace.append_attempt(1, "scan", {"compiled/scenes/en/desktop.json": b"bad"})
+        self.assertEqual(raised.exception.code, "E_RUN_PATH")
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertFalse((outside / "1").exists())
+
+    def test_nested_attempt_rejects_parent_replacement_race(self) -> None:
+        workspace = self.create()
+        outside = self.root / "outside"
+        outside.mkdir()
+        real_open = workspace_module.os.open
+        swapped = False
+
+        def swap_before_open(path: str, flags: int, mode: int = 0o777, *, dir_fd: int | None = None) -> int:
+            nonlocal swapped
+            if path == "compiled" and not swapped:
+                os.rename("compiled", "compiled.real", src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+                os.symlink(outside, "compiled", dir_fd=dir_fd)
+                swapped = True
+            return real_open(path, flags, mode, dir_fd=dir_fd)
+
+        with mock.patch.object(workspace_module.os, "open", side_effect=swap_before_open):
+            with self.assertRaises(ContractError) as raised:
+                workspace.append_attempt(1, "scan", {"compiled/scenes/en/desktop.json": b"bad"})
+        self.assertTrue(swapped)
+        self.assertEqual(raised.exception.code, "E_RUN_PATH")
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertFalse((self.workspace_path / "stages/01-scan/attempts/1").exists())
+
+    def test_nested_attempt_mid_write_failure_rolls_back_recursively(self) -> None:
+        workspace = self.create()
+        previous = workspace.append_attempt(1, "scan", {"previous.json": b"keep\n"})
+        manifest_before = (self.workspace_path / "run-manifest.json").read_bytes()
+        current_before = (self.workspace_path / "stages/01-scan/current.json").read_bytes()
+        original_write = workspace_module.os.write
+        calls = 0
+
+        def fail_mid_write(descriptor: int, data: bytes | bytearray | memoryview) -> int:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise ContractError("E_TEST_WRITE", "injected nested write failure")
+            return original_write(descriptor, data)
+
+        with mock.patch.object(workspace_module.os, "write", side_effect=fail_mid_write):
+            with self.assertRaises(ContractError) as raised:
+                workspace.append_attempt(
+                    1,
+                    "scan",
+                    {
+                        "compiled/scenes/en/desktop.json": b"desktop\n",
+                        "compiled/scenes/en/mobile.json": b"mobile\n",
+                    },
+                )
+        self.assertEqual(raised.exception.code, "E_TEST_WRITE")
+        self.assertEqual((self.workspace_path / "run-manifest.json").read_bytes(), manifest_before)
+        self.assertEqual((self.workspace_path / "stages/01-scan/current.json").read_bytes(), current_before)
+        self.assertEqual((previous / "previous.json").read_bytes(), b"keep\n")
+        attempts = self.workspace_path / "stages/01-scan/attempts"
+        self.assertEqual(sorted(path.name for path in attempts.iterdir()), ["1"])
+        self.assertEqual(sorted(path.relative_to(attempts / "1").as_posix() for path in (attempts / "1").rglob("*")), ["previous.json"])
 
     def test_attempt_rejects_traversal_and_symlinked_stage(self) -> None:
         workspace = self.create()
