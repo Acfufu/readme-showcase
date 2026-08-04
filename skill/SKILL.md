@@ -25,6 +25,13 @@ If the request is ambiguous, inspect read-only context and ask whether the user 
 
 Read [references/structure.md](references/structure.md) for evidence mapping, narrative selection, project-type sections, localization, and content validation.
 
+For the opt-in visual compiler, read [references/visual-compiler.md](references/visual-compiler.md).
+It documents the Plan v3 `diagram_route: "compiled"` contract, the Stage 5
+author boundary, Stage 6 outputs, centralized retention, limits, retry rules,
+and the local-only publication boundary. Compiled work stays inside the
+existing eight-stage, one-README-Agent order; `none`, `static`, and `elk` keep
+their ordinary behavior.
+
 ## One README Agent pipeline
 
 Use one README Agent: this Agent. Never delegate README truth or writing to
@@ -66,6 +73,14 @@ inputs must be written; use that path as `$RUN` below. Resume with
 handoff output. Use explicit `--workspace` only when the user requests a custom
 absolute location. Never create a per-run virtual environment; use the existing
 runtime and remove temporary files before returning.
+
+When `readme-plan.json` is Plan v3 with `diagram_route: "compiled"`, the
+external candidate owns only the locale README files, Claim Map v3, and Visual
+Spec v1 in `stages/05-candidate/`. Existing `bundle-assemble` then compiles
+independent desktop/mobile Scene, SVG, gate, timeline, interaction, and
+fingerprint outputs under its immutable Stage 6 attempt; it owns Asset Manifest
+v3 and Generated Bundle v3. This is an opt-in compatibility path, not a new
+stage or command, and it does not grant publication authority.
 
 1. Validate licensed retrieval patterns:
 
