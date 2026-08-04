@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from skill.scripts.pipeline_contracts import (
@@ -23,6 +24,13 @@ from skill.scripts.readme_showcase.contracts.plan import (
     canonical_readme_plan_bytes,
     read_readme_plan,
     validate_readme_plan,
+)
+from skill.scripts.readme_showcase.evidence.adapters import adapt_v1_repository_evidence
+from skill.scripts.readme_showcase.orchestration.stages import (
+    MAX_CANDIDATE_BYTES,
+    CandidateImportStage,
+    GenerationRequestStage,
+    candidate_files,
 )
 
 
@@ -236,6 +244,290 @@ class PipelineContractTests(unittest.TestCase):
 
             self.assertEqual(raised.exception.code, "E_OUTPUT_PATH")
             self.assertFalse((outside / "result.json").exists())
+
+
+class CandidateFilesVersionTests(unittest.TestCase):
+    @staticmethod
+    def _compiled_plan(route: str = "compiled", locales: list[dict[str, str]] | None = None) -> dict[str, object]:
+        return {
+            "schema_version": 3,
+            "mode": "readme",
+            "locales": locales or [{"tag": "en", "readme_path": "README.md"}],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": route,
+            "commands": [],
+            "evidence_ids": ["file:" + "a" * 64],
+        }
+
+    @staticmethod
+    def _candidate_spec(evidence: dict[str, object] | None = None) -> dict[str, object]:
+        spec = json.loads((REPO_ROOT / "tests/fixtures/contracts/visual-spec-v1.valid.json").read_text(encoding="utf-8"))
+        graph = evidence or json.loads((REPO_ROOT / "tests/fixtures/contracts/repository-evidence-v2.valid.json").read_text(encoding="utf-8"))
+        fact_id = graph["facts"][0]["fact_id"]
+
+        def replace(value: object) -> object:
+            if isinstance(value, dict):
+                return {key: replace(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [replace(item) for item in value]
+            return fact_id if value == "FACT_ID" else value
+
+        return replace(spec)  # type: ignore[return-value]
+
+    @staticmethod
+    def _evidence_graph() -> dict[str, object]:
+        return json.loads((REPO_ROOT / "tests/fixtures/contracts/repository-evidence-v2.valid.json").read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _v1_scan_evidence() -> dict[str, object]:
+        content = "# Demo\n"
+        digest = hashlib.sha256(content.encode()).hexdigest()
+        return {
+            "schema_version": 1,
+            "status": "complete",
+            "target": {"name": "demo", "base_sha": "a" * 40},
+            "scan_limits": {
+                "max_depth": 12,
+                "max_directories": 500,
+                "max_file_bytes": 512 * 1024,
+                "max_files": 2000,
+                "max_seconds": 5,
+                "max_total_bytes": 4 * 1024 * 1024,
+            },
+            "files": [{"path": "README.md", "bytes": len(content.encode()), "lines": 1, "sha256": digest, "content": content}],
+            "facts": [{"fact_id": "file:README.md", "kind": "repository-file", "path": "README.md", "evidence_sha256": digest}],
+            "warnings": [],
+        }
+
+    @staticmethod
+    def _context(
+        root: Path,
+        plan: dict[str, object],
+        *,
+        mode: str = "readme",
+        evidence: dict[str, object] | None = None,
+    ) -> SimpleNamespace:
+        plan_path = root / "stages/03-plan-import/attempts/1/readme-plan.json"
+        plan_path.parent.mkdir(parents=True)
+        candidate_root = root / "stages/05-candidate"
+        candidate_root.mkdir(parents=True)
+        plan_path.write_bytes(canonical_json_bytes(plan))
+        evidence_path = root / "stages/01-scan/attempts/1/repository-evidence.json"
+        evidence_path.parent.mkdir(parents=True)
+        evidence_path.write_bytes(canonical_json_bytes(evidence or CandidateFilesVersionTests._evidence_graph()))
+
+        class Workspace:
+            def __init__(self, workspace_root: Path) -> None:
+                self.root = workspace_root
+
+        class Context:
+            def __init__(self, workspace_root: Path, workspace_mode: str) -> None:
+                self.workspace = Workspace(workspace_root)
+                self.manifest = {
+                    "configuration": {
+                        "mode": workspace_mode,
+                        "locales": ["en"],
+                        "project_type": "developer-tool",
+                    },
+                    "target": {"repository": "owner/demo", "base_sha": "a" * 40},
+                }
+
+            def attempt_file(self, stage_index: int, name: str) -> Path:
+                if stage_index == 0:
+                    return self.workspace.root / "stages/01-scan/attempts/1" / name
+                if stage_index == 1:
+                    return self.workspace.root / "stages/02-retrieve/attempts/1" / name
+                return self.workspace.root / "stages/03-plan-import/attempts/1" / name
+
+        return Context(root, mode)  # type: ignore[return-value]
+
+    def _write_compiled_inputs(
+        self,
+        root: Path,
+        *,
+        locales: list[dict[str, str]] | None = None,
+        evidence: dict[str, object] | None = None,
+    ) -> SimpleNamespace:
+        plan = self._compiled_plan(locales=locales)
+        context = self._context(root, plan, evidence=evidence)
+        candidate_root = root / "stages/05-candidate"
+        candidate_root.joinpath("claim-map.json").write_bytes(canonical_json_bytes({"schema_version": 3}))
+        evidence_graph = adapt_v1_repository_evidence(evidence) if evidence is not None and evidence.get("schema_version") == 1 else None
+        candidate_root.joinpath("visual-spec.json").write_bytes(canonical_json_bytes(self._candidate_spec(evidence_graph)))
+        for entry in plan["locales"]:  # type: ignore[index]
+            path = candidate_root / entry["readme_path"]  # type: ignore[index]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(f"# {entry['tag']}\n".encode())  # type: ignore[index]
+        return context
+
+    def test_compiled_plan_requires_raw_spec_claim_map_and_all_readmes_without_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._write_compiled_inputs(
+                root,
+                locales=[
+                    {"tag": "en", "readme_path": "README.md"},
+                    {"tag": "zh-Hans", "readme_path": "docs/README.zh-Hans.md"},
+                ],
+            )
+            (root / "stages/05-candidate/assets").mkdir()
+            (root / "stages/05-candidate/assets/diagram.svg").write_bytes(b"<svg/>")
+
+            files = candidate_files(context)
+            self.assertIsNotNone(files)
+            self.assertEqual(
+                [name for name, _ in files or []],
+                ["claim-map.json", "visual-spec.json", "README.md", "docs/README.zh-Hans.md", "assets/diagram.svg"],
+            )
+            self.assertNotIn("asset-manifest.json", [name for name, _ in files or []])
+
+    def test_compiled_visual_spec_adapts_real_v1_scan_evidence_without_rewriting_stage1(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = self._v1_scan_evidence()
+            context = self._write_compiled_inputs(root, evidence=evidence)
+            evidence_path = root / "stages/01-scan/attempts/1/repository-evidence.json"
+            raw_before = evidence_path.read_bytes()
+
+            files = candidate_files(context)
+            self.assertIsNotNone(files)
+            self.assertEqual(evidence_path.read_bytes(), raw_before)
+
+            evidence_path.write_bytes(canonical_json_bytes({"schema_version": 3, "facts": []}))
+            with self.assertRaises(ContractError) as raised:
+                candidate_files(context)
+            self.assertEqual(raised.exception.code, "E_SCHEMA_VERSION")
+
+    def test_compiled_plan_requires_localized_readmes_outside_readme_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._write_compiled_inputs(
+                root,
+                locales=[
+                    {"tag": "en", "readme_path": "README.md"},
+                    {"tag": "zh-Hans", "readme_path": "docs/README.zh-Hans.md"},
+                ],
+            )
+            context.manifest["configuration"]["mode"] = "audit"
+            (root / "stages/05-candidate/docs/README.zh-Hans.md").unlink()
+            self.assertIsNone(candidate_files(context))
+
+    def test_compiled_candidate_manifest_is_forbidden_and_fingerprint_binds_raw_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._write_compiled_inputs(root)
+            manifest = root / "stages/05-candidate/asset-manifest.json"
+            manifest.write_bytes(canonical_json_bytes({"schema_version": 2}))
+            with self.assertRaises(ContractError) as raised:
+                candidate_files(context)
+            self.assertEqual(raised.exception.code, "E_SCHEMA_VALUE")
+
+            manifest.unlink()
+            fingerprint = CandidateImportStage().fingerprint(context)
+            (root / "stages/05-candidate/README.md").write_bytes(b"# changed\n")
+            self.assertNotEqual(fingerprint, CandidateImportStage().fingerprint(context))
+
+    def test_generation_request_adapts_v1_for_compiled_plan_and_rebinds_temporary_retrieval(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = self._v1_scan_evidence()
+            evidence_graph = adapt_v1_repository_evidence(evidence)
+            fact_id = evidence_graph["facts"][0]["fact_id"]
+            plan = self._compiled_plan()
+            plan["evidence_ids"] = [fact_id]
+            context = self._context(root, plan, evidence=evidence)
+            context.manifest["configuration"]["locales"] = ["en"]
+            retrieval = {
+                "schema_version": 1,
+                "status": "available",
+                "dataset": {"dataset_id": "demo", "dataset_revision": 1, "manifest_sha256": "b" * 64},
+                "query": {
+                    "evidence_sha256": hashlib.sha256(canonical_json_bytes(evidence)).hexdigest(),
+                    "project_type": "developer-tool",
+                    "sections": [],
+                    "tags": [],
+                },
+                "records": [
+                    {
+                        "record_id": "pattern",
+                        "score": 1,
+                        "pattern": {"summary": "summary", "structure": "structure", "proof": "proof"},
+                    }
+                ],
+                "reason": None,
+            }
+            retrieval_path = root / "stages/02-retrieve/attempts/1/retrieval-packet.json"
+            retrieval_path.parent.mkdir(parents=True)
+            retrieval_path.write_bytes(canonical_json_bytes(retrieval))
+            evidence_path = root / "stages/01-scan/attempts/1/repository-evidence.json"
+            evidence_before = evidence_path.read_bytes()
+            retrieval_before = retrieval_path.read_bytes()
+
+            result = GenerationRequestStage().execute(context)
+            self.assertEqual(result.status, "pass")
+            request = json.loads(result.files["generation-request.json"])
+            self.assertEqual(request["evidence_index"][0]["fact_id"], fact_id)
+            self.assertEqual(evidence_path.read_bytes(), evidence_before)
+            self.assertEqual(retrieval_path.read_bytes(), retrieval_before)
+
+    def test_compiled_spec_waits_or_fails_closed_before_candidate_promotion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._write_compiled_inputs(root)
+            spec_path = root / "stages/05-candidate/visual-spec.json"
+
+            spec_path.unlink()
+            self.assertIsNone(candidate_files(context))
+            spec_path.write_bytes(canonical_json_bytes({"schema_version": 1}))
+            with self.assertRaises(ContractError) as malformed:
+                candidate_files(context)
+            self.assertEqual(malformed.exception.code, "E_SCHEMA_MISSING_FIELD")
+
+            spec_path.write_bytes(b" " * (MAX_CANDIDATE_BYTES + 1))
+            with self.assertRaises(ContractError) as oversized:
+                candidate_files(context)
+            self.assertEqual(oversized.exception.code, "E_INPUT_SIZE")
+
+            spec_path.write_bytes(canonical_json_bytes(self._candidate_spec()))
+            claim_path = root / "stages/05-candidate/claim-map.json"
+            claim_path.write_bytes(canonical_json_bytes({"schema_version": 2}))
+            with self.assertRaises(ContractError) as stale_claim:
+                candidate_files(context)
+            self.assertEqual(stale_claim.exception.code, "E_SCHEMA_VERSION")
+
+    def test_compiled_symlinked_asset_and_legacy_routes_preserve_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._write_compiled_inputs(root)
+            assets = root / "stages/05-candidate/assets"
+            assets.mkdir()
+            outside = root / "outside.svg"
+            outside.write_bytes(b"<svg/>")
+            (assets / "escape.svg").symlink_to(outside)
+            with self.assertRaises(ContractError) as raised:
+                candidate_files(context)
+            self.assertEqual(raised.exception.code, "E_RUN_PATH")
+
+            legacy_root = root / "legacy"
+            legacy_context = self._context(legacy_root, {
+                "schema_version": 2,
+                "mode": "readme",
+                "locales": [{"tag": "en", "readme_path": "README.md"}],
+                "sections": ["overview"],
+                "visual_intent": "project-structure",
+                "diagram_route": "static",
+                "commands": [],
+                "evidence_ids": ["file:" + "a" * 64],
+            })
+            legacy_candidate = legacy_root / "stages/05-candidate"
+            legacy_candidate.joinpath("claim-map.json").write_bytes(b"claim")
+            legacy_candidate.joinpath("asset-manifest.json").write_bytes(b"manifest")
+            legacy_candidate.joinpath("README.md").write_bytes(b"readme")
+            self.assertEqual(
+                [name for name, _ in candidate_files(legacy_context) or []],
+                ["claim-map.json", "asset-manifest.json", "README.md"],
+            )
 
 
 class PipelineCliTests(unittest.TestCase):

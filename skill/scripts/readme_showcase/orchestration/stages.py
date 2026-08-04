@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib
 import os
@@ -18,6 +19,7 @@ from ...pipeline_contracts import (
 )
 from ..contracts.run import STAGE_NAMES
 from ..contracts.plan import validate_readme_plan
+from ..evidence.adapters import adapt_v1_repository_evidence
 from ..generation.request import (
     MAX_GENERATION_REQUEST_BYTES,
     build_generation_request,
@@ -86,6 +88,20 @@ def _canonical_object(path: Path, code: str = "E_RUN_INPUT") -> tuple[bytes, dic
 
 def _upstream(context: RunContext, index: int) -> str | None:
     return context.manifest["stages"][index]["output_sha256"]
+
+
+def _v3_evidence_graph(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    version = evidence.get("schema_version")
+    if type(version) is int and version == 1:
+        return adapt_v1_repository_evidence(evidence)
+    if type(version) is int and version == 2:
+        return dict(evidence)
+    raise ContractError("E_SCHEMA_VERSION", "README Plan v3 inputs require repository evidence schema_version 1 or 2")
+
+
+def _validate_compiled_visual_spec(value: object, evidence_graph: object) -> None:
+    validator = importlib.import_module(f"{__package__.rsplit('.', 1)[0]}.visual_kernel.model").validate_visual_spec
+    validator(value, evidence_graph=evidence_graph)
 
 
 class ScanStage:
@@ -163,6 +179,15 @@ class GenerationRequestStage:
         _, evidence = _canonical_object(context.attempt_file(0, "repository-evidence.json"))
         _, retrieval = _canonical_object(context.attempt_file(1, "retrieval-packet.json"))
         _, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
+        evidence_for_request: Mapping[str, Any] = evidence
+        retrieval_for_request: Mapping[str, Any] = retrieval
+        if plan["schema_version"] == 3:
+            evidence_for_request = _v3_evidence_graph(evidence)
+            if type(evidence.get("schema_version")) is int and evidence["schema_version"] == 1:
+                retrieval_for_request = copy.deepcopy(retrieval)
+                query = retrieval_for_request.get("query")
+                if isinstance(query, dict):
+                    query["evidence_sha256"] = hashlib.sha256(canonical_json_bytes(evidence_for_request)).hexdigest()
         request = build_generation_request(
             target={
                 "repository": context.manifest["target"]["repository"],
@@ -171,8 +196,8 @@ class GenerationRequestStage:
             locales=["zh-Hans" if locale == "zh" else locale for locale in context.manifest["configuration"]["locales"]],
             project_classification=context.manifest["configuration"]["project_type"],
             plan=plan,
-            retrieval_packet=retrieval,
-            evidence_packet=evidence,
+            retrieval_packet=retrieval_for_request,
+            evidence_packet=evidence_for_request,
         )
         return StageResult("pass", {"generation-request.json": canonical_generation_request(request)})
 
@@ -180,18 +205,36 @@ class GenerationRequestStage:
 def candidate_files(context: RunContext) -> list[tuple[str, bytes]] | None:
     root = context.workspace.root / "stages/05-candidate"
     _, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
-    required = ["claim-map.json", "asset-manifest.json"]
-    if context.manifest["configuration"]["mode"] == "readme":
+    compiled = plan["schema_version"] == 3 and plan["diagram_route"] == "compiled"
+    required = ["claim-map.json", "visual-spec.json"] if compiled else ["claim-map.json", "asset-manifest.json"]
+    if compiled:
+        required.extend(entry["readme_path"] for entry in plan["locales"])
+    elif context.manifest["configuration"]["mode"] == "readme":
         if plan["schema_version"] == 2:
             required.extend(entry["readme_path"] for entry in plan["locales"])
         else:
             required.append("README.md")
             if "zh" in plan["languages"]:
                 required.append("README_zh.md")
+    if compiled:
+        manifest = root / "asset-manifest.json"
+        if manifest.exists() or manifest.is_symlink():
+            raise ContractError("E_SCHEMA_VALUE", "compiled candidates must not supply asset-manifest.json")
     output: list[tuple[str, bytes]] = []
     for relative in required:
         try:
-            raw = read_regular_bytes(root / relative, maximum=MAX_CANDIDATE_BYTES)
+            path = root / relative
+            if compiled and relative == "claim-map.json":
+                raw, claim_map = _canonical_object(path)
+                if claim_map.get("schema_version") != 3:
+                    raise ContractError("E_SCHEMA_VERSION", "compiled candidate claim map requires schema_version 3")
+            elif compiled and relative == "visual-spec.json":
+                raw, visual_spec = _canonical_object(path)
+                _, evidence = _canonical_object(context.attempt_file(0, "repository-evidence.json"))
+                evidence_graph = _v3_evidence_graph(evidence)
+                _validate_compiled_visual_spec(visual_spec, evidence_graph)
+            else:
+                raw = read_regular_bytes(path, maximum=MAX_CANDIDATE_BYTES)
         except ContractError as exc:
             if exc.code == "E_INPUT_NOT_FOUND":
                 return None
