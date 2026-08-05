@@ -43,8 +43,10 @@ remote write.
   Bundle v3 and requires its hash to equal the immutable bundle hash already
   recorded in PR Bundle v2's passing evaluation. Rebuilding trust from a
   changed manifest is forbidden.
-- The explicit legacy motion renderer bounds JSON/SVG bytes and frame work
-  before rendering; renderer and ffmpeg subprocesses have finite timeouts.
+- The explicit legacy motion renderer reads JSON/SVG inputs without following
+  links, bounds structure, bytes, dimensions, elements, and frame work before
+  rendering, gives renderer/ffmpeg subprocesses finite timeouts, and replaces a
+  prior GIF only after a bounded encoded result is complete.
 
 Repeated compilation of the same canonical inputs and pinned identities MUST
 produce identical canonical data and SVG bytes.

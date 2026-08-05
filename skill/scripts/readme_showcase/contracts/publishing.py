@@ -9,10 +9,13 @@ from typing import Any, cast
 
 from ...pipeline_contracts import (
     ContractError,
+    MAX_JSON_DEPTH,
     canonical_json_bytes,
     read_regular_bytes,
+    validate_json_nesting,
 )
 from ..delivery import legacy as _LEGACY
+from .evaluation import validate_evaluation_report_v3
 from ..generation.assembler import validate_generated_bundle_v3
 
 
@@ -26,8 +29,16 @@ ALLOWED_ACTIONS = [
 EVALUATION_PATH = "evaluation-report.json"
 PREVIEW_PATH = "output/preview/index.html"
 PREVIEW_REPORT_PATH = "output/preview/report.json"
-COMPILED_MANIFEST_PATH = "asset-manifest.json"
 COMPILED_BUNDLE_PATH = "generated-readme-bundle.json"
+COMPILED_BOUND_PATHS = frozenset({
+    COMPILED_BUNDLE_PATH,
+    "readme-plan.json",
+    "retrieval-packet.json",
+    "repository-evidence.json",
+    "claim-map.json",
+    "visual-spec.json",
+    "asset-manifest.json",
+})
 MAX_BOUND_BYTES = 16 * 1024 * 1024
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _COMMIT = re.compile(r"[0-9a-f]{40}\Z")
@@ -271,16 +282,22 @@ def _read(root: Path, relative: str, code: str) -> bytes:
 
 def _canonical_report(root: Path, relative: str, code: str) -> tuple[bytes, dict[str, Any]]:
     raw = _read(root, relative, code)
+    validate_json_nesting(
+        raw,
+        maximum_depth=MAX_JSON_DEPTH,
+        code=code,
+        context=f"bound report {relative}",
+    )
     try:
         value = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
         raise ContractError(code, f"bound report is malformed: {relative}") from exc
     if not isinstance(value, dict) or raw != canonical_json_bytes(value):
         _fail(code, f"bound report is not canonical JSON: {relative}")
     return raw, value
 
 
-def _validate_compiled_binding(pr: dict[str, Any], root: Path) -> None:
+def _validate_compiled_binding(pr: dict[str, Any], root: Path) -> dict[str, Any]:
     """Re-read the complete stage-6 set before deriving approval bindings."""
 
     bundle_raw, bundle = _canonical_report(
@@ -316,6 +333,7 @@ def _validate_compiled_binding(pr: dict[str, Any], root: Path) -> None:
         or compiled["fingerprint"] != pr["compiled"]["fingerprint"]
     ):
         _fail("E_APPROVAL_FINGERPRINT", "compiled PR projection differs from evaluated bundle")
+    return bundle
 
 
 def current_approval_bindings(pr_payload: Any, candidate_root: Path) -> dict[str, Any]:
@@ -324,8 +342,9 @@ def current_approval_bindings(pr_payload: Any, candidate_root: Path) -> dict[str
     except ContractError as exc:
         raise ContractError("E_APPROVAL_FINGERPRINT", str(exc)) from exc
     root = _root(candidate_root)
+    compiled_bundle = None
     if pr["schema_version"] == 2:
-        _validate_compiled_binding(pr, root)
+        compiled_bundle = _validate_compiled_binding(pr, root)
     target = cast(dict[str, Any], pr["target"])
     evaluation = cast(dict[str, Any], pr["evaluation"])
     candidates = [
@@ -343,10 +362,29 @@ def current_approval_bindings(pr_payload: Any, candidate_root: Path) -> dict[str
         if hashlib.sha256(raw).hexdigest() != item["sha256"]:
             _fail("E_APPROVAL_FINGERPRINT", f"candidate bytes drifted: {item['path']}")
 
-    evaluation_raw, _ = _canonical_report(root, EVALUATION_PATH, "E_EVALUATION_DRIFT")
+    evaluation_raw, evaluation_report = _canonical_report(
+        root,
+        EVALUATION_PATH,
+        "E_EVALUATION_DRIFT",
+    )
     evaluation_sha256 = hashlib.sha256(evaluation_raw).hexdigest()
     if evaluation_sha256 != evaluation["report_sha256"]:
         _fail("E_EVALUATION_DRIFT", "evaluation report bytes differ from PR bundle")
+    if compiled_bundle is not None:
+        try:
+            checked_report = validate_evaluation_report_v3(evaluation_report)
+        except ContractError as exc:
+            raise ContractError(
+                "E_EVALUATION_DRIFT",
+                "compiled evaluation report is invalid",
+            ) from exc
+        compiled = cast(dict[str, Any], compiled_bundle["compiled"])
+        if (
+            checked_report["status"] != "pass"
+            or checked_report["bundle_sha256"] != evaluation["bundle_sha256"]
+            or checked_report["compiled_fingerprint"] != compiled["fingerprint"]
+        ):
+            _fail("E_EVALUATION_DRIFT", "compiled evaluation differs from evaluated bundle")
     preview_raw = _read(root, PREVIEW_PATH, "E_PREVIEW_DRIFT")
     report_raw, _ = _canonical_report(root, PREVIEW_REPORT_PATH, "E_PREVIEW_DRIFT")
     return {
@@ -415,6 +453,7 @@ def check_approval_envelope(
 __all__ = [
     "ALLOWED_ACTIONS",
     "APPROVAL_SCHEMA_VERSION",
+    "COMPILED_BOUND_PATHS",
     "check_approval_envelope",
     "current_approval_bindings",
     "validate_approval_envelope_v2",

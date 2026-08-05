@@ -222,6 +222,116 @@ class MotionRendererTests(unittest.TestCase):
         self.assertIsNotNone(process.call_args.kwargs.get("timeout"))
         self.assertIn("timed out", str(timeout_error.exception))
 
+    def test_motion_json_structure_units_and_work_are_bounded(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        non_object = self.root / "non-object.json"
+        non_object.write_text("[]\n", encoding="utf-8")
+        with self.assertRaises(SystemExit) as object_error:
+            render_motion_gif.load_spec(non_object)
+        self.assertIn("JSON object", str(object_error.exception))
+
+        deep = self.root / "deep.json"
+        deep.write_bytes(b'{"nested":' + (b"[" * 2_000) + b"0" + (b"]" * 2_000) + b"}\n")
+        with self.assertRaises(SystemExit) as deep_error:
+            render_motion_gif.load_spec(deep)
+        self.assertIn("structural", str(deep_error.exception))
+
+        spec = render_motion_gif.load_spec(HERO_SPEC)
+        spec["reveals"] = [
+            {"id": f"item-{index}", "start": 0, "end": 1}
+            for index in range(65)
+        ]
+        with self.assertRaises(SystemExit) as element_error:
+            render_motion_gif.validate_spec(spec)
+        self.assertIn("motion elements", str(element_error.exception))
+
+        spec = render_motion_gif.load_spec(HERO_SPEC)
+        spec.update(
+            fps=60,
+            duration=3,
+            reveals=[
+                {"id": f"item-{index}", "start": 0, "end": 1}
+                for index in range(64)
+            ],
+            layers=[],
+        )
+        with self.assertRaises(SystemExit) as work_error:
+            render_motion_gif.validate_spec(spec)
+        self.assertIn("composite work", str(work_error.exception))
+
+        root = ET.fromstring(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10cm" height="10cm" '
+            'viewBox="0 0 1 1"/>'
+        )
+        with self.assertRaises(SystemExit) as unit_error:
+            render_motion_gif._svg_dimensions(root)
+        self.assertIn("unitless or px", str(unit_error.exception))
+
+    def test_cli_rejects_symlinked_svg_spec_and_timeline_inputs(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        svg = self._write_svg()
+        spec = self._write_spec()
+        timeline = self._write_timeline()
+        cases = (
+            ("svg", svg, {"input_svg": None, "spec": spec, "timeline": None}),
+            ("spec", spec, {"input_svg": svg, "spec": None, "timeline": None}),
+            ("timeline", timeline, {"input_svg": svg, "spec": None, "timeline": None}),
+        )
+        for name, source, values in cases:
+            with self.subTest(name=name):
+                linked = self.root / f"linked-{name}{source.suffix}"
+                linked.symlink_to(source)
+                if name == "svg":
+                    values["input_svg"] = linked
+                elif name == "spec":
+                    values["spec"] = linked
+                else:
+                    values["timeline"] = linked
+                args = Namespace(
+                    output_gif=self.root / f"{name}.gif",
+                    keep_frames=None,
+                    **values,
+                )
+                with (
+                    mock.patch.object(render_motion_gif, "command_path", return_value="ffmpeg"),
+                    mock.patch.object(render_motion_gif, "choose_renderer", return_value=("rsvg-convert", "renderer")),
+                    mock.patch.object(
+                        render_motion_gif,
+                        "build_frames",
+                        side_effect=AssertionError("render reached"),
+                    ) as build,
+                    self.assertRaises(SystemExit) as raised,
+                ):
+                    render_motion_gif.run(args)
+                self.assertIn("regular file", str(raised.exception))
+                build.assert_not_called()
+
+    def test_failed_encoder_preserves_existing_output(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        frames = self.root / "frames"
+        frames.mkdir()
+        output = self.root / "existing.gif"
+        output.write_bytes(b"last-known-good")
+        spec = render_motion_gif.load_spec(HERO_SPEC)
+
+        def process(command: list[str], label: str) -> None:
+            destination = Path(command[-1])
+            if label == "ffmpeg palette generation":
+                palette = Image.new("P", (1, 1))
+                palette.putpalette([255, 0, 255] + [0, 0, 0] * 255)
+                palette.save(destination)
+                return
+            destination.write_bytes(b"partial-output")
+            raise SystemExit("encoder failed")
+
+        with (
+            mock.patch.object(render_motion_gif, "_run_process", side_effect=process),
+            self.assertRaises(SystemExit),
+        ):
+            render_motion_gif.encode_gif(frames, output, spec, "ffmpeg", 1, False)
+
+        self.assertEqual(output.read_bytes(), b"last-known-good")
+
     def test_timeline_duration_budget_rejects_before_workspace_or_output_replacement(self) -> None:
         timeline = self._write_timeline()
         payload = json.loads(timeline.read_text(encoding="utf-8"))

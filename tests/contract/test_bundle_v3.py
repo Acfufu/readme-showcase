@@ -279,6 +279,19 @@ class BundleV3ContractTests(unittest.TestCase):
             self.assertEqual(report["candidate_count"], 4)
             self.assertEqual(first["compiled"]["retention"], "manual")
 
+    def test_deep_visual_spec_bytes_fail_before_json_recursion(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self.make_bundle(root)
+            raw = b'{"nested":' + (b"[" * 2_000) + b"0" + (b"]" * 2_000) + b"}\n"
+            (root / "visual-spec.json").write_bytes(raw)
+            bundle["artifacts"]["visual_spec"]["sha256"] = hashlib.sha256(raw).hexdigest()
+
+            with self.assertRaises(ContractError) as raised:
+                validate_generated_bundle_v3(bundle, root)
+
+            self.assertEqual(raised.exception.code, "E_VISUAL_SPEC_SIZE")
+
     def test_forged_self_consistent_svg_inventory_fails_manifest_and_bundle_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

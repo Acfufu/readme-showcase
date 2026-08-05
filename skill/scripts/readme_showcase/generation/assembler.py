@@ -9,10 +9,12 @@ from typing import Any, Mapping
 
 from ...pipeline_contracts import (
     ContractError,
+    MAX_JSON_DEPTH,
     MAX_JSON_BYTES,
     canonical_json_bytes,
     canonical_sha256,
     read_regular_bytes,
+    validate_json_nesting,
     write_canonical_json_atomic,
 )
 from ..contracts.assets import validate_asset_manifest
@@ -122,11 +124,20 @@ def _read_json(
     context: str,
     *,
     maximum: int = MAX_JSON_BYTES,
+    depth_code: str = "E_INPUT_SIZE",
 ) -> dict[str, Any]:
     raw = _read_bytes(root, reference, context, maximum=maximum)
+    validate_json_nesting(
+        raw,
+        maximum_depth=MAX_JSON_DEPTH,
+        code=depth_code,
+        context=context,
+    )
     try:
         payload = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+        if isinstance(exc, RecursionError):
+            raise ContractError(depth_code, f"{context} exceeds structural limits") from None
         raise ContractError("E_INPUT_JSON", f"{context} must be canonical UTF-8 JSON") from exc
     if not isinstance(payload, dict):
         raise ContractError("E_SCHEMA_TYPE", f"{context} must contain an object")
@@ -539,7 +550,12 @@ def _validate_generated_bundle_v3(payload: Any, artifact_root: Path) -> dict[str
         raise ContractError("E_CLAIM_EVIDENCE", "README plan references missing evidence")
 
     raw_spec = _read_bytes(artifact_root, visual_spec_reference, "generated bundle.artifacts.visual_spec")
-    spec_payload = _read_json(artifact_root, visual_spec_reference, "generated bundle.artifacts.visual_spec")
+    spec_payload = _read_json(
+        artifact_root,
+        visual_spec_reference,
+        "generated bundle.artifacts.visual_spec",
+        depth_code="E_VISUAL_SPEC_SIZE",
+    )
     spec = validate_visual_spec(spec_payload, evidence_graph=evidence)
     if spec.canonical_bytes() != raw_spec:
         raise ContractError("E_BUNDLE_HASH", "stage-5 Visual Spec is not canonical")

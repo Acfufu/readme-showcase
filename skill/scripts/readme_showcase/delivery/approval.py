@@ -12,6 +12,7 @@ from ...pipeline_contracts import (
 )
 from ..contracts.publishing import (
     APPROVAL_SCHEMA_VERSION,
+    COMPILED_BOUND_PATHS,
     current_approval_bindings,
     validate_approval_envelope_v2,
 )
@@ -44,8 +45,22 @@ def create_approval_template_from_path(pr_bundle: Path, output: Path) -> dict[st
             for item in envelope["candidate_hashes"]
         ),
     }
+    compiled_root = None
+    if payload["schema_version"] == 2:
+        bound_paths.update(
+            pr_bundle.parent.joinpath(*Path(relative).parts)
+            for relative in COMPILED_BOUND_PATHS
+        )
+        compiled_root = os.path.abspath(os.fspath(pr_bundle.parent / "compiled"))
     output_key = os.path.abspath(os.fspath(output))
-    if output_key in {os.path.abspath(os.fspath(path)) for path in bound_paths}:
+    output_in_compiled = (
+        compiled_root is not None
+        and os.path.commonpath((output_key, compiled_root)) == compiled_root
+    )
+    if output_in_compiled or output_key in {
+        os.path.abspath(os.fspath(path))
+        for path in bound_paths
+    }:
         raise ContractError(INPUT_ERROR_CODE, "approval output must not replace a bound input")
     write_canonical_json_atomic(output, envelope)
     return envelope

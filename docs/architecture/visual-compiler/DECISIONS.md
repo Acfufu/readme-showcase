@@ -16,9 +16,9 @@ These decisions resolve the open questions in the original Archscribe handoff.
 | D10 | The runner remains exactly eight stages; Stage 5 owns author import and Stage 6 alone owns compilation and promotion. |
 | D11 | Attempts are immutable, last-known-good promotion is atomic, and retention is manual. |
 | D12 | Delivery remains local dry-run until separate remote-write authority is granted. |
-| D13 | Approval authority is bound to the evaluated complete Generated Bundle v3, not a manifest reconstructed from current bytes. |
+| D13 | Approval authority requires a live valid passing report bound to the evaluated complete Generated Bundle v3, not a manifest reconstructed from current bytes. |
 | D14 | The ELK adapter executes from a verified isolated snapshot so a changed live path cannot run before identity rejection. |
-| D15 | Caller-controlled Visual Spec and motion inputs have explicit structural/byte/work budgets, and motion subprocesses have finite timeouts. |
+| D15 | Caller-controlled Visual Spec and motion inputs have explicit structural/byte/work budgets, motion subprocesses have finite timeouts, and GIF replacement is atomic after successful bounded encoding. |
 
 Rejected and deferred scope is shown visually in
 [ARCHSCRIBE_ABSORPTION_FLOW.svg](ARCHSCRIBE_ABSORPTION_FLOW.svg) and explained in

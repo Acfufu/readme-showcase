@@ -11,12 +11,44 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 MAX_JSON_BYTES = 16 * 1024 * 1024
+MAX_JSON_DEPTH = 32
 
 
 class ContractError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code: str = code
+
+
+def validate_json_nesting(
+    raw: bytes,
+    *,
+    maximum_depth: int = MAX_JSON_DEPTH,
+    code: str = "E_INPUT_SIZE",
+    context: str = "JSON input",
+) -> None:
+    """Reject excessive JSON nesting before the recursive stdlib decoder."""
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for byte in raw:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:
+                escaped = True
+            elif byte == 0x22:
+                in_string = False
+            continue
+        if byte == 0x22:
+            in_string = True
+        elif byte in (0x5B, 0x7B):
+            depth += 1
+            if depth > maximum_depth:
+                raise ContractError(code, f"{context} exceeds structural limits")
+        elif byte in (0x5D, 0x7D):
+            depth -= 1
 
 
 def _validate_json_value(value: Any, path: str = "$") -> None:
@@ -218,6 +250,7 @@ def read_json_object_bytes(
     maximum: int = MAX_JSON_BYTES,
 ) -> tuple[bytes, dict[str, Any]]:
     raw = read_regular_bytes(path, maximum=maximum)
+    validate_json_nesting(raw, context=f"JSON input {path}")
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -233,6 +266,11 @@ def read_json_object_bytes(
             "E_INPUT_JSON",
             f"invalid JSON at line {exc.lineno}, column {exc.colno}: {path}",
         ) from exc
+    except RecursionError:
+        raise ContractError(
+            "E_INPUT_SIZE",
+            f"JSON input exceeds structural limits: {path}",
+        ) from None
     if not isinstance(payload, dict):
         raise ContractError(
             "E_SCHEMA_TYPE",

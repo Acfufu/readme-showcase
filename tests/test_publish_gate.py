@@ -24,6 +24,9 @@ _CORE = importlib.import_module("skill.scripts.pipeline_core")
 _PUBLISHING = importlib.import_module(
     "skill.scripts.readme_showcase.contracts.publishing"
 )
+_APPROVAL = importlib.import_module(
+    "skill.scripts.readme_showcase.delivery.approval"
+)
 check_publish_gate = _CORE.check_publish_gate
 
 
@@ -429,6 +432,56 @@ class PublishGateTests(unittest.TestCase):
             self.assertEqual(result["status"], "fail")
             self.assertIn("E_APPROVAL_FINGERPRINT", result["findings"])
             self.assertIsNone(result["write_authority"])
+
+    def test_compiled_approval_requires_live_passing_evaluation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, pr, run_root, approval = self.compiled_fixture(root)
+            report_path = run_root / "evaluation-report.json"
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["status"] = "fail"
+            report["hard_gate"] = {
+                "status": "fail",
+                "findings": [{"code": "E_TEST", "message": "forced failure"}],
+            }
+            write_canonical_json_atomic(report_path, report)
+            pr["evaluation"]["report_sha256"] = canonical_sha256(report)
+            projection = {
+                key: value
+                for key, value in pr.items()
+                if key not in {"fingerprint", "status"}
+            }
+            pr["fingerprint"] = canonical_sha256(projection)
+            approval["pr_fingerprint"] = pr["fingerprint"]
+            approval["evaluation_sha256"] = pr["evaluation"]["report_sha256"]
+
+            result = _PUBLISHING.check_approval_envelope(approval, pr, run_root)
+
+            self.assertEqual(result["status"], "fail")
+            self.assertIn("E_EVALUATION_DRIFT", result["findings"])
+            self.assertIsNone(result["write_authority"])
+
+    def test_approval_output_cannot_replace_compiled_bound_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, pr, run_root, _ = self.compiled_fixture(root)
+            pr_path = run_root / "pr-bundle.json"
+            write_canonical_json_atomic(pr_path, pr)
+            protected = [
+                run_root / "generated-readme-bundle.json",
+                run_root / "visual-spec.json",
+                run_root / "compiled/inventory.json",
+            ]
+            for output in protected:
+                with self.subTest(output=output.relative_to(run_root)):
+                    before = output.read_bytes()
+                    try:
+                        with self.assertRaises(ContractError) as raised:
+                            _APPROVAL.create_approval_template_from_path(pr_path, output)
+                        self.assertEqual(raised.exception.code, "E_APPROVAL_INPUT")
+                        self.assertEqual(output.read_bytes(), before)
+                    finally:
+                        output.write_bytes(before)
 
     def test_compiled_pr_rejects_missing_and_symlinked_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

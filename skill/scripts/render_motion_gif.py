@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
-import json
 import math
 import re
 import shutil
@@ -18,12 +17,22 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 if __package__ and __package__.startswith("skill."):
-    from skill.scripts.pipeline_contracts import ContractError, read_regular_bytes
+    from skill.scripts.pipeline_contracts import (
+        ContractError,
+        read_json_object_bytes,
+        read_regular_bytes,
+        write_bytes_atomic,
+    )
     from skill.scripts.readme_showcase.visual_kernel.motion import project_motion_spec
     from skill.scripts.readme_showcase.visual_kernel.timeline import Timeline
 else:  # The installed Skill runs this file directly from its scripts directory.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from scripts.pipeline_contracts import ContractError, read_regular_bytes
+    from scripts.pipeline_contracts import (
+        ContractError,
+        read_json_object_bytes,
+        read_regular_bytes,
+        write_bytes_atomic,
+    )
     from scripts.readme_showcase.visual_kernel.motion import project_motion_spec
     from scripts.readme_showcase.visual_kernel.timeline import Timeline
 
@@ -47,7 +56,10 @@ MAX_MOTION_FRAME_PIXELS = 20_000_000
 MAX_MOTION_TOTAL_PIXELS = 250_000_000
 MAX_MOTION_SPEC_BYTES = 256 * 1024
 MAX_MOTION_SVG_BYTES = 2 * 1024 * 1024
+MAX_MOTION_OUTPUT_BYTES = 64 * 1024 * 1024
 MAX_MOTION_SUBPROCESS_SECONDS = 60
+MAX_MOTION_ELEMENTS = 64
+MAX_MOTION_COMPOSITES = 10_000
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,9 +92,9 @@ def _read_input(path: Path, maximum: int) -> bytes:
 
 def load_spec(path: Path) -> dict:
     try:
-        spec = json.loads(_read_input(path, MAX_MOTION_SPEC_BYTES).decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        fail(f"invalid motion spec JSON: {exc}")
+        _, spec = read_json_object_bytes(path, maximum=MAX_MOTION_SPEC_BYTES)
+    except ContractError as exc:
+        fail(f"{exc.code}: {exc}")
 
     defaults = {
         "width": 1200,
@@ -104,12 +116,12 @@ def load_spec(path: Path) -> dict:
 def load_timeline(path: Path) -> dict:
     """Validate Timeline v1, then project it through the legacy motion adapter."""
     try:
-        timeline_payload = json.loads(_read_input(path, MAX_MOTION_SPEC_BYTES).decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        fail(f"invalid Timeline JSON: {exc}")
-
-    if not isinstance(timeline_payload, dict):
-        fail("Timeline v1 must be a JSON object")
+        _, timeline_payload = read_json_object_bytes(
+            path,
+            maximum=MAX_MOTION_SPEC_BYTES,
+        )
+    except ContractError as exc:
+        fail(f"{exc.code}: {exc}")
     required = {"schema_version", "targets", "duration_ms", "operations", "reduced_motion"}
     unknown = sorted(set(timeline_payload) - required)
     if unknown:
@@ -204,8 +216,17 @@ def validate_spec(spec: dict) -> None:
     if spec["dither"] not in allowed_dither:
         fail(f"unsupported dither mode: {spec['dither']}")
 
+    if not isinstance(spec["reveals"], list) or not isinstance(spec["layers"], list):
+        fail("reveals and layers must be arrays")
+    elements = [*spec["reveals"], *spec["layers"]]
+    if len(elements) > MAX_MOTION_ELEMENTS:
+        fail(f"motion elements must be at most {MAX_MOTION_ELEMENTS}")
+    if len(elements) * motion_frame_count(spec) > MAX_MOTION_COMPOSITES:
+        fail(f"motion composite work must be at most {MAX_MOTION_COMPOSITES}")
     ids: list[str] = []
-    for item in [*spec["reveals"], *spec["layers"]]:
+    for item in elements:
+        if not isinstance(item, dict):
+            fail("every reveal and layer must be an object")
         element_id = item.get("id")
         if not element_id:
             fail("every reveal and layer needs a non-empty id")
@@ -279,15 +300,18 @@ def _run_process(command: list[str], label: str) -> None:
 
 
 def _svg_dimensions(root: ET.Element) -> tuple[float, float]:
-    dimensions: list[float] = []
-    for name in ("width", "height"):
-        value = root.get(name, "").strip()
-        if not re.fullmatch(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?:px)?", value):
-            dimensions = []
-            break
-        dimensions.append(_finite_number(value.removesuffix("px"), f"SVG {name}"))
-    if len(dimensions) == 2:
-        return dimensions[0], dimensions[1]
+    raw_dimensions = [root.get(name, "").strip() for name in ("width", "height")]
+    if any(raw_dimensions):
+        pattern = r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?:px)?"
+        if not all(re.fullmatch(pattern, value) for value in raw_dimensions):
+            fail("SVG width and height must both use unitless or px dimensions")
+        width, height = (
+            _finite_number(value.removesuffix("px"), f"SVG {name}")
+            for name, value in zip(("width", "height"), raw_dimensions, strict=True)
+        )
+        if width <= 0 or height <= 0:
+            fail("input SVG dimensions must be positive")
+        return width, height
 
     view_box = re.split(r"[\s,]+", root.get("viewBox", "").strip())
     if len(view_box) != 4:
@@ -680,7 +704,7 @@ def encode_gif(
     ffmpeg: str,
     frame_count: int,
     has_transparency: bool,
-) -> None:
+) -> int:
     palette = frames_dir.parent / "palette.png"
     fps = int(spec["fps"])
     input_pattern = frames_dir / "frame-%04d.png"
@@ -715,52 +739,71 @@ def encode_gif(
         palette_pixels[index] = (*key, 255)
     palette_image.putdata(palette_pixels)
     palette_image.save(palette)
-    _run_process(
-        [
-            ffmpeg,
-            "-y",
-            "-framerate",
-            str(fps),
-            "-i",
-            str(input_pattern),
-            "-i",
-            str(palette),
-            "-lavfi",
-            f"paletteuse=dither={spec['dither']}:diff_mode=rectangle",
-            "-gifflags",
-            "+offsetting-transdiff",
-            "-loop",
-            "0",
-            str(output),
-        ],
-        "ffmpeg GIF encoding",
-    )
-    if has_transparency:
-        mark_key_color_transparent(
-            output,
-            parse_hex_color(spec["transparent_color"]),
-            frame_count,
+    with tempfile.NamedTemporaryFile(
+        prefix=".readme-motion-",
+        suffix=".gif",
+        dir=frames_dir.parent,
+        delete=False,
+    ) as stream:
+        encoded = Path(stream.name)
+    try:
+        _run_process(
+            [
+                ffmpeg,
+                "-y",
+                "-framerate",
+                str(fps),
+                "-i",
+                str(input_pattern),
+                "-i",
+                str(palette),
+                "-lavfi",
+                f"paletteuse=dither={spec['dither']}:diff_mode=rectangle",
+                "-gifflags",
+                "+offsetting-transdiff",
+                "-loop",
+                "0",
+                str(encoded),
+            ],
+            "ffmpeg GIF encoding",
         )
+        if has_transparency:
+            mark_key_color_transparent(
+                encoded,
+                parse_hex_color(spec["transparent_color"]),
+                frame_count,
+            )
+        try:
+            raw = read_regular_bytes(
+                encoded,
+                maximum=MAX_MOTION_OUTPUT_BYTES,
+                path_code="E_OUTPUT_PATH",
+                size_code="E_OUTPUT_SIZE",
+            )
+            write_bytes_atomic(output, raw)
+        except ContractError as exc:
+            fail(f"{exc.code}: {exc}")
+        return len(raw)
+    finally:
+        encoded.unlink(missing_ok=True)
 
 
 def run(args: argparse.Namespace) -> None:
-    input_svg = args.input_svg.expanduser().resolve()
-    output_gif = args.output_gif.expanduser().resolve()
-    if not input_svg.is_file():
-        fail(f"input SVG not found: {input_svg}")
+    input_svg = args.input_svg.expanduser()
+    output_gif = args.output_gif.expanduser()
 
     if args.spec is not None:
-        spec = load_spec(args.spec.expanduser().resolve())
+        spec = load_spec(args.spec.expanduser())
     else:
-        spec = load_timeline(args.timeline.expanduser().resolve())
+        spec = load_timeline(args.timeline.expanduser())
     validate_spec(spec)
-    ffmpeg = command_path("ffmpeg")
-    renderer = choose_renderer()
 
     try:
         root = ET.fromstring(_read_input(input_svg, MAX_MOTION_SVG_BYTES))
     except ET.ParseError as exc:
         fail(f"invalid SVG XML: {exc}")
+    ffmpeg = command_path("ffmpeg")
+    renderer = choose_renderer()
 
     if args.keep_frames:
         workspace = args.keep_frames.expanduser().resolve()
@@ -776,8 +819,7 @@ def run(args: argparse.Namespace) -> None:
         frames_dir, frame_count, width, height, has_transparency = build_frames(
             root, spec, renderer, workspace
         )
-        output_gif.parent.mkdir(parents=True, exist_ok=True)
-        encode_gif(
+        output_bytes = encode_gif(
             frames_dir,
             output_gif,
             spec,
@@ -789,7 +831,7 @@ def run(args: argparse.Namespace) -> None:
         if temporary:
             temporary.cleanup()
 
-    size_mb = output_gif.stat().st_size / (1024 * 1024)
+    size_mb = output_bytes / (1024 * 1024)
     print(f"GIF: {output_gif}")
     print(
         f"Output: {width}x{height}, {frame_count} frames, "
