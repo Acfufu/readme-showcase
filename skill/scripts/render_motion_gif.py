@@ -8,6 +8,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -34,6 +35,16 @@ except ImportError as exc:  # pragma: no cover - dependency error path
 
 SVG_NS = "http://www.w3.org/2000/svg"
 ET.register_namespace("", SVG_NS)
+
+
+# Keep the legacy adapter bounded even when it is invoked directly, outside
+# Timeline v1's own validation boundary.  These limits are intentionally
+# finite and shared by both --spec and --timeline inputs after projection.
+MAX_MOTION_DURATION_SECONDS = 30.0
+MAX_MOTION_DIMENSION = 20_000
+MAX_MOTION_FRAMES = 1_800
+MAX_MOTION_FRAME_PIXELS = 20_000_000
+MAX_MOTION_TOTAL_PIXELS = 250_000_000
 
 
 def parse_args() -> argparse.Namespace:
@@ -118,16 +129,60 @@ def load_timeline(path: Path) -> dict:
         fail(f"{exc.code}: {exc}")
 
 
+def _finite_number(value: object, field: str) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        fail(f"{field} must be a finite number")
+    if not math.isfinite(result):
+        fail(f"{field} must be a finite number")
+    return result
+
+
+def _integer(value: object, field: str) -> int:
+    if isinstance(value, bool):
+        fail(f"{field} must be an integer")
+    try:
+        result = int(value)
+    except (TypeError, ValueError, OverflowError):
+        fail(f"{field} must be an integer")
+    if isinstance(value, float) and not value.is_integer():
+        fail(f"{field} must be an integer")
+    return result
+
+
+def motion_frame_count(spec: dict) -> int:
+    """Return bounded frame count for already-loaded legacy motion spec."""
+    fps = _integer(spec["fps"], "fps")
+    duration = _finite_number(spec["duration"], "duration")
+    frame_count = round(duration * fps)
+    if frame_count < 1:
+        fail("duration and fps must produce at least one frame")
+    if frame_count > MAX_MOTION_FRAMES:
+        fail(f"frame count must be at most {MAX_MOTION_FRAMES}")
+    return frame_count
+
+
 def validate_spec(spec: dict) -> None:
-    if not 1 <= int(spec["fps"]) <= 60:
+    fps = _integer(spec["fps"], "fps")
+    if not 1 <= fps <= 60:
         fail("fps must be between 1 and 60")
-    if float(spec["duration"]) <= 0:
+    duration = _finite_number(spec["duration"], "duration")
+    if duration <= 0:
         fail("duration must be positive")
-    if int(spec["width"]) <= 0:
+    if duration > MAX_MOTION_DURATION_SECONDS:
+        fail(f"duration must be at most {MAX_MOTION_DURATION_SECONDS:g} seconds")
+    width = _integer(spec["width"], "width")
+    if width <= 0:
         fail("width must be positive")
-    if not 2 <= int(spec["colors"]) <= 256:
+    if width > MAX_MOTION_DIMENSION:
+        fail(f"width must be at most {MAX_MOTION_DIMENSION} pixels")
+    motion_frame_count(spec)
+    colors = _integer(spec["colors"], "colors")
+    if not 2 <= colors <= 256:
         fail("colors must be between 2 and 256")
-    if not 0 <= int(spec["alpha_threshold"]) <= 255:
+    alpha_threshold = _integer(spec["alpha_threshold"], "alpha_threshold")
+    if not 0 <= alpha_threshold <= 255:
         fail("alpha_threshold must be between 0 and 255")
     parse_hex_color(spec["transparent_color"])
     if not isinstance(spec["clip_to_base_alpha"], bool):
@@ -151,6 +206,47 @@ def validate_spec(spec: dict) -> None:
         ids.append(element_id)
     if len(ids) != len(set(ids)):
         fail("motion element ids must be unique")
+
+
+def validate_frame_budget(
+    spec: dict,
+    source_size: tuple[int, int],
+    *,
+    frame_count: int | None = None,
+) -> tuple[int, int]:
+    """Validate raster dimensions and total frame-pixel work.
+
+    Source dimensions come from the renderer's base raster, so this check uses
+    the exact output height rather than trusting optional SVG attributes.
+    """
+    source_width, source_height = source_size
+    if source_width <= 0 or source_height <= 0:
+        fail("source raster dimensions must be positive")
+    if source_width > MAX_MOTION_DIMENSION or source_height > MAX_MOTION_DIMENSION:
+        fail(f"source dimensions must be at most {MAX_MOTION_DIMENSION} pixels")
+
+    output_width = _integer(spec["width"], "width")
+    output_height = round(source_height * output_width / source_width)
+    if output_height <= 0:
+        fail("output height must be positive")
+    if output_height > MAX_MOTION_DIMENSION:
+        fail(f"output height must be at most {MAX_MOTION_DIMENSION} pixels")
+
+    frame_pixels = output_width * output_height
+    if frame_pixels > MAX_MOTION_FRAME_PIXELS:
+        fail(
+            "per-frame pixel budget exceeded: "
+            f"{frame_pixels} > {MAX_MOTION_FRAME_PIXELS}"
+        )
+    if frame_count is None:
+        frame_count = motion_frame_count(spec)
+    total_pixels = frame_pixels * frame_count
+    if total_pixels > MAX_MOTION_TOTAL_PIXELS:
+        fail(
+            "total frame-pixel budget exceeded: "
+            f"{total_pixels} > {MAX_MOTION_TOTAL_PIXELS}"
+        )
+    return output_width, output_height
 
 
 def command_path(name: str) -> str:
@@ -321,8 +417,12 @@ def build_frames(
 
     base_source = Image.open(base_png).convert("RGBA")
     source_width, source_height = base_source.size
-    output_width = int(spec["width"])
-    output_height = round(source_height * output_width / source_width)
+    frame_count = motion_frame_count(spec)
+    output_width, output_height = validate_frame_budget(
+        spec,
+        (source_width, source_height),
+        frame_count=frame_count,
+    )
     scale = output_width / source_width
     size = (output_width, output_height)
 
@@ -333,7 +433,6 @@ def build_frames(
     }
 
     fps = int(spec["fps"])
-    frame_count = round(float(spec["duration"]) * fps)
     frames_dir = workspace / "frames"
     frames_dir.mkdir()
     transparent_color = parse_hex_color(spec["transparent_color"])

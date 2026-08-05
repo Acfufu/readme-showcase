@@ -84,6 +84,13 @@ class MotionRendererTests(unittest.TestCase):
         )
         return path
 
+    def _write_spec(self, **updates: object) -> Path:
+        path = self.root / "motion.json"
+        payload = json.loads(HERO_SPEC.read_text(encoding="utf-8"))
+        payload.update(updates)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
     def test_explicit_timeline_renders_and_preserves_reduced_motion_projection(self) -> None:
         self._require_external_renderer()
         svg = self._write_svg()
@@ -114,6 +121,65 @@ class MotionRendererTests(unittest.TestCase):
             hashlib.sha256(output.read_bytes()).hexdigest(),
             HERO_SHA256,
         )
+
+    def test_hostile_spec_budget_rejects_before_workspace_or_output_replacement(self) -> None:
+        cases = (
+            ("duration", {"duration": 1_000_000_000}, "duration must be at most"),
+            ("width", {"width": 1_000_000}, "width must be at most"),
+        )
+        for name, updates, message in cases:
+            with self.subTest(name=name):
+                spec = self._write_spec(**updates)
+                output = self.root / f"{name}.gif"
+                output.write_bytes(b"previous-output")
+                frames_root = self.root / f"{name}-frames"
+                frames_root.mkdir()
+
+                result = self._run(
+                    str(HERO_SVG),
+                    str(output),
+                    "--spec",
+                    str(spec),
+                    "--keep-frames",
+                    str(frames_root),
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(output.read_bytes(), b"previous-output")
+                self.assertFalse((frames_root / "frames").exists())
+
+    def test_raster_budget_rejects_large_frame_work(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        spec = render_motion_gif.load_spec(HERO_SPEC)
+        with self.assertRaises(SystemExit) as raised:
+            render_motion_gif.validate_frame_budget(spec, (200, 3_333))
+        self.assertIn("per-frame pixel budget exceeded", str(raised.exception))
+
+    def test_timeline_duration_budget_rejects_before_workspace_or_output_replacement(self) -> None:
+        timeline = self._write_timeline()
+        payload = json.loads(timeline.read_text(encoding="utf-8"))
+        payload["duration_ms"] = 30_001
+        payload["operations"][0]["end_ms"] = 30_001
+        timeline.write_text(json.dumps(payload), encoding="utf-8")
+        output = self.root / "timeline-existing.gif"
+        output.write_bytes(b"previous-output")
+        frames_root = self.root / "timeline-frames"
+        frames_root.mkdir()
+
+        result = self._run(
+            str(HERO_SVG),
+            str(output),
+            "--timeline",
+            str(timeline),
+            "--keep-frames",
+            str(frames_root),
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("E_VISUAL_DETERMINISM", result.stderr)
+        self.assertEqual(output.read_bytes(), b"previous-output")
+        self.assertFalse((frames_root / "frames").exists())
 
     def test_timeline_source_is_required_and_mutually_exclusive(self) -> None:
         neither = self._run(str(HERO_SVG), str(self.root / "none.gif"))
