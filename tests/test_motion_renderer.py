@@ -361,6 +361,35 @@ class MotionRendererTests(unittest.TestCase):
 
         self.assertEqual(output.read_bytes(), b"last-known-good")
 
+    def test_oversized_encoder_output_fails_before_transparency_postprocess(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        frames = self.root / "frames-oversized"
+        frames.mkdir()
+        output = self.root / "existing-oversized.gif"
+        output.write_bytes(b"last-known-good")
+        spec = render_motion_gif.load_spec(HERO_SPEC)
+
+        def process(command: list[str], label: str) -> None:
+            destination = Path(command[-1])
+            if label == "ffmpeg palette generation":
+                palette = Image.new("P", (1, 1))
+                palette.putpalette([255, 0, 255] + [0, 0, 0] * 255)
+                palette.save(destination)
+                return
+            destination.write_bytes(b"oversized")
+
+        with (
+            mock.patch.object(render_motion_gif, "MAX_MOTION_OUTPUT_BYTES", 4),
+            mock.patch.object(render_motion_gif, "_run_process", side_effect=process),
+            mock.patch.object(render_motion_gif, "mark_key_color_transparent") as mark,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            render_motion_gif.encode_gif(frames, output, spec, "ffmpeg", 1, True)
+
+        self.assertIn("E_OUTPUT_SIZE", str(raised.exception))
+        mark.assert_not_called()
+        self.assertEqual(output.read_bytes(), b"last-known-good")
+
     def test_timeline_duration_budget_rejects_before_workspace_or_output_replacement(self) -> None:
         timeline = self._write_timeline()
         payload = json.loads(timeline.read_text(encoding="utf-8"))

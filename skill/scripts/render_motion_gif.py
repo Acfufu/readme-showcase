@@ -781,12 +781,6 @@ def encode_gif(
             ],
             "ffmpeg GIF encoding",
         )
-        if has_transparency:
-            mark_key_color_transparent(
-                encoded,
-                parse_hex_color(spec["transparent_color"]),
-                frame_count,
-            )
         try:
             raw = read_regular_bytes(
                 encoded,
@@ -794,6 +788,18 @@ def encode_gif(
                 path_code="E_OUTPUT_PATH",
                 size_code="E_OUTPUT_SIZE",
             )
+            if has_transparency:
+                mark_key_color_transparent(
+                    encoded,
+                    parse_hex_color(spec["transparent_color"]),
+                    frame_count,
+                )
+                raw = read_regular_bytes(
+                    encoded,
+                    maximum=MAX_MOTION_OUTPUT_BYTES,
+                    path_code="E_OUTPUT_PATH",
+                    size_code="E_OUTPUT_SIZE",
+                )
             write_bytes_atomic(output, raw)
         except ContractError as exc:
             fail(f"{exc.code}: {exc}")
