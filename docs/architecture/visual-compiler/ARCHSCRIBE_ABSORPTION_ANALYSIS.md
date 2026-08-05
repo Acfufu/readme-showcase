@@ -1,230 +1,179 @@
-# readme-showcase × Archscribe 吸收与改进分析
+# readme-showcase × Archscribe：独立 Visual Kernel 目标流
 
 > 复核日期：2026-08-05
-> `readme-showcase` 执行基线：`codex/archscribe-independent-visual-kernel` / `2051a902bd3f38fae92a27070f0604d4d6afb36c`
-> 执行基线 tree：`7e077dab07b39087ca77c39cbd939233a839f860`
-> 当前工作树：上述 HEAD；本地文档资产在任务提交前保持未跟踪
-> Archscribe 参考基线：[`46ea42cfc6c557ab238867c390bb18320fd36769`](https://github.com/lazypay/Archscribe/tree/46ea42cfc6c557ab238867c390bb18320fd36769)
-> 范围：架构分析与视觉资产；不修改生产代码、README 或发布状态
+> 执行基线：`codex/archscribe-independent-visual-kernel` / `4f652fffef9f31495f81555e4d4d44ae544893e6`
+> 执行基线 tree：`8be30e440100b98034967d7b21ec9cb9fc9ed7c7`
+> Archscribe 仅作为行为参考：[`46ea42cfc6c557ab238867c390bb18320fd36769`](https://github.com/lazypay/Archscribe/tree/46ea42cfc6c557ab238867c390bb18320fd36769)
+> 范围：记录当前实现、兼容边界与 opt-in 目标流；不修改生产路由、README 发布状态或远端仓库。
 
 ## 结论
 
-采用“项目自有 Visual Compiler Core”的方向，但不复制 Archscribe，也不重写现有图布局引擎。
-
-最小正确边界：
+吸收的是“受约束的视觉规格如何变成可读图形”的行为，而不是 Archscribe 的运行时、素材或品牌。当前实现由项目自有的 `readme_showcase.visual_kernel` 负责语义、证据绑定、变体策略、Scene、SVG、派生数据、门禁和指纹；现有 vendored ELK 只负责有界关系布局。
 
 ```text
-readme-showcase owns:
-Evidence → Intent → Visual Spec → Scene IR → SVG → Visual Gates → Bundle / Approval
-
-ELK owns:
-relationship-heavy geometry only
-
-Archscribe provides:
-reference behavior + selected algorithm ideas + golden comparison fixtures
+Evidence v2 → Plan v3 (explicit compiled) → Visual Spec v1
+  → visual_kernel → bounded ELK geometry
+  → desktop/mobile Scene v1 → SVG / gates / Timeline / Interaction / inventory
+  → Asset Manifest v3 + Generated Bundle v3
+  → Validation → Evaluation v3 → Preview → PR fingerprint → Approval → dry-run handoff
 ```
 
-首期只交付 `Evidence-bound graph → ELK geometry → variant-specific Scene → deterministic SVG → manifest → bundle`。Panorama、Swimlane、PNG、Excalidraw、Motion、HTML 全部后置。
+目标流见 [标记后的吸收图](ARCHSCRIBE_ABSORPTION_FLOW.svg)；图中的前缀和图例分别表示保留、修改、新增、拒绝从吸收方案纳入以及后置。被拒绝的内容不会被复制到本仓库，也不表示外部 Archscribe 仓库被删除或修改。
 
-## 1. 当前 dev 的真实流程
+## 1. 当前默认流程（未选择 compiled）
 
-![当前 dev 分支从仓库证据到本地交付的流程图](CURRENT_DEV_FLOW.svg)
+![当前 dev 分支的默认八阶段流程](CURRENT_DEV_FLOW.svg)
 
-这张图描述的是当前默认 runner 的本地生命周期，不把 opt-in 的 Plan v3 `compiled` 路线画成默认行为。执行基线已按
-`2051a902bd3f38fae92a27070f0604d4d6afb36c` / tree
-`7e077dab07b39087ca77c39cbd939233a839f860` 重新核对。
+当前默认 runner 的契约仍是且只有以下八个 stage，顺序由 [`contracts/run.py`](../../../skill/scripts/readme_showcase/contracts/run.py) 的 `STAGE_NAMES` 与 [`orchestration/stages.py`](../../../skill/scripts/readme_showcase/orchestration/stages.py) 的注册表共同校验：
 
-- 默认路线仍是 `none | static | elk`；只有显式选择 Plan v3 `diagram_route: "compiled"` 才进入视觉内核和 Bundle v3；
-- 默认运行固定八个 stage：`scan → retrieve → plan-import → generation-request → candidate → bundle-assemble → validation → evaluation`，stage 名称、顺序和状态由 `run.py` 契约固定；
-- `run` 创建集中式 `${CODEX_HOME:-$HOME/.codex}/state/readme-showcase/<target-key>/runs/run-<id>/` 工作区；每个 stage 追加 `attempts/<attempt>/`，并用 `current.json` 指向最近一次已提交尝试，目标仓库保持在工作区之外；
-- `candidate` 是外部 Agent/人提交 README、Claim Map、Asset Manifest 和资产后再导入的边界；缺少计划或候选时 runner 会停在 `waiting-for-plan` 或 `waiting-for-candidate`，不会自行编造输入；
-- `BundleAssembleStage` 对默认路线保持 legacy bundle v1；显式 compiled 计划才调用项目自有视觉内核并写 Bundle/Asset Manifest v3。compiled 失败不会改写上一次已提交的 stage 尝试；
-- 内容类 validation 失败最多追加三次 revision request，安全类失败保持 fail-closed；`resume` 只从集中式 manifest 的 stale/current 状态继续；
-- `preview` 读取已提交尝试，approval 默认 reject；`build-pr-bundle`、`create-approval-template` 和 `deliver --transport gh --dry-run` 都是本地交接动作，公开 delivery 不会 push、打开 PR 或调用远程 provider；
-- `render_elk.mjs` 是独立、哈希校验的 `elkjs@0.9.3` / Node `22.22.3` 适配器。它可被明确的视觉编译调用，但不是这张默认 current-flow 图中的 runner stage，也没有 runner → ELK 的隐含边。
+1. `scan`
+2. `retrieve`
+3. `plan-import`
+4. `generation-request`
+5. `candidate`
+6. `bundle-assemble`
+7. `validation`
+8. `evaluation`
 
-代码证据：
+默认 `none`、`static`、`elk` 路由和 v1/v2 读取器保持兼容。Plan v1/v2 不能选择 `compiled`；没有显式的 Plan v3 `diagram_route: "compiled"` 时，Stage 6 继续写 legacy Generated Bundle v1。
 
-- [`skill/scripts/readme_showcase/orchestration/stages.py`](../../../skill/scripts/readme_showcase/orchestration/stages.py)
-- [`skill/scripts/readme_showcase/orchestration/runner.py`](../../../skill/scripts/readme_showcase/orchestration/runner.py)
-- [`skill/scripts/render_elk.mjs`](../../../skill/scripts/render_elk.mjs)
-- [`skill/scripts/readme_showcase/validation/legacy.py`](../../../skill/scripts/readme_showcase/validation/legacy.py)
-- [`skill/scripts/readme_showcase/contracts/assets.py`](../../../skill/scripts/readme_showcase/contracts/assets.py)
-- [`skill/scripts/readme_showcase/delivery/github.py`](../../../skill/scripts/readme_showcase/delivery/github.py)
-
-### 1.1 对原移交文档的校正
-
-| 原移交假设 | 当前执行基线实际情况 | 对方案的影响 |
-| --- | --- | --- |
-| `none / static / glyphic` | 已迁移为 `none / static / elk` | 兼容对象改为现有 `elk`；不再设计 glyphic 迁移或测试 |
-| `render_glyphic.mjs` 是当前适配器 | 当前是 vendored ELK + `render_elk.mjs` | 不重做 graph layout；把 ELK 收窄成新 compiled route 的内部 geometry backend |
-| Pipeline 主要由三个顶层脚本承载 | 已拆出 contracts、scanner、retrieval、generation、orchestration、validation、evaluation、preview、delivery 模块 | 新能力接入现有 stage / contract 边界，不重写 `pipeline_core.py` |
-| 先单独建设 Contracts / RenderContext 骨架 | 仓库已有 17 个 Schema，且 v1/v2 视觉契约尚未收敛 | 首期采用 Graph→Spec→Scene→SVG 垂直切片，避免新增一批“只定义、不消费”的契约 |
-| README 仍以旧命令为主 | 当前基线已公开 run/resume/status/explain/preview 与命令索引 | 文档不是首期阻塞；真实缺口是视觉契约收敛和 live delivery 的公开边界 |
-| 所有新 renderer 可按原八阶段铺开 | 当前 ELK 静态链路、motion approval、Preview、PR gate 已可用 | 首期只补 graph + SVG；PNG、Excalidraw、Motion、HTML 和新布局按真实缺口后置 |
-
-## 2. Archscribe 能吸收什么
-
-Archscribe 的优势主要在“受约束视觉规格如何变成易读技术图”，不是仓库事实提取，也不是安全发布：
-
-| Archscribe 内容 | 处理方式 | 进入 readme-showcase 的形式 |
-| --- | --- | --- |
-| `panorama / swimlane / graph` 意图选择 | 吸收规则 | `DiagramIntent.purpose` 与 layout policy |
-| 回边识别、loop 独立通道、longest-path layering、barycenter ordering | 参考算法与 fixture | 优先映射为 ELK constraints；只补 ELK 确认缺失的最小逻辑 |
-| 文本长度、容量、ignored field 的字段级诊断 | 吸收并强化 | 统一 `Diagnostic {path, code, severity, message, action, related_ids}` |
-| 一次规划，多种格式派生 | 吸收架构思想 | Scene IR 是唯一几何来源；SVG 先行，其他 renderer 后置 |
-| 稳定语义 icon 与 project overview 叙事 | 选择性吸收 | 可选语义 token，不带 Archscribe 品牌视觉 |
-| PNG/SVG/GIF/MP4/HTML/Excalidraw | 后置能力 | 不进入首期 DoD，不成为 README 成功依赖 |
-
-Archscribe 当前 [`graph_model.py`](https://github.com/lazypay/Archscribe/blob/46ea42cfc6c557ab238867c390bb18320fd36769/scripts/graph_model.py) 约 844 行；其中 graph 规划包含回边识别、分层、barycenter 排序和正交 loop/skip channel。这些是可验证的参考实现，但当前 readme-showcase 已经拥有 ELK，首选“把语义编译成 ELK 约束”，而不是重新实现通用布局。
-
-## 3. 明确删除或拒绝吸收的部分
-
-| 删除 / 拒绝项 | 原因 | 替代方案 |
-| --- | --- | --- |
-| Archscribe CLI 作为生产运行时 | 增加外部安装与行为漂移 | 只在 golden comparison 工具中临时运行 |
-| 原样复制 `render_animated_diagram.py` / `svg_renderer.py` | 两个文件分别约 2,581 / 2,819 行 | 小型项目内 `visual/` 垂直切片 |
-| `THEME / CURRENT_PLAN / OPS_SINK / FINISH_MODE` 模块全局状态 | 不可重入、并发与测试边界差 | 显式 `RenderContext` 与不可变输入 |
-| Browser / rough.js 作为静态成功依赖 | 当前 Pipeline 的静态、安全、离线边界更严格 | SVG 核心使用项目 serializer；浏览器仅后置高保真派生 |
-| 所有动画帧驻留内存 | 高分辨率时资源风险 | 后置 motion 使用 frame generator → streaming encoder |
-| HTML/JS 字符串直拼不可信输入 | 注入与 `</script>` 风险 | 后置 safe template + escaping + CSP + no external network |
-| Archscribe 品牌化 neon/paper 作为默认 Theme | 与 project-native 视觉原则冲突 | Repository tokens → readme-showcase defaults → user overrides |
-| 默认产出所有格式与动画 | 超出 README 核心需求 | SVG required；其他格式按证据与明确批准 opt-in |
-
-Archscribe MIT 代码若发生实质复制，必须保留 MIT copyright 与 license notice。建议首期以 algorithm-inspired rewrite 和 golden fixtures 为主；任何 direct derivative 文件保留文件级 notice，并增加 `NOTICE` 来源表。
-
-## 4. 改进后的流程
-
-![吸收 Archscribe 后的 Evidence-aware Visual Compiler 流程图，标注保留、修改、新增、删除和后置环节](ARCHSCRIBE_ABSORPTION_FLOW.svg)
-
-### 4.1 保留
-
-- Scanner、Evidence v2、Retrieval、Plan Import、Generation Request；
-- run/resume 状态机、stale invalidation、revision request；
-- canonical JSON、原子写入、路径和 symlink gate；
-- Validation、Evaluation、Preview、Approval、Publish fingerprint、Delivery boundary；
-- `none / static / elk` 旧路线，在兼容期继续读取和验证。
-
-### 4.2 修改
-
-1. **ELK ownership**：从“semantic JSON → 最终 SVG”改成 compiled route 内部 geometry backend。旧 `elk` route 保留兼容，不再是新体系的真相来源。
-2. **Runner bundle**：从固定生成 v1 bundle 改成 version-aware producer；新 compiled 资产只由 v3 producer 写出。
-3. **Claim Map**：从文字 claim 扩展到节点存在、边关系、分组意义、图例、数字标注；旧 `diagram_labels` 保留读取适配。
-4. **Asset Manifest**：统一 legacy v1 的 engine metadata 与 v2 的 Evidence provenance/locale，增加 Spec、Scene、Theme、variant、renderer、diagnostics、fallback 引用。
-5. **Evaluation**：从“资产存在且 provenance 可绑定”扩展到 Spec→Scene、Scene→Artifact、Evidence coverage、overflow、overlap、out-of-bounds、determinism。
-6. **Fingerprint**：关键输入包括 Intent、Visual Spec、variant Scene、Theme、renderer identity、资产、Visual Gates；任一变化撤销旧批准。
-
-### 4.3 新增
-
-建议最小目录，不预建未使用后端：
+runner 把输入、attempt、diagnostic、preview 与编译字节放在目标仓库之外的集中状态目录：
 
 ```text
-skill/scripts/readme_showcase/visual/
-├── contracts.py       # Intent / VisualSpec / Scene / diagnostics
-├── compiler.py        # evidence binding + compile orchestration
-├── elk_backend.py     # 调用现有 render_elk.mjs 的 geometry 模式
-├── scene.py           # geometry → owned primitives
-├── svg.py             # Scene → deterministic standalone SVG
-└── gates.py           # security / semantic / geometry / accessibility
+${CODEX_HOME:-$HOME/.codex}/state/readme-showcase/<target-key>/runs/run-<id>/
 ```
 
-不建立一实现接口、插件市场、renderer registry 或远程服务。
+每个 stage 使用不可变 `attempts/<attempt>/` 和 `current.json` 指针；失败的未提交 attempt 只回滚自身，不覆盖上一次成功字节。目标仓库不放 `.readme-showcase-run-*`，也不创建 per-run virtualenv。`resume` 从 central manifest 的 stale/current 状态继续，手工 retention 是唯一清理策略。
 
-## 5. 关键领域约束
+candidate 是外部作者边界：runner 等待并导入 README、Claim Map、以及 ordinary route 所需的 Asset Manifest/资产，不自行编造作者输入。`preview` 读取已提交 attempt；`build-pr-bundle`、审批检查与 `deliver --transport gh --dry-run` 都是本地交接，不 push、不打开 PR、不调用远程 provider。
 
-### Diagram Intent
+`render_elk.mjs`（Node `22.22.3`、elkjs `0.9.3`）是独立、哈希校验的 ELK 适配器。它不是默认 runner 的 stage，也不存在 runner → ELK 的隐含边；只有 compiled Stage 6 通过项目的 bounded geometry wrapper 明确调用它。
 
-- 回答图要解决的问题、目标读者、必需事实、应省略内容、复杂度预算；
-- 在编译前判断 Markdown 或表格是否更合适；
-- 首期 purpose 仅支持 `architecture-overview` / `runtime-flow` 中可映射为 graph 的子集。
+## 2. 已实现的 compiled 目标流
 
-### Visual Spec
+### 2.1 Plan v3 与 Stage 5 作者边界
 
-- 只含语义节点、边、分组、label、support state、Evidence IDs、layout policy；
-- `verified` 必须直接绑定 Evidence；
-- `inferred` 必须绑定推断输入与解释；
-- `editorial` 必须声明解释目的；
-- `unverified` 不得进入正式资产；
-- 不接受绝对路径、任意 URL、HTML、脚本、浏览器代码、后端字体路径。
+只有 canonical Readme Plan v3 且 `diagram_route` 为 `compiled` 时，现有八阶段中的 Stage 5/6 改变输入和工作内容；没有第九阶段，也没有新的公开 CLI 命令。
 
-### Scene IR
+Stage 5 (`stages/05-candidate/`) 只接受并校验外部作者的：
 
-- 一个 Visual Spec 可编译为多份 variant-specific Scene；desktop 和 mobile 不共享坐标；
-- 每个可见 primitive 必须拥有 `node / edge / group / decoration` owner；
-- interaction region、animation track 和派生 renderer 只能引用 Scene ID；
-- Scene 是 geometry gate 和 artifact coverage 的唯一来源。
+- 每个 Plan locale 对应的 `README*.md`；
+- Claim Map v3 (`claim-map.json`)；
+- Evidence-bound、canonical Visual Spec v1 (`visual-spec.json`)。
 
-### Determinism
+Stage 5 校验全局唯一且 NFC/UTF-8 排序的 ID、Evidence v2 成员关系、边和 group/lane 引用、`desktop`/`mobile` 变体及资源边界。Compiled candidate 明确拒绝 `asset-manifest.json`；Stage 5 不布局、不创建 publishable SVG，也不拥有最终 Asset Manifest。
 
-首期 cache key：
+### 2.2 Stage 6 编译与产物归属
+
+`BundleAssembleStage` 在 Stage 6 读取 Stage 5 的 canonical README、Claim Map、Visual Spec 以及上游 evidence/retrieval，调用项目自有 `compile_visual` facade。一次成功的不可变 attempt 拥有：
 
 ```text
-hash(
-  normalized_visual_spec
-  + scene_builder_version
-  + elk_module_sha256
-  + svg_renderer_sha256
-  + theme_sha256
-  + variant
-  + locale
-)
+stages/06-bundle-assemble/attempts/<attempt>/
+├── generated-readme-bundle.json          # Generated Bundle v3
+├── asset-manifest.json                   # Asset Manifest v3，Stage 6 负责
+├── assets/readme-showcase/<locale>/<variant>.svg
+└── compiled/
+    ├── visual-spec.json
+    ├── theme.json
+    ├── inventory.json
+    ├── scenes/<locale>/<variant>.json
+    ├── gates/<locale>/<variant>.json
+    ├── timeline/<locale>/<variant>.json
+    └── interaction/<locale>/<variant>.json
 ```
 
-SVG 要求同 cache key 字节一致。PNG、浏览器或系统字体相关格式后置，并分别声明环境身份与允许的确定性等级。
+`visual_kernel` 的职责边界落在 [`skill/scripts/readme_showcase/visual_kernel/`](../../../skill/scripts/readme_showcase/visual_kernel/)：
 
-## 6. 分期
+1. `model`/`normalize` 把 Visual Spec v1 转成不可变 Plan，拒绝未知字段、浮点、路径/URL、丢失 Evidence、悬空边和静默修复；
+2. `graph` 与 `swimlane` 处理 architecture、flow、swimlane、sequence 四类 intent，以及层级、排序、回边和 lane 归属；
+3. `theme` 为 desktop/mobile 分别解析项目 token；desktop viewBox 宽 1200、核心文字至少 16、检查宽 900；mobile 独立规划且宽不超过 720、核心文字至少 24、检查宽 360；
+4. `elk_backend` 只接收有界且已验证的布局输入，读取并验证同一真实 run root 下的 geometry/metadata；项目代码拥有语义和最终 SVG 字节；
+5. `scene` 生成唯一几何真相 Scene v1；`svg` 是 Scene 的纯、静态、安全序列化；
+6. `gates` 组合安全、语义、几何、文本可读性和 determinism 门禁；
+7. `timeline` 与 `interaction` 是同一 Scene 的 canonical data projection，不是 HTML/脚本来源；
+8. `artifacts` 写出按 locale/variant 排序的 inventory，绑定 Visual Spec、Theme、Scene、Gate、Timeline、Interaction、SVG 与 compiler/ELK/renderer identity。
 
-### VC0：固定基线
+Stage 6 最后生成并校验 Asset Manifest v3 与 Generated Bundle v3。Manifest 的 publishable 资产是桌面/移动 SVG；Scene、Gate、Timeline、Interaction 和 inventory 是内部证据。`compiled.retention` 固定为 `manual`，任何失败都不会把旧成功 attempt 替换成部分产物。
 
-- 固定执行基线 `readme-showcase 2051a90`（tree `7e077dab`）与 Archscribe `46ea42c`；
-- 选 3–6 个小 fixture；
-- 保存 semantic JSON、geometry summary、Scene snapshot 和少量视觉 preview；
-- 验证当前 none/static/elk、bundle、evaluation、approval、delivery 回归；
-- 不改 production route。
+### 2.3 下游指纹链
 
-### VC1：Graph + SVG walking skeleton
+Stage 7 继续走 version-aware validation（legacy v1/v2 与 compiled v3 分支）；Stage 8 产生 Evaluation Report v3，检查 gate 状态、Evidence coverage、desktop/mobile 完整性、资源预算和 determinism。之后：
 
-- 同一批实现 Intent、Visual Spec、ELK geometry、Scene、SVG、基础 Gates；
-- 不做只定义不消费的 Contract 阶段；
-- CLI 仅提供实验 compile 命令或 feature flag；
-- 任何缺字段、丢节点、丢边、溢出、越界、安全错误都结构化失败。
+```text
+Bundle v3 + Evaluation v3
+  → Preview report（compiled refs + viewport checks）
+  → PR Bundle v2（只发布 README/SVG 候选，绑定 inventory/fingerprint）
+  → Approval Envelope v2（重新读取每一层绑定字节）
+  → deliver --transport gh --dry-run（本地、无远端写入）
+```
 
-### VC2：Contract convergence 与 Pipeline Integration
+任一 Visual Spec、Scene、Theme、SVG、Gate、Timeline、Interaction、inventory、renderer identity、路径或版本变化都会使下游指纹失效。旧 v1/v2 producer、reader、fixture bytes 和 `none/static/elk` 默认行为不迁移到 v3。
 
-- 新增 Plan / Claim Map / Asset Manifest / Bundle v3；
-- v1/v2 继续读取，producer 默认仍保持旧行为；
-- `compiled` 显式启用后才写出 v3；
-- runner、evaluation、preview、PR fingerprint 接入 Spec/Scene/Theme/Gates；
-- compiled 失败不覆盖 last-known-good，不修改 README 引用。
+## 3. 吸收矩阵与边界
 
-### VC3：Theme 与 variants
+### 保留 / kept
 
-- Repository-native tokens → 默认 Theme → 用户 overrides；
-- desktop / mobile 各自 Scene；
-- 900px 与 360px 检查；
-- 只有真实图表超载后才增加拆图建议。
+- Evidence v2、Scanner、Retrieval、Plan Import、Generation Request 和 one-README-Agent 顺序；
+- 固定八阶段 runner、waiting-for-plan/waiting-for-candidate、stale invalidation、revision request、central RunWorkspace、immutable attempts、manual retention；
+- canonical JSON、no-follow 路径、原子写入、symlink/race/size gate；
+- ordinary `none`、`static`、`elk` 路由以及 legacy validation/evaluation/preview/approval/delivery boundaries；
+- 现有 vendored ELK 包身份（只在明确 compiled geometry 调用中使用）。
 
-### VC4 以后：按真实缺口增量加入
+### 修改 / modified
 
-- Panorama / Swimlane；
-- PNG 或 editable output；
-- opt-in Motion；
-- safe Evidence Explorer。
+- Plan v3 增加显式 `compiled` 选择；默认 producer 不变；
+- Stage 5 从 ordinary candidate 清单切换为 README + Claim Map v3 + Visual Spec v1 作者输入，并拒绝作者提供 final Asset Manifest；
+- Stage 6 从固定 Bundle v1 分支为 compiler facade + Asset Manifest/Generated Bundle v3；
+- Claim Map v3 绑定 Visual Spec 元素；Asset Manifest v3 绑定 Scene/Gate/locale/variant/provenance；
+- Evaluation、Preview、PR Bundle、Approval 重新读取 compiled inventory/fingerprint；当前公开 delivery 命令只允许 local `--dry-run`；
+- ELK 从“可能直接产出最终图”收窄为 validated bounded geometry backend，Scene/SVG/门禁真相归项目所有。
 
-## 7. 首期验收
+### 新增 / added
 
-- 一个真实仓库生成 Evidence-bound graph SVG；
-- 所有核心节点、边、label、分组均有 Evidence 或 editorial 状态；
-- Spec 元素 100% 进入 Scene，Scene 语义元素 100% 进入 SVG；
-- 无静默丢失、核心文本溢出、核心节点越界；
-- 同 cache key 连续渲染 SVG 字节一致；
-- 900px 可读；360px 使用独立 Scene 或明确降级；
-- Spec、Scene、Theme、renderer、SVG、Gate 结果进入 Manifest 和 fingerprint；
-- none/static/elk、motion approval、validation、evaluation、preview、approval、delivery 旧测试保持通过；
-- 浏览器、Archscribe CLI、PNG、动画、HTML 不成为首期成功依赖。
+- `skill/scripts/readme_showcase/visual_kernel/` 独立包及 narrow public facade `compile_visual`；
+- Visual Spec v1、Scene v1、Gate Report v1、Timeline v1、Interaction v1、Theme v1、inventory 和 layered fingerprint；
+- architecture/flow/swimlane/sequence 的 graph/scene 编译，独立 desktop/mobile Scene 与 deterministic SVG；
+- Plan/Claim Map/Asset Manifest/Generated Bundle/Evaluation/PR 的 opt-in v3/v2 contract atoms 与 compiled E2E lifecycle；
+- 受限的 Timeline→legacy motion projection。动画仍必须由显式 motion approval/renderer 入口触发，不会由 compiled route 自动生成。
 
-## 8. 当前已知边界
+### 拒绝或从吸收方案删除 / rejected from absorption
 
-- 当前 README 已公开 run/resume/status/explain/preview 和分组命令索引；approval/delivery/feedback 的独立入口仍未完整进入首页主流程，本方案不顺带修改 README。
-- 公开 `deliver` CLI 只允许 GitHub dry-run。内部 live executor 的存在不等于当前已具备用户可调用的远程发布闭环。
-- 本次只新增本目录中的分析文档与两张 SVG；README、生产代码和发布状态未改动。
+- Archscribe CLI、Python runtime、renderer source、subprocess runtime、rough.js、Chromium/browser runtime；
+- Archscribe panorama artwork、字体、图标、neon/paper branding、截图、固定 panorama 坐标、编码后的 golden bytes；
+- copied comments/symbols/constants/fixtures，以及 `visual_kernel/vendor/`；
+- 复制 Archscribe 的 Excalidraw/PNG/codec implementation、任意本地 asset path、远程 renderer、默认动画；格式/能力本身见下方“后置”，并非吸收来源；
+- 拒绝只表示 readme-showcase 不吸收这些内容；外部 Archscribe repository 不在本次写入范围内。
+
+### 后置 / deferred
+
+- 浏览器交互/高保真 HTML 渲染、PNG 或 Excalidraw 等派生格式；
+- 将 Timeline 变成帧/GIF/视频的显式 motion workflow 以外的自动动画；
+- live provider、push、PR 创建和线上发布；
+- 任何未被当前 contract、fixture、真实本地运行和批准指纹证明的 production/browser/live-provider 结论。
+
+“后置”不是当前编译失败的 fallback，也不是成功声明；compiled 路径在 SVG、Scene、data projections、gates 和下游 local handoff 处停止。
+
+## 4. 规格与资源门禁（当前实现）
+
+- Visual Spec canonical bytes ≤ 256 KiB；Scene/SVG ≤ 2 MiB；Gate/Timeline/Interaction ≤ 512 KiB；单次编译总字节 ≤ 16 MiB；
+- SVG ≤ 5,000 elements、≤ 2,000 paths、depth ≤ 64、dimension ≤ 20,000；geometry 坐标/尺寸为非负整数且 ≤ 20,000；
+- 拒绝 XML declaration/entity/DOCTYPE、script/event handler/external reference/unsafe URL/style import/foreignObject、绝对或 traversal path、symlink/special file、output-parent replacement race；
+- hard gates 拒绝缺坐标、浮点/负数、越界、无关节点 overlap、非法 edge intersection、group escape、文本 line-budget overflow、SVG security 和 fingerprint/determinism drift；
+- Scene order、variants、locale、artifact paths、diagnostics、inventory records 和 fingerprints 均按 canonical/stable sort；重复编译必须得到相同字节。
+
+## 5. Clean-room 说明与证据边界
+
+Archscribe pinned SHA 只用于阅读行为：graph rank/layer/order、回边/loop channel、swimlane sizing、text-fit、structured diagnostics、timeline/interaction state。对应说明在 [`visual-kernel-clean-room.md`](../../../skill/references/visual-kernel-clean-room.md)；机器扫描会拒绝 Archscribe/rough.js/font/icon imports、forbidden payload 与 `visual_kernel/vendor`。
+
+当前文档可以断言的是已提交代码、schemas、tests、local deterministic adapter 和 dry-run boundary。它不把浏览器、PNG/HTML 视觉质量、动画成片、远程 provider 或 live delivery 当作本次 compiled contract 的完成证据；这些能力需要后续明确授权、独立运行和新的指纹/QA 记录。
+
+实现与契约的主要入口：
+
+- [`visual_kernel/compiler.py`](../../../skill/scripts/readme_showcase/visual_kernel/compiler.py)
+- [`visual_kernel/model.py`](../../../skill/scripts/readme_showcase/visual_kernel/model.py)
+- [`visual_kernel/elk_backend.py`](../../../skill/scripts/readme_showcase/visual_kernel/elk_backend.py)
+- [`orchestration/stages.py`](../../../skill/scripts/readme_showcase/orchestration/stages.py)
+- [`contracts/run.py`](../../../skill/scripts/readme_showcase/contracts/run.py)
+- [`references/visual-compiler.md`](../../../skill/references/visual-compiler.md)
+
+Schema index 当前为 26 个 contract atoms（每个 valid/invalid fixture 共 52 个），而非早期移交文档中的 17 个；这是当前分支实际状态，不是未实施路线图。

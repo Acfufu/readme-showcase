@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1444" height="4113" viewBox="0 0 1444 4113" role="img">
+<title>Target opt-in visual kernel flow with clean-room absorption boundaries</title>
+<defs>
+<filter id="elk-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#38bdf8" flood-opacity="0.14"/></filter>
+<marker id="elk-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0 L10 4 L0 8 Z" fill="#7dd3fc"/></marker>
+</defs>
+<rect x="0" y="0" width="1444" height="4113" fill="#07111f"/>
+<rect id="group-legend" x="56" y="24" width="1364" height="186" rx="18" fill="#07111f" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text id="group-label-legend" x="738" y="39" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="738" dy="0">Categories — prefixes</tspan>
+<tspan x="738" dy="20">are semantic status</tspan>
+</text>
+<path id="edge-0-0" d="M728 937 L728 1225" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-0-0" x="627" y="1067" width="94" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-0-0" x="674" y="1086" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="674" dy="0">evidence</tspan>
+</text>
+<path id="edge-1-0" d="M458 186 L458 381 L693 381 L693 503" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-1-0" x="373" y="345" width="78" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-1-0" x="412" y="364" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="412" dy="0">status</tspan>
+</text>
+<path id="edge-2-0" d="M728 186 L728 503" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-2-0" x="643" y="345" width="78" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-2-0" x="682" y="364" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="682" dy="0">status</tspan>
+</text>
+<path id="edge-3-0" d="M1000 186 L1000 381 L763 381 L763 503" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-3-0" x="915" y="345" width="78" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-3-0" x="954" y="364" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="954" dy="0">status</tspan>
+</text>
+<path id="edge-4-0" d="M1280 186 L1280 391 L799 391 L799 503" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-4-0" x="1195" y="345" width="78" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-4-0" x="1234" y="364" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="1234" dy="0">status</tspan>
+</text>
+<path id="edge-5-0" d="M188 186 L188 391 L657 391 L657 503" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-5-0" x="103" y="345" width="78" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-5-0" x="142" y="364" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="142" dy="0">status</tspan>
+</text>
+<path id="edge-6-0" d="M728 573 L728 861" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-6-0" x="607" y="703" width="114" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-6-0" x="664" y="722" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="664" dy="0">target flow</tspan>
+</text>
+<path id="edge-7-0" d="M728 1301 L728 1589" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-7-0" x="627" y="1431" width="94" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-7-0" x="674" y="1450" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="674" dy="0">patterns</tspan>
+</text>
+<path id="edge-8-0" d="M728 1685 L728 1973" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-8-0" x="507" y="1815" width="214" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-8-0" x="614" y="1824" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="614" dy="0">external author</tspan>
+<tspan x="614" dy="20">contract</tspan>
+</text>
+<path id="edge-9-0" d="M728 2089 L728 2255 L484 2255 L484 2377" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-9-0" x="575" y="2219" width="146" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-9-0" x="648" y="2238" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="648" dy="0">candidate bytes</tspan>
+</text>
+<path id="edge-10-0" d="M434 2473 L434 2761" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-10-0" x="289" y="2603" width="138" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-10-0" x="358" y="2622" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="358" dy="0">compiled route</tspan>
+</text>
+<path id="edge-11-0" d="M434 2857 L434 3145" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-11-0" x="281" y="2987" width="146" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-11-0" x="354" y="3006" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="354" dy="0">variant outputs</tspan>
+</text>
+<path id="edge-12-0" d="M434 3281 L434 3569" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-12-0" x="329" y="3411" width="98" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-12-0" x="378" y="3430" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="378" dy="0">Bundle v3</tspan>
+</text>
+<path id="edge-13-0" d="M434 3685 L434 3973" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-13-0" x="233" y="3815" width="194" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-13-0" x="330" y="3834" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="330" dy="0">fingerprinted handoff</tspan>
+</text>
+<path id="edge-14-0" d="M434 2089 L434 2377" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-14-0" x="289" y="2219" width="138" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-14-0" x="358" y="2238" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="358" dy="0">ordinary route</tspan>
+</text>
+<path id="edge-15-0" d="M156 2089 L156 2255 L384 2255 L384 2377" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-15-0" x="19" y="2219" width="130" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-15-0" x="84" y="2238" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="84" dy="0">central state</tspan>
+</text>
+<rect id="node-kept_key" x="352" y="70" width="212" height="116" rx="8" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-kept_key" x="458" y="103" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="458" dy="0">[保留] defaults: eight</tspan>
+<tspan x="458" dy="20">stages;</tspan>
+<tspan x="458" dy="20">none/static/elk;</tspan>
+<tspan x="458" dy="20">RunWorkspace</tspan>
+</text>
+<rect id="node-modified_key" x="620" y="90" width="216" height="96" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-modified_key" x="728" y="123" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="728" dy="0">[修改] Plan v3 compiled</tspan>
+<tspan x="728" dy="20">+ downstream</tspan>
+<tspan x="728" dy="20">fingerprints</tspan>
+</text>
+<rect id="node-added_key" x="892" y="110" width="216" height="76" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-added_key" x="1000" y="143" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="1000" dy="0">[新增] visual_kernel +</tspan>
+<tspan x="1000" dy="20">Scene/gates/inventory</tspan>
+</text>
+<rect id="node-rejected_key" x="1164" y="70" width="232" height="116" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="7 5" filter="url(#elk-shadow)"/>
+<text id="node-label-rejected_key" x="1280" y="103" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="1280" dy="0">[拒绝] Archscribe</tspan>
+<tspan x="1280" dy="20">runtime/assets/branding</tspan>
+<tspan x="1280" dy="20">not copied; external</tspan>
+<tspan x="1280" dy="20">repo unchanged</tspan>
+</text>
+<rect id="node-deferred_key" x="80" y="90" width="216" height="96" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="7 5" filter="url(#elk-shadow)"/>
+<text id="node-label-deferred_key" x="188" y="123" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="188" dy="0">[后置]</tspan>
+<tspan x="188" dy="20">browser/PNG/HTML/live</tspan>
+<tspan x="188" dy="20">provider not claimed</tspan>
+</text>
+<rect id="node-source" x="624" y="861" width="208" height="76" rx="8" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-source" x="728" y="894" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="728" dy="0">[保留] Evidence-bound</tspan>
+<tspan x="728" dy="20">repository</tspan>
+</text>
+<rect id="node-legend_bridge" x="622" y="503" width="212" height="70" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-legend_bridge" x="728" y="543" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="728" dy="0">Read target flow below</tspan>
+</text>
+<rect id="node-early" x="620" y="1225" width="216" height="76" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-early" x="728" y="1258" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="728" dy="0">[保留] Stages 1–2: scan</tspan>
+<tspan x="728" dy="20">→ retrieve</tspan>
+</text>
+<rect id="node-plan" x="632" y="1589" width="192" height="96" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-plan" x="728" y="1622" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="728" dy="0">[修改] Stages 3–4:</tspan>
+<tspan x="728" dy="20">plan-import →</tspan>
+<tspan x="728" dy="20">generation-request</tspan>
+</text>
+<rect id="node-candidate" x="616" y="1973" width="224" height="116" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="7 5" filter="url(#elk-shadow)"/>
+<text id="node-label-candidate" x="728" y="2006" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="728" dy="0">[修改] Stage 5 Candidate</tspan>
+<tspan x="728" dy="20">— owns README*.md +</tspan>
+<tspan x="728" dy="20">Claim Map v3 + Visual</tspan>
+<tspan x="728" dy="20">Spec v1</tspan>
+</text>
+<rect id="node-bundle" x="334" y="2377" width="200" height="96" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-bundle" x="434" y="2410" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="434" dy="0">[修改] Stage 6 Bundle</tspan>
+<tspan x="434" dy="20">assemble — compile +</tspan>
+<tspan x="434" dy="20">immutable attempt</tspan>
+</text>
+<rect id="node-kernel" x="328" y="2761" width="212" height="96" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-kernel" x="434" y="2794" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="434" dy="0">[新增] visual_kernel →</tspan>
+<tspan x="434" dy="20">bounded ELK geometry →</tspan>
+<tspan x="434" dy="20">Scene desktop/mobile</tspan>
+</text>
+<rect id="node-artifacts" x="326" y="3145" width="216" height="136" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-artifacts" x="434" y="3178" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="434" dy="0">[新增] SVG + gates +</tspan>
+<tspan x="434" dy="20">Timeline + Interaction</tspan>
+<tspan x="434" dy="20">+ inventory → Asset</tspan>
+<tspan x="434" dy="20">Manifest v3 + Bundle</tspan>
+<tspan x="434" dy="20">v3</tspan>
+</text>
+<rect id="node-late" x="344" y="3569" width="180" height="116" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-late" x="434" y="3602" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="434" dy="0">[修改] Stages 7–8:</tspan>
+<tspan x="434" dy="20">validation →</tspan>
+<tspan x="434" dy="20">evaluation v3 +</tspan>
+<tspan x="434" dy="20">fingerprints</tspan>
+</text>
+<rect id="node-downstream" x="326" y="3973" width="216" height="116" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="7 5" filter="url(#elk-shadow)"/>
+<text id="node-label-downstream" x="434" y="4006" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="434" dy="0">[修改] Preview → PR</tspan>
+<tspan x="434" dy="20">fingerprint → Approval</tspan>
+<tspan x="434" dy="20">→ Delivery --dry-run</tspan>
+<tspan x="434" dy="20">(local only)</tspan>
+</text>
+<rect id="node-legacy" x="324" y="2013" width="220" height="76" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<text id="node-label-legacy" x="434" y="2046" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="434" dy="0">[保留] Ordinary routes:</tspan>
+<tspan x="434" dy="20">none / static / elk</tspan>
+</text>
+<rect id="node-state" x="60" y="1993" width="192" height="96" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
+<ellipse id="database-cap-state" cx="156" cy="2005" rx="95" ry="11" fill="#11263e" stroke="#38bdf8" stroke-width="1.5"/>
+<text id="node-label-state" x="156" y="2026" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="156" dy="0">[保留] RunWorkspace</tspan>
+<tspan x="156" dy="20">current attempt +</tspan>
+<tspan x="156" dy="20">manual retention</tspan>
+</text>
+</svg>
