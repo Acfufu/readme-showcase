@@ -135,6 +135,29 @@ class InstallerTests(unittest.TestCase):
             check=False,
         )
 
+    def run_skills_cli(
+        self,
+        codex_home: Path,
+        cwd: Path,
+        action: str,
+        *arguments: str,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(INSTALLER),
+                "skills",
+                action,
+                "--codex-home",
+                str(codex_home),
+                *arguments,
+            ],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
     def test_fresh_repeat_check_and_vendored_engine_payload(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             codex_home = Path(temporary) / "codex"
@@ -193,6 +216,141 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(post_run_check.returncode, 0, post_run_check.stderr)
             self.assertEqual(json.loads(post_run_check.stdout)["status"], "current")
             self.assertEqual(schema_bytes(target), schema_bytes(REPO_ROOT / "skill"))
+
+    def test_skills_commands_install_check_and_update_project_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            (project / ".git").mkdir(parents=True)
+            codex_home = root / "codex"
+            target = project / ".agents" / "skills" / "readme-showcase"
+
+            installed = self.run_skills_cli(
+                codex_home,
+                project,
+                "install",
+                "--project",
+                "--yes",
+            )
+            checked = self.run_skills_cli(codex_home, project, "check", "--project")
+
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            self.assertEqual(checked.returncode, 0, checked.stderr)
+            self.assertEqual(json.loads(installed.stdout)["status"], "installed")
+            self.assertEqual(json.loads(installed.stdout)["scope"], "project")
+            self.assertEqual(json.loads(checked.stdout)["status"], "current")
+            self.assertTrue((target / "references" / "commands.md").is_file())
+
+            skill = target / "SKILL.md"
+            skill.write_text(skill.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
+            drift = self.run_skills_cli(codex_home, project, "check", "--project")
+            updated = self.run_skills_cli(
+                codex_home,
+                project,
+                "update",
+                "--project",
+                "--yes",
+            )
+            final = self.run_skills_cli(codex_home, project, "check", "--project")
+
+            self.assertEqual(drift.returncode, 1, drift.stderr)
+            self.assertEqual(json.loads(drift.stdout)["status"], "drift")
+            self.assertEqual(updated.returncode, 0, updated.stderr)
+            self.assertEqual(json.loads(updated.stdout)["status"], "updated")
+            self.assertEqual(json.loads(final.stdout)["status"], "current")
+
+    def test_skills_commands_user_scope_missing_update_and_legacy_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            (project / ".git").mkdir(parents=True)
+            codex_home = root / "codex"
+
+            missing = self.run_skills_cli(
+                codex_home,
+                project,
+                "update",
+                "--user",
+                "--yes",
+            )
+            self.assertEqual(missing.returncode, 1, missing.stderr)
+            self.assertEqual(json.loads(missing.stdout)["status"], "missing")
+            self.assertFalse((codex_home / "skills" / "readme-showcase").exists())
+
+            installed = self.run_skills_cli(
+                codex_home,
+                project,
+                "install",
+                "--user",
+                "--yes",
+            )
+            checked = self.run_skills_cli(codex_home, project, "check", "--user")
+            legacy_check = self.run_cli(codex_home, "--check")
+            repeated = self.run_cli(codex_home)
+
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            self.assertEqual(json.loads(installed.stdout)["scope"], "user")
+            self.assertEqual(json.loads(checked.stdout)["status"], "current")
+            self.assertEqual(json.loads(legacy_check.stdout)["status"], "current")
+            self.assertEqual(json.loads(repeated.stdout)["status"], "unchanged")
+
+    def test_skills_commands_default_project_and_reject_ambiguous_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            (project / ".git").mkdir(parents=True)
+            codex_home = root / "codex"
+
+            default_install = self.run_skills_cli(
+                codex_home,
+                project,
+                "install",
+                "--yes",
+            )
+            user_install = self.run_skills_cli(
+                codex_home,
+                project,
+                "install",
+                "--user",
+                "--yes",
+            )
+            ambiguous = self.run_skills_cli(codex_home, project, "check")
+
+            self.assertEqual(default_install.returncode, 0, default_install.stderr)
+            self.assertEqual(json.loads(default_install.stdout)["scope"], "project")
+            self.assertEqual(user_install.returncode, 0, user_install.stderr)
+            self.assertEqual(ambiguous.returncode, 2)
+            self.assertIn("pass --project or --user", ambiguous.stderr)
+
+    def test_project_scope_rejects_symlink_target_without_following_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            (project / ".git").mkdir(parents=True)
+            codex_home = root / "codex"
+            real_target = root / "real-target"
+            real_target.mkdir()
+            (real_target / "SKILL.md").write_text(
+                "---\nname: readme-showcase\n---\nkeep\n",
+                encoding="utf-8",
+            )
+            before = file_map(real_target)
+            link = project / ".agents" / "skills" / "readme-showcase"
+            link.parent.mkdir(parents=True)
+            link.symlink_to(real_target, target_is_directory=True)
+
+            result = self.run_skills_cli(
+                codex_home,
+                project,
+                "install",
+                "--project",
+                "--yes",
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("unverified existing target", result.stderr)
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(file_map(real_target), before)
 
     @unittest.skipIf(
         os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
@@ -256,6 +414,23 @@ class InstallerTests(unittest.TestCase):
                 [json.loads(result.stdout)["status"] for result in results],
                 ["installed", "unchanged", "current"],
             )
+            skills_check = subprocess.run(
+                [
+                    str(binary),
+                    "skills",
+                    "check",
+                    "--user",
+                    "--codex-home",
+                    str(codex_home),
+                ],
+                cwd=project,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(skills_check.returncode, 0, skills_check.stderr)
+            self.assertEqual(json.loads(skills_check.stdout)["status"], "current")
             target = codex_home / "skills" / "readme-showcase"
             self.assertEqual(schema_bytes(target), schema_bytes(REPO_ROOT / "skill"))
 

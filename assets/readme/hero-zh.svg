@@ -9,8 +9,8 @@
   <rect width="1200" height="520" rx="30" fill="url(#paper-grid)"/>
   <path d="M0 92H1200" stroke="#171713" stroke-width="2"/>
   <circle cx="49" cy="46" r="10" fill="#E65036"/>
-  <text x="72" y="53" fill="#171713" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" font-weight="700" letter-spacing="2">README SHOWCASE</text>
-  <text x="1150" y="53" text-anchor="end" fill="#716E65" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15">单一 AGENT · 本地优先</text>
+  <text x="72" y="53" fill="#171713" font-family="SFMono-Regular,Menlo,monospace" font-size="18" font-weight="700" letter-spacing="2">README SHOWCASE</text>
+  <text x="1150" y="53" text-anchor="end" fill="#716E65" font-family="SFMono-Regular,Menlo,monospace" font-size="15">单一 AGENT · 本地优先</text>
 
   <g id="identity">
     <text x="54" y="168" fill="#171713" font-family="system-ui,sans-serif" font-size="62" font-weight="800" letter-spacing="-2">让仓库事实，</text>

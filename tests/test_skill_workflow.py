@@ -114,6 +114,7 @@ def _copy_docs_for_mutation(destination: Path) -> None:
 class SkillWorkflowTests(unittest.TestCase):
     def test_one_agent_order_modes_and_routes_are_explicit(self) -> None:
         text = SKILL.read_text(encoding="utf-8")
+        commands = (REPO_ROOT / "skill/references/commands.md").read_text(encoding="utf-8")
         flat = " ".join(text.split())
         self.assertIn("name: readme-showcase", text)
         self.assertIn("one README Agent", flat)
@@ -142,6 +143,24 @@ class SkillWorkflowTests(unittest.TestCase):
         self.assertIn("Never publish from evaluation success alone", flat)
         self.assertIn("locale-matched text-bearing assets", flat)
         self.assertIn('data-readme-language="neutral"', text)
+        self.assertIn("Never\nauto-run a recommendation", text)
+        expected_routes = {
+            "shape": "Read-only planning",
+            "audit": "Audit-only mode",
+            "redesign": "README mode",
+            "polish": "README mode",
+            "visualize": "Asset-only mode",
+        }
+        for command, route in expected_routes.items():
+            row = next(line for line in text.splitlines() if line.startswith(f"| `{command} [target]`"))
+            self.assertIn(route, row)
+        self.assertIn("Do not create candidate files", commands)
+        self.assertIn("Do not generate visuals, candidates", commands)
+        self.assertIn("Stop before any Git or remote", commands)
+        self.assertIn("do not conceal a redesign inside polish", commands)
+        self.assertIn("Leave every README byte-for-byte unchanged", commands)
+        for operational in ("status", "resume", "preview"):
+            self.assertIn(f"`{operational} [target]` calls the existing pipeline", commands)
 
     def test_compiled_reference_documents_opt_in_outputs_limits_and_local_boundary(self) -> None:
         _assert_compiled_documentation_contract(REPO_ROOT)

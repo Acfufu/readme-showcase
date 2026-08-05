@@ -1,6 +1,8 @@
 ---
 name: readme-showcase
 description: Create, redesign, audit, or visually upgrade evidence-backed GitHub README homepages for apps, extensions, CLIs, services, libraries, and developer tools. Use for whole-README information architecture, project-native heroes and diagrams, README-only visual assets, GitHub-safe SVG or opt-in GIF animation, multilingual README variants, install/use/configuration flows, and removal of unsupported claims or decorative clutter.
+argument-hint: "[shape|audit|redesign|polish|visualize|status|resume|preview] [target]"
+user-invocable: true
 ---
 
 # README Showcase
@@ -16,6 +18,27 @@ Use exactly one operating mode:
 - **Audit-only mode** — inspect and report findings without generating or changing README or asset candidates.
 
 If the request is ambiguous, inspect read-only context and ask whether the user wants the whole README, assets only, or an audit.
+
+## Commands
+
+Use one Skill entry with an optional command and free-form target:
+
+| Command | Intent | Route |
+| --- | --- | --- |
+| `shape [target]` | Propose evidence, narrative, scope, and visual direction before writing | Read-only planning; stop for approval |
+| `audit [target]` | Diagnose claims, structure, quick start, links, localization, and assets | Audit-only mode; report without fixing |
+| `redesign [target]` | Rebuild the approved README scope around verified behavior | README mode; stop at local preview |
+| `polish [target]` | Refine a narrow existing README area without concealed redesign | README mode; preserve identity and surrounding content |
+| `visualize [target]` | Produce an approved hero, diagram, workflow, or explicit motion variant | Asset-only mode; embedding needs separate approval |
+
+`status`, `resume`, and `preview` are operational routes to the existing
+pipeline commands. They are not authoring modes and do not broaden write or
+publication authority.
+
+Read [references/commands.md](references/commands.md) for command contracts and
+routing. A bare invocation inspects the current README, dirty tree, and latest
+run, recommends the two or three highest-value commands, and waits. Never
+auto-run a recommendation.
 
 ## Inspect before writing
 

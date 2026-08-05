@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "skill/scripts/render_motion_gif.py"
 HERO_SVG = REPO_ROOT / "assets/readme/hero.svg"
 HERO_SPEC = REPO_ROOT / "assets/readme/hero-motion.json"
-HERO_SHA256 = "f65a4f6888b29a32497cd61982d835882872daefbb22e1aa64f0f770f138315d"
+HERO_SHA256 = "e54ed1893de5f37d1b315f10d33a1be08dbbb789785bb389db5c75485cacbd55"
 
 
 @unittest.skipUnless(render_motion_gif is not None, "Pillow is required for motion renderer tests")

@@ -130,6 +130,15 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn("20", text)
             self.assertIn("2", text)
             self.assertIn("npx --yes github:Acfufu/readme-showcase", text)
+            self.assertIn("skills install", text)
+            self.assertIn("skills check", text)
+            self.assertIn("skills update", text)
+            self.assertIn(".agents/skills/readme-showcase", text)
+            self.assertIn("$readme-showcase shape [target]", text)
+            self.assertIn("$readme-showcase audit [target]", text)
+            self.assertIn("$readme-showcase redesign [target]", text)
+            self.assertIn("$readme-showcase polish [target]", text)
+            self.assertIn("$readme-showcase visualize [target]", text)
             self.assertIn('"status":"installed"', text)
             self.assertIn('"status":"current"', text)
             self.assertIn("elkjs@0.9.3", text)
@@ -143,10 +152,18 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("virtual environment", english)
         self.assertIn("assets/readme/workflow.svg", english)
         self.assertIn("one README Agent", english)
+        self.assertIn(
+            "Please install this Skill: https://github.com/Acfufu/readme-showcase",
+            english,
+        )
         self.assertIn("assets/readme/hero-zh.gif", chinese)
         self.assertIn("虚拟环境", chinese)
         self.assertIn("assets/readme/workflow-zh.svg", chinese)
         self.assertIn("单一 README Agent", chinese)
+        self.assertIn(
+            "请安装这个 Skill：https://github.com/Acfufu/readme-showcase",
+            chinese,
+        )
         for text in (english, chinese):
             self.assertIn("npx --yes github:Acfufu/readme-showcase", text)
             self.assertNotIn("cp -R skill", text)
@@ -175,6 +192,9 @@ class DocumentationContractTests(unittest.TestCase):
 
     def test_skill_references_match_runtime_and_publish_boundary(self) -> None:
         skill = (REPO_ROOT / "skill/SKILL.md").read_text(encoding="utf-8")
+        commands = (
+            REPO_ROOT / "skill/references/commands.md"
+        ).read_text(encoding="utf-8")
         elk = (
             REPO_ROOT / "skill/references/elk-structure.md"
         ).read_text(encoding="utf-8")
@@ -200,6 +220,13 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertNotIn("`691/692", delta)
         self.assertNotIn("`711`", delta)
         self.assertIn("stop at a local PR bundle", metadata)
+        self.assertIn("user-invocable: true", skill)
+        self.assertIn("references/commands.md", skill)
+        for command in ("shape", "audit", "redesign", "polish", "visualize"):
+            self.assertIn(f"`{command} [target]`", skill)
+            self.assertIn(f"## `{command} [target]`", commands)
+        self.assertIn("never\nauthorizes commit, push, publication", commands)
+        self.assertIn("Leave every README byte-for-byte unchanged", commands)
 
     def test_visual_kernel_clean_room_rejects_runtime_payload_mutations(self) -> None:
         _assert_visual_kernel_clean(VISUAL_KERNEL_ROOT)

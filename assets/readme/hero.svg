@@ -9,19 +9,19 @@
   <rect width="1200" height="520" rx="30" fill="url(#paper-grid)"/>
   <path d="M0 92H1200" stroke="#171713" stroke-width="2"/>
   <circle cx="49" cy="46" r="10" fill="#E65036"/>
-  <text x="72" y="53" fill="#171713" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" font-weight="700" letter-spacing="2">README SHOWCASE</text>
-  <text x="1150" y="53" text-anchor="end" fill="#716E65" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15">ONE AGENT · LOCAL FIRST</text>
+  <text x="72" y="53" fill="#171713" font-family="SFMono-Regular,Menlo,monospace" font-size="18" font-weight="700" letter-spacing="2">README SHOWCASE</text>
+  <text x="1150" y="53" text-anchor="end" fill="#716E65" font-family="SFMono-Regular,Menlo,monospace" font-size="15">ONE AGENT · LOCAL FIRST</text>
 
   <g id="identity">
-    <text x="54" y="168" fill="#171713" font-family="ui-sans-serif,system-ui,sans-serif" font-size="62" font-weight="800" letter-spacing="-3">Repository truth,</text>
-    <text x="54" y="238" fill="#171713" font-family="ui-sans-serif,system-ui,sans-serif" font-size="62" font-weight="800" letter-spacing="-3">made reviewable.</text>
-    <text x="58" y="281" fill="#716E65" font-family="ui-sans-serif,system-ui,sans-serif" font-size="20">Evidence-bound copy, visuals, gates, and a local handoff.</text>
+    <text x="54" y="168" fill="#171713" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,PingFang SC,sans-serif" font-size="62" font-weight="800" letter-spacing="-3">Repository truth,</text>
+    <text x="54" y="238" fill="#171713" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,PingFang SC,sans-serif" font-size="62" font-weight="800" letter-spacing="-3">made reviewable.</text>
+    <text x="58" y="281" fill="#716E65" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,PingFang SC,sans-serif" font-size="20">Evidence-bound copy, visuals, gates, and a local handoff.</text>
   </g>
 
   <g id="evidence-stack" filter="url(#card-shadow)">
     <rect x="62" y="335" width="205" height="105" rx="12" fill="#FFFDF8" stroke="#171713" stroke-width="2" transform="rotate(-3 164 387)"/>
     <rect x="54" y="326" width="205" height="105" rx="12" fill="#FFFDF8" stroke="#171713" stroke-width="2"/>
-    <text x="75" y="357" fill="#E65036" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" letter-spacing="1.5">REPOSITORY</text>
+    <text x="75" y="357" fill="#E65036" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" letter-spacing="1.5">REPOSITORY</text>
     <path d="M75 373H234M75 388H210M75 403H223" stroke="#171713" stroke-width="5" stroke-linecap="round" opacity=".75"/>
     <rect x="75" y="415" width="88" height="6" rx="3" fill="#167C72"/>
   </g>
@@ -33,8 +33,8 @@
     <rect x="446" y="326" width="270" height="112" rx="56" fill="#171713"/>
     <circle cx="491" cy="382" r="27" fill="#D7F45B"/>
     <path d="m479 382 9 9 16-19" fill="none" stroke="#171713" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="532" y="373" fill="#FFFDF8" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" letter-spacing="1.5">ONE README AGENT</text>
-    <text x="532" y="402" fill="#BDB8AE" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="14">SCAN · DRAFT · GATE</text>
+    <text x="532" y="373" fill="#FFFDF8" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" letter-spacing="1.5">ONE README AGENT</text>
+    <text x="532" y="402" fill="#BDB8AE" font-family="SFMono-Regular,Menlo,monospace" font-size="14">SCAN · DRAFT · GATE</text>
   </g>
 
   <path d="M731 382H832" stroke="#171713" stroke-width="3" stroke-dasharray="7 8"/>
@@ -44,21 +44,21 @@
     <rect x="848" y="305" width="296" height="154" rx="14" fill="#FFFDF8" stroke="#171713" stroke-width="2"/>
     <rect x="848" y="305" width="296" height="42" rx="14" fill="#E65036"/>
     <path d="M848 333H1144" stroke="#E65036" stroke-width="28"/>
-    <text x="867" y="332" fill="#FFFDF8" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" letter-spacing="1.5">LOCAL CANDIDATE</text>
-    <text x="867" y="377" fill="#716E65" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13">CLAIMS</text>
-    <text x="1121" y="377" text-anchor="end" fill="#171713" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700">BOUND</text>
-    <text x="867" y="403" fill="#716E65" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13">ASSETS</text>
-    <text x="1121" y="403" text-anchor="end" fill="#171713" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700">CHECKED</text>
-    <g id="verification-strip"><rect x="866" y="420" width="256" height="25" rx="6" fill="#D8EEE9"/><circle cx="881" cy="432.5" r="6" fill="#167C72"/><path d="m878 433 2 2 4-5" fill="none" stroke="#fff" stroke-width="1.7"/><text x="895" y="437" fill="#0D6058" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11" font-weight="700">FINGERPRINTED · LOCAL</text></g>
+    <text x="867" y="332" fill="#FFFDF8" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" letter-spacing="1.5">LOCAL CANDIDATE</text>
+    <text x="867" y="377" fill="#716E65" font-family="SFMono-Regular,Menlo,monospace" font-size="13">CLAIMS</text>
+    <text x="1121" y="377" text-anchor="end" fill="#171713" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700">BOUND</text>
+    <text x="867" y="403" fill="#716E65" font-family="SFMono-Regular,Menlo,monospace" font-size="13">ASSETS</text>
+    <text x="1121" y="403" text-anchor="end" fill="#171713" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700">CHECKED</text>
+    <g id="verification-strip"><rect x="866" y="420" width="256" height="25" rx="6" fill="#D8EEE9"/><circle cx="881" cy="432.5" r="6" fill="#167C72"/><path d="m878 433 2 2 4-5" fill="none" stroke="#fff" stroke-width="1.7"/><text x="895" y="437" fill="#0D6058" font-family="SFMono-Regular,Menlo,monospace" font-size="11" font-weight="700">FINGERPRINTED · LOCAL</text></g>
   </g>
 
   <g id="remote-lock">
     <rect x="892" y="117" width="252" height="112" rx="14" fill="none" stroke="#171713" stroke-width="2" stroke-dasharray="8 7"/>
     <path d="M929 156v-9a15 15 0 0 1 30 0v9m-35 0h40v35h-40z" fill="none" stroke="#171713" stroke-width="3"/>
-    <text x="982" y="160" fill="#171713" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="14" font-weight="700">REMOTE PUBLISH</text>
-    <text x="982" y="187" fill="#E65036" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700">LOCKED BY DEFAULT</text>
+    <text x="982" y="160" fill="#171713" font-family="SFMono-Regular,Menlo,monospace" font-size="14" font-weight="700">REMOTE PUBLISH</text>
+    <text x="982" y="187" fill="#E65036" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700">LOCKED BY DEFAULT</text>
   </g>
 
-  <text x="54" y="491" fill="#716E65" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13">EVIDENCE → ONE AGENT → HARD GATES → LOCAL PREVIEW</text>
-  <text x="1145" y="491" text-anchor="end" fill="#E65036" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700">APPROVAL REQUIRED BEYOND THIS POINT</text>
+  <text x="54" y="491" fill="#716E65" font-family="SFMono-Regular,Menlo,monospace" font-size="13">EVIDENCE → ONE AGENT → HARD GATES → LOCAL PREVIEW</text>
+  <text x="1145" y="491" text-anchor="end" fill="#E65036" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700">APPROVAL REQUIRED BEYOND THIS POINT</text>
 </svg>
