@@ -13,6 +13,7 @@ from typing import Any, Mapping, Protocol
 
 from ...pipeline_contracts import (
     ContractError,
+    _open_directory,
     canonical_json_bytes,
     canonical_sha256,
     read_json_object_bytes,
@@ -45,6 +46,9 @@ validate_generated_bundle = _CORE.validate_generated_bundle
 
 
 MAX_CANDIDATE_BYTES = 16 * 1024 * 1024
+MAX_CANDIDATE_ENTRIES = 10_000
+MAX_CANDIDATE_DEPTH = 16
+MAX_CANDIDATE_TOTAL_BYTES = 16 * 1024 * 1024
 _PACKAGE_ROOT = Path(__file__).resolve().parents[3]
 DATASET = next(
     root / "dataset/retrieval/manifest.json"
@@ -209,6 +213,164 @@ class GenerationRequestStage:
         return StageResult("pass", {"generation-request.json": canonical_generation_request(request)})
 
 
+def _candidate_bound(code: str) -> ContractError:
+    return ContractError(code, "candidate assets exceed a bounded resource limit")
+
+
+def _candidate_path_error() -> ContractError:
+    return ContractError("E_RUN_PATH", "candidate assets could not be inspected")
+
+
+def _open_candidate_directory(parent: int, name: str) -> int:
+    """Open one real child directory without following replacement links."""
+
+    try:
+        expected = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except OSError:
+        raise _candidate_path_error() from None
+    if stat.S_ISLNK(expected.st_mode) or not stat.S_ISDIR(expected.st_mode):
+        raise ContractError("E_RUN_PATH", "candidate assets may contain only real directories and files")
+    descriptor = -1
+    transferred = False
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent,
+        )
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
+            raise _candidate_path_error()
+        transferred = True
+        return descriptor
+    except ContractError:
+        raise
+    except OSError:
+        raise _candidate_path_error() from None
+    finally:
+        if descriptor >= 0 and not transferred:
+            os.close(descriptor)
+
+
+def _read_candidate_asset(parent: int, name: str) -> bytes:
+    """Read one asset through its already-open parent descriptor."""
+
+    try:
+        expected = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except OSError:
+        raise _candidate_path_error() from None
+    if stat.S_ISLNK(expected.st_mode) or not stat.S_ISREG(expected.st_mode):
+        raise ContractError("E_RUN_PATH", "candidate assets may contain only real directories and files")
+    if expected.st_size > MAX_CANDIDATE_BYTES:
+        raise _candidate_bound("E_INPUT_SIZE")
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+            dir_fd=parent,
+        )
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
+            != (expected.st_dev, expected.st_ino, expected.st_size, expected.st_mtime_ns)
+        ):
+            raise _candidate_path_error()
+        chunks: list[bytes] = []
+        remaining = MAX_CANDIDATE_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if len(raw) > MAX_CANDIDATE_BYTES:
+            raise _candidate_bound("E_INPUT_SIZE")
+        if (
+            len(raw) != opened.st_size
+            or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            != (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
+        ):
+            raise _candidate_path_error()
+        return raw
+    except ContractError:
+        raise
+    except OSError:
+        raise _candidate_path_error() from None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _collect_candidate_assets(
+    directory: int,
+    relative_prefix: str,
+    *,
+    depth: int,
+    entries: list[tuple[str, bytes]],
+    entry_count: list[int],
+    total_bytes: list[int],
+) -> None:
+    """Collect candidate files with bounded, deterministic tree traversal.
+
+    ``Path.rglob`` is intentionally avoided here: sorting its complete result
+    would materialize an untrusted tree before any limit could be enforced.
+    Directory scans are bounded before each local list append, and the global
+    entry budget is shared by every recursive call.
+    """
+
+    if depth > MAX_CANDIDATE_DEPTH:
+        raise _candidate_bound("E_INPUT_SIZE")
+    children: list[str] = []
+    try:
+        with os.scandir(directory) as iterator:
+            for child in iterator:
+                entry_count[0] += 1
+                if entry_count[0] > MAX_CANDIDATE_ENTRIES:
+                    raise _candidate_bound("E_INPUT_SIZE")
+                children.append(child.name)
+    except ContractError:
+        raise
+    except OSError:
+        raise _candidate_path_error() from None
+
+    children.sort(key=os.fsencode)
+    for name in children:
+        relative = f"{relative_prefix}/{name}"
+        try:
+            info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        except OSError:
+            raise _candidate_path_error() from None
+        if stat.S_ISLNK(info.st_mode) or (
+            not stat.S_ISREG(info.st_mode) and not stat.S_ISDIR(info.st_mode)
+        ):
+            raise ContractError("E_RUN_PATH", "candidate assets may contain only real directories and files")
+        if stat.S_ISDIR(info.st_mode):
+            child_directory = _open_candidate_directory(directory, name)
+            try:
+                _collect_candidate_assets(
+                    child_directory,
+                    relative,
+                    depth=depth + 1,
+                    entries=entries,
+                    entry_count=entry_count,
+                    total_bytes=total_bytes,
+                )
+            finally:
+                os.close(child_directory)
+            continue
+        if info.st_size > MAX_CANDIDATE_BYTES or total_bytes[0] + info.st_size > MAX_CANDIDATE_TOTAL_BYTES:
+            raise _candidate_bound("E_INPUT_SIZE")
+        raw = _read_candidate_asset(directory, name)
+        total_bytes[0] += len(raw)
+        if total_bytes[0] > MAX_CANDIDATE_TOTAL_BYTES:
+            raise _candidate_bound("E_INPUT_SIZE")
+        entries.append((relative, raw))
+
+
 def candidate_files(context: RunContext) -> list[tuple[str, bytes]] | None:
     root = context.workspace.root / "stages/05-candidate"
     _, plan = _canonical_object(context.attempt_file(2, "readme-plan.json"))
@@ -228,6 +390,7 @@ def candidate_files(context: RunContext) -> list[tuple[str, bytes]] | None:
         if manifest.exists() or manifest.is_symlink():
             raise ContractError("E_SCHEMA_VALUE", "compiled candidates must not supply asset-manifest.json")
     output: list[tuple[str, bytes]] = []
+    total_bytes = 0
     for relative in required:
         try:
             path = root / relative
@@ -246,17 +409,29 @@ def candidate_files(context: RunContext) -> list[tuple[str, bytes]] | None:
             if exc.code == "E_INPUT_NOT_FOUND":
                 return None
             raise
+        total_bytes += len(raw)
+        if total_bytes > MAX_CANDIDATE_TOTAL_BYTES:
+            raise _candidate_bound("E_INPUT_SIZE")
         output.append((relative, raw))
     assets = root / "assets"
     if assets.exists() or assets.is_symlink():
-        if assets.is_symlink() or not assets.is_dir():
-            raise ContractError("E_RUN_PATH", "candidate assets must be a real directory")
-        for path in sorted(assets.rglob("*"), key=lambda item: os.fsencode(item.relative_to(root).as_posix())):
-            info = path.lstat()
-            if stat.S_ISLNK(info.st_mode) or (not stat.S_ISREG(info.st_mode) and not stat.S_ISDIR(info.st_mode)):
-                raise ContractError("E_RUN_PATH", "candidate assets may contain only real directories and files")
-            if stat.S_ISREG(info.st_mode):
-                output.append((path.relative_to(root).as_posix(), read_regular_bytes(path, maximum=MAX_CANDIDATE_BYTES)))
+        try:
+            assets_descriptor = _open_directory(assets, create=False, code="E_RUN_PATH")
+        except ContractError:
+            raise ContractError("E_RUN_PATH", "candidate assets must be a real directory") from None
+        try:
+            asset_entries: list[tuple[str, bytes]] = []
+            _collect_candidate_assets(
+                assets_descriptor,
+                "assets",
+                depth=0,
+                entries=asset_entries,
+                entry_count=[0],
+                total_bytes=[total_bytes],
+            )
+        finally:
+            os.close(assets_descriptor)
+        output.extend(sorted(asset_entries, key=lambda item: os.fsencode(item[0])))
     return output
 
 

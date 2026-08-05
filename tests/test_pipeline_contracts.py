@@ -29,6 +29,9 @@ from skill.scripts.readme_showcase.contracts.plan import (
 from skill.scripts.readme_showcase.evidence.adapters import adapt_v1_repository_evidence
 from skill.scripts.readme_showcase.orchestration.stages import (
     MAX_CANDIDATE_BYTES,
+    MAX_CANDIDATE_DEPTH,
+    MAX_CANDIDATE_ENTRIES,
+    MAX_CANDIDATE_TOTAL_BYTES,
     BundleAssembleStage,
     CandidateImportStage,
     GenerationRequestStage,
@@ -43,6 +46,7 @@ from skill.scripts.readme_showcase.generation.assembler import (
     validate_generated_bundle_v3,
 )
 from skill.scripts.readme_showcase.orchestration.workspace import RunWorkspace
+from skill.scripts.readme_showcase.orchestration import stages as stages_module
 from skill.scripts.readme_showcase.orchestration import workspace as workspace_module
 from tests.unit.visual_kernel.test_scene import EVIDENCE, _spec
 
@@ -260,6 +264,19 @@ class PipelineContractTests(unittest.TestCase):
 
 
 class CandidateFilesVersionTests(unittest.TestCase):
+    @staticmethod
+    def _v2_plan() -> dict[str, object]:
+        return {
+            "schema_version": 2,
+            "mode": "readme",
+            "locales": [{"tag": "en", "readme_path": "README.md"}],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": "static",
+            "commands": [],
+            "evidence_ids": ["file:" + "a" * 64],
+        }
+
     @staticmethod
     def _compiled_plan(route: str = "compiled", locales: list[dict[str, str]] | None = None) -> dict[str, object]:
         return {
@@ -541,6 +558,102 @@ class CandidateFilesVersionTests(unittest.TestCase):
                 [name for name, _ in candidate_files(legacy_context) or []],
                 ["claim-map.json", "asset-manifest.json", "README.md"],
             )
+
+    def test_candidate_assets_fail_closed_at_entry_bound_before_fingerprint_growth(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._context(root, self._v2_plan())
+            candidate = root / "stages/05-candidate"
+            candidate.joinpath("asset-manifest.json").write_bytes(b"manifest")
+            candidate.joinpath("claim-map.json").write_bytes(b"claims")
+            candidate.joinpath("README.md").write_bytes(b"# candidate\n")
+            assets = candidate / "assets"
+            assets.mkdir()
+            for index in range(MAX_CANDIDATE_ENTRIES + 1):
+                (assets / f"{index:05d}.bin").write_bytes(b"x")
+
+            with self.assertRaises(ContractError) as raised:
+                candidate_files(context)
+            self.assertEqual(raised.exception.code, "E_INPUT_SIZE")
+            self.assertNotIn(str(root), str(raised.exception))
+            with self.assertRaises(ContractError) as fingerprint:
+                CandidateImportStage().fingerprint(context)
+            self.assertEqual(fingerprint.exception.code, "E_INPUT_SIZE")
+            self.assertNotIn(str(root), str(fingerprint.exception))
+
+    def test_candidate_assets_fail_closed_at_depth_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._context(root, self._v2_plan())
+            candidate = root / "stages/05-candidate"
+            candidate.joinpath("asset-manifest.json").write_bytes(b"manifest")
+            candidate.joinpath("claim-map.json").write_bytes(b"claims")
+            candidate.joinpath("README.md").write_bytes(b"# candidate\n")
+            directory = candidate / "assets"
+            directory.mkdir()
+            for index in range(MAX_CANDIDATE_DEPTH + 1):
+                directory /= f"level-{index}"
+                directory.mkdir()
+            (directory / "leaf.bin").write_bytes(b"x")
+
+            with self.assertRaises(ContractError) as raised:
+                candidate_files(context)
+            self.assertEqual(raised.exception.code, "E_INPUT_SIZE")
+            self.assertNotIn(str(root), str(raised.exception))
+
+    def test_candidate_assets_fail_closed_at_aggregate_byte_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._context(root, self._v2_plan())
+            candidate = root / "stages/05-candidate"
+            candidate.joinpath("asset-manifest.json").write_bytes(b"manifest")
+            candidate.joinpath("claim-map.json").write_bytes(b"claims")
+            candidate.joinpath("README.md").write_bytes(b"# candidate\n")
+            assets = candidate / "assets"
+            assets.mkdir()
+            first = MAX_CANDIDATE_TOTAL_BYTES // 2
+            (assets / "first.bin").write_bytes(b"x" * first)
+            (assets / "second.bin").write_bytes(b"x" * (MAX_CANDIDATE_TOTAL_BYTES - first + 1))
+
+            with self.assertRaises(ContractError) as raised:
+                candidate_files(context)
+            self.assertEqual(raised.exception.code, "E_INPUT_SIZE")
+            self.assertNotIn(str(root), str(raised.exception))
+
+    def test_candidate_assets_directory_swap_fails_closed_without_following_link(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            context = self._context(root, self._v2_plan())
+            candidate = root / "stages/05-candidate"
+            candidate.joinpath("asset-manifest.json").write_bytes(b"manifest")
+            candidate.joinpath("claim-map.json").write_bytes(b"claims")
+            candidate.joinpath("README.md").write_bytes(b"# candidate\n")
+            assets = candidate / "assets"
+            assets.mkdir()
+            nested = assets / "nested"
+            nested.mkdir()
+            (nested / "leaf.bin").write_bytes(b"inside")
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "leaf.bin").write_bytes(b"outside")
+
+            original_open = stages_module.os.open
+            swapped = False
+
+            def swap_before_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+                nonlocal swapped
+                if path == "nested" and flags & getattr(stages_module.os, "O_DIRECTORY", 0) and not swapped:
+                    nested.rename(assets / "nested-real")
+                    nested.symlink_to(outside, target_is_directory=True)
+                    swapped = True
+                return original_open(path, flags, *args, **kwargs)
+
+            with mock.patch.object(stages_module.os, "open", side_effect=swap_before_open):
+                with self.assertRaises(ContractError) as raised:
+                    candidate_files(context)
+            self.assertTrue(swapped)
+            self.assertEqual(raised.exception.code, "E_RUN_PATH")
+            self.assertNotIn(str(root), str(raised.exception))
 
 
 class BundleAssembleStageTests(unittest.TestCase):
