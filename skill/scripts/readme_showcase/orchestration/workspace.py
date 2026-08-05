@@ -35,6 +35,20 @@ from .state import RunState, StageState, initial_stages
 Clock = Callable[[], str]
 
 
+# Attempt output fingerprints are part of the resumable-run trust boundary.
+# Keep traversal bounded before allocating per-directory snapshots or reading
+# file bytes.  These limits intentionally match the compiled-artifact reader's
+# structural limits while using a run-specific error code.
+_MAX_TREE_DEPTH = 16
+_MAX_TREE_ENTRIES = 10_000
+_MAX_TREE_BYTES = 16 * 1024 * 1024
+# Descriptive aliases keep the ownership boundary obvious to callers while
+# the short names match the compiled-artifact reader's focused test surface.
+_MAX_ATTEMPT_TREE_DEPTH = _MAX_TREE_DEPTH
+_MAX_ATTEMPT_TREE_ENTRIES = _MAX_TREE_ENTRIES
+_MAX_ATTEMPT_TREE_BYTES = _MAX_TREE_BYTES
+
+
 def _normalize_attempt_files(files: Mapping[str, bytes]) -> dict[str, bytes]:
     normalized: dict[str, bytes] = {}
     for name, data in files.items():
@@ -336,8 +350,38 @@ class RunWorkspace:
             return None
 
         projection: dict[str, str] = {}
+        remaining_entries = [_MAX_TREE_ENTRIES]
+        total_bytes = [0]
+
+        def resource_error(message: str) -> ContractError:
+            return ContractError("E_RUN_RESOURCE", message)
+
+        def scan_names(parent: int, *, count_budget: bool) -> list[str] | None:
+            """Read one bounded directory snapshot without unbounded list growth."""
+
+            names: list[str] = []
+            try:
+                with os.scandir(parent) as entries:
+                    for entry in entries:
+                        if count_budget:
+                            remaining_entries[0] -= 1
+                            if remaining_entries[0] < 0:
+                                raise resource_error("run attempt tree exceeds its entry bound")
+                        elif len(names) >= _MAX_TREE_ENTRIES:
+                            raise resource_error("run attempt tree exceeds its entry bound")
+                        name = entry.name
+                        if not isinstance(name, str) or not name or "/" in name or "\\" in name:
+                            return None
+                        names.append(name)
+            except ContractError:
+                raise
+            except OSError:
+                return None
+            return names
 
         def read_file(parent: int, name: str, expected: os.stat_result) -> str | None:
+            if expected.st_size < 0 or total_bytes[0] > _MAX_TREE_BYTES - expected.st_size:
+                raise resource_error("run attempt output exceeds its aggregate byte bound")
             file_descriptor = -1
             try:
                 file_descriptor = os.open(
@@ -352,11 +396,17 @@ class RunWorkspace:
                 opened_identity = (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
                 if not stat.S_ISREG(opened.st_mode) or opened_identity != expected_identity:
                     return None
+                if opened.st_size < 0 or total_bytes[0] > _MAX_TREE_BYTES - opened.st_size:
+                    raise resource_error("run attempt output exceeds its aggregate byte bound")
                 digest = hashlib.sha256()
+                read_bytes = 0
                 while True:
                     chunk = os.read(file_descriptor, 64 * 1024)
                     if not chunk:
                         break
+                    read_bytes += len(chunk)
+                    if total_bytes[0] > _MAX_TREE_BYTES - read_bytes:
+                        raise resource_error("run attempt output exceeds its aggregate byte bound")
                     digest.update(chunk)
                 after = os.fstat(file_descriptor)
                 if (
@@ -364,18 +414,25 @@ class RunWorkspace:
                     or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) != opened_identity
                 ):
                     return None
+                if read_bytes != opened.st_size:
+                    return None
+                total_bytes[0] += read_bytes
                 return digest.hexdigest()
+            except ContractError:
+                raise
             except OSError:
                 return None
             finally:
                 if file_descriptor >= 0:
                     os.close(file_descriptor)
 
-        def visit(parent: int, prefix: str) -> bool | None:
-            try:
-                names = sorted(os.listdir(parent))
-            except OSError:
+        def visit(parent: int, prefix: str, depth: int) -> bool | None:
+            if depth > _MAX_TREE_DEPTH:
+                raise resource_error("run attempt tree exceeds its depth bound")
+            names = scan_names(parent, count_budget=True)
+            if names is None:
                 return None
+            names.sort()
             if not names:
                 return False
             found = False
@@ -402,7 +459,7 @@ class RunWorkspace:
                         opened = os.fstat(child)
                         if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
                             return None
-                        child_found = visit(child, relative)
+                        child_found = visit(child, relative, depth + 1)
                         if child_found is not True:
                             return None
                     except OSError:
@@ -431,15 +488,15 @@ class RunWorkspace:
                     expected.st_mtime_ns,
                 ):
                     return None
-            try:
-                if sorted(os.listdir(parent)) != names:
-                    return None
-            except OSError:
+            current_names = scan_names(parent, count_budget=False)
+            if current_names is None:
+                return None
+            if sorted(current_names) != names:
                 return None
             return found
 
         try:
-            if visit(descriptor, "") is not True:
+            if visit(descriptor, "", 0) is not True:
                 return None
             try:
                 after_root = root.lstat()

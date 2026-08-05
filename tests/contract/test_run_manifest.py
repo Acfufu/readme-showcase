@@ -211,6 +211,44 @@ class RunManifestContractTests(unittest.TestCase):
         ):
             self.assertEqual(stat.S_IMODE(file.stat().st_mode), 0o600)
 
+    def test_attempt_output_hash_rejects_entry_bound_before_read(self) -> None:
+        workspace = self.create()
+        attempt = workspace.append_attempt(1, "scan", {"z-result.json": b"ok\n"})
+        for index in range(workspace_module._MAX_TREE_ENTRIES):
+            (attempt / f"extra-{index:05d}.json").write_bytes(b"")
+
+        with mock.patch.object(workspace_module.os, "read", side_effect=AssertionError("read before entry bound")):
+            with self.assertRaises(ContractError) as raised:
+                workspace.attempt_output_sha256(0, 1)
+        self.assertEqual(raised.exception.code, "E_RUN_RESOURCE")
+        self.assertEqual(str(raised.exception), "run attempt tree exceeds its entry bound")
+
+    def test_attempt_output_hash_rejects_depth_bound_before_read(self) -> None:
+        workspace = self.create()
+        attempt = workspace.append_attempt(1, "scan", {"z-result.json": b"ok\n"})
+        nested = attempt
+        for index in range(workspace_module._MAX_TREE_DEPTH + 1):
+            nested /= f"depth-{index:02d}"
+            nested.mkdir()
+        (nested / "zero").write_bytes(b"")
+
+        with mock.patch.object(workspace_module.os, "read", side_effect=AssertionError("read before depth bound")):
+            with self.assertRaises(ContractError) as raised:
+                workspace.attempt_output_sha256(0, 1)
+        self.assertEqual(raised.exception.code, "E_RUN_RESOURCE")
+        self.assertEqual(str(raised.exception), "run attempt tree exceeds its depth bound")
+
+    def test_attempt_output_hash_rejects_aggregate_byte_bound_before_read(self) -> None:
+        workspace = self.create()
+        attempt = workspace.append_attempt(1, "scan", {"z-result.json": b"ok\n"})
+        (attempt / "oversized.bin").write_bytes(b"x" * (workspace_module._MAX_TREE_BYTES + 1))
+
+        with mock.patch.object(workspace_module.os, "read", side_effect=AssertionError("read before byte bound")):
+            with self.assertRaises(ContractError) as raised:
+                workspace.attempt_output_sha256(0, 1)
+        self.assertEqual(raised.exception.code, "E_RUN_RESOURCE")
+        self.assertEqual(str(raised.exception), "run attempt output exceeds its aggregate byte bound")
+
     def test_nested_attempt_rejects_unsafe_and_duplicate_normalized_paths(self) -> None:
         workspace = self.create()
         for path in ("", ".", "..", "a/../b", "a//b", "a/./b", "/absolute", "~/home", r"a\b", "a\x00b"):
