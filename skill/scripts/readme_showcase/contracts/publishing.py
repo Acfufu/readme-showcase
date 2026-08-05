@@ -13,7 +13,7 @@ from ...pipeline_contracts import (
     read_regular_bytes,
 )
 from ..delivery import legacy as _LEGACY
-from ..visual_kernel.reader import load_compiled_visual
+from ..generation.assembler import validate_generated_bundle_v3
 
 
 APPROVAL_SCHEMA_VERSION = 2
@@ -27,6 +27,7 @@ EVALUATION_PATH = "evaluation-report.json"
 PREVIEW_PATH = "output/preview/index.html"
 PREVIEW_REPORT_PATH = "output/preview/report.json"
 COMPILED_MANIFEST_PATH = "asset-manifest.json"
+COMPILED_BUNDLE_PATH = "generated-readme-bundle.json"
 MAX_BOUND_BYTES = 16 * 1024 * 1024
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _COMMIT = re.compile(r"[0-9a-f]{40}\Z")
@@ -282,30 +283,39 @@ def _canonical_report(root: Path, relative: str, code: str) -> tuple[bytes, dict
 def _validate_compiled_binding(pr: dict[str, Any], root: Path) -> None:
     """Re-read the complete stage-6 set before deriving approval bindings."""
 
-    compiled = cast(dict[str, Any], pr["compiled"])
-    inventory = cast(dict[str, str], compiled["inventory"])
-    manifest_raw = _read(root, COMPILED_MANIFEST_PATH, "E_APPROVAL_FINGERPRINT")
-    bundle = {
-        "schema_version": 3,
-        "artifacts": {
-            "asset_manifest": {
-                "path": COMPILED_MANIFEST_PATH,
-                "sha256": hashlib.sha256(manifest_raw).hexdigest(),
-            }
-        },
-        "compiled": {
-            "inventory": dict(inventory),
-            "fingerprint": compiled["fingerprint"],
-            "retention": "manual",
-        },
-    }
+    bundle_raw, bundle = _canonical_report(
+        root,
+        COMPILED_BUNDLE_PATH,
+        "E_APPROVAL_FINGERPRINT",
+    )
+    if hashlib.sha256(bundle_raw).hexdigest() != pr["evaluation"]["bundle_sha256"]:
+        _fail("E_APPROVAL_FINGERPRINT", "compiled bundle bytes differ from evaluated PR bundle")
     try:
-        load_compiled_visual(root, bundle)
+        validate_generated_bundle_v3(bundle, root)
     except ContractError as exc:
         raise ContractError(
             "E_APPROVAL_FINGERPRINT",
             "compiled artifact bytes differ from PR bundle",
         ) from exc
+    candidate = cast(dict[str, Any], bundle["candidate"])
+    bundle_candidates = sorted(
+        [*cast(list[dict[str, str]], candidate["readmes"]), *cast(list[dict[str, str]], candidate["assets"])],
+        key=lambda item: item["path"],
+    )
+    pr_candidates = [
+        {"path": item["path"], "sha256": item["after_sha256"]}
+        for item in cast(list[dict[str, Any]], pr["candidate_files"])
+    ]
+    target = cast(dict[str, Any], bundle["target"])
+    compiled = cast(dict[str, Any], bundle["compiled"])
+    if (
+        bundle["mode"] != pr["mode"]
+        or target != {key: pr["target"][key] for key in ("repository", "base_sha")}
+        or bundle_candidates != pr_candidates
+        or compiled["inventory"] != pr["compiled"]["inventory"]
+        or compiled["fingerprint"] != pr["compiled"]["fingerprint"]
+    ):
+        _fail("E_APPROVAL_FINGERPRINT", "compiled PR projection differs from evaluated bundle")
 
 
 def current_approval_bindings(pr_payload: Any, candidate_root: Path) -> dict[str, Any]:

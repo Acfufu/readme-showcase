@@ -7,7 +7,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
+from argparse import Namespace
 from pathlib import Path
+from unittest import mock
 
 try:
     from PIL import Image
@@ -155,6 +158,69 @@ class MotionRendererTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as raised:
             render_motion_gif.validate_frame_budget(spec, (200, 3_333))
         self.assertIn("per-frame pixel budget exceeded", str(raised.exception))
+
+    def test_hostile_inputs_and_processes_are_bounded_before_rendering(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        oversized_spec = self.root / "oversized.json"
+        oversized_spec.write_text(
+            json.dumps({"padding": "x" * (256 * 1024)}),
+            encoding="utf-8",
+        )
+        with self.assertRaises(SystemExit) as spec_error:
+            render_motion_gif.load_spec(oversized_spec)
+        self.assertIn("input exceeds", str(spec_error.exception))
+
+        oversized_svg = self.root / "oversized.svg"
+        oversized_svg.write_bytes(
+            b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">'
+            + b"<!--"
+            + b"x" * (2 * 1024 * 1024)
+            + b"--></svg>"
+        )
+        args = Namespace(
+            input_svg=oversized_svg,
+            output_gif=self.root / "oversized.gif",
+            spec=HERO_SPEC,
+            timeline=None,
+            keep_frames=None,
+        )
+        with (
+            mock.patch.object(render_motion_gif, "command_path", return_value="ffmpeg"),
+            mock.patch.object(render_motion_gif, "choose_renderer", return_value=("rsvg-convert", "renderer")),
+            mock.patch.object(render_motion_gif, "build_frames", side_effect=AssertionError("render reached")),
+            self.assertRaises(SystemExit) as svg_error,
+        ):
+            render_motion_gif.run(args)
+        self.assertIn("input exceeds", str(svg_error.exception))
+
+        root = ET.fromstring(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="3333" '
+            'viewBox="0 0 200 3333"><rect width="1" height="1"/></svg>'
+        )
+        spec = render_motion_gif.load_spec(HERO_SPEC)
+        with (
+            mock.patch.object(render_motion_gif, "render_svg") as renderer,
+            self.assertRaises(SystemExit) as budget_error,
+        ):
+            render_motion_gif.build_frames(root, spec, ("fake", "fake"), self.root / "frames-work")
+        self.assertIn("per-frame pixel budget exceeded", str(budget_error.exception))
+        renderer.assert_not_called()
+
+        with (
+            mock.patch.object(
+                render_motion_gif.subprocess,
+                "run",
+                side_effect=subprocess.TimeoutExpired(["rsvg-convert"], 60),
+            ) as process,
+            self.assertRaises(SystemExit) as timeout_error,
+        ):
+            render_motion_gif.render_svg(
+                ("rsvg-convert", "renderer"),
+                self.root / "input.svg",
+                self.root / "output.png",
+            )
+        self.assertIsNotNone(process.call_args.kwargs.get("timeout"))
+        self.assertIn("timed out", str(timeout_error.exception))
 
     def test_timeline_duration_budget_rejects_before_workspace_or_output_replacement(self) -> None:
         timeline = self._write_timeline()

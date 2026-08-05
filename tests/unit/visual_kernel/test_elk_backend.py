@@ -55,6 +55,7 @@ class ElkBackendTests(unittest.TestCase):
                 observed["command"] = command
                 observed["cwd"] = cwd
                 observed["environment"] = environment
+                observed["adapter_bytes"] = Path(command[1]).read_bytes()
                 geometry = Path(command[command.index("--geometry") + 1])
                 metadata = Path(command[command.index("--metadata") + 1])
                 geometry.write_bytes(canonical_json_bytes(expected.as_dict()["geometry"]))
@@ -67,7 +68,8 @@ class ElkBackendTests(unittest.TestCase):
             self.assertEqual(actual.canonical_bytes(), expected.canonical_bytes())
             command = observed["command"]
             self.assertIsInstance(command, list)
-            self.assertEqual(command[1], str(elk_backend._adapter_path()))
+            self.assertNotEqual(command[1], str(elk_backend._adapter_path()))
+            self.assertEqual(observed["adapter_bytes"], elk_backend._adapter_path().read_bytes())
             self.assertEqual(
                 set(observed["environment"]),
                 {"PATH", "LC_ALL", "TZ", "TMPDIR"},
@@ -129,6 +131,31 @@ class ElkBackendTests(unittest.TestCase):
                 with self.assertRaises(ContractError) as raised:
                     render_elk_geometry(self.envelope, Path(temporary))
             self.assertEqual(raised.exception.code, "E_ENGINE_IDENTITY")
+
+    def test_adapter_executes_verified_snapshot_not_mutable_live_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            adapter = root / "render_elk.mjs"
+            original = b"export default 'verified';\n"
+            adapter.write_bytes(original)
+            observed: dict[str, object] = {}
+
+            def fake_run(command: list[str], **_kwargs: object):
+                adapter.write_bytes(b"MALICIOUS\n")
+                executed = Path(command[1])
+                observed["path"] = executed
+                observed["bytes"] = executed.read_bytes()
+                raise ContractError("E_ENGINE_PROCESS", "stop after execution-path observation")
+
+            with (
+                mock.patch.object(elk_backend, "_adapter_path", return_value=adapter),
+                mock.patch.object(elk_backend, "_run_adapter", side_effect=fake_run),
+            ):
+                with self.assertRaises(ContractError):
+                    render_elk_geometry(self.envelope, root)
+
+            self.assertNotEqual(observed["path"], adapter)
+            self.assertEqual(observed["bytes"], original)
 
     def test_timeout_secret_stderr_and_missing_node_are_redacted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

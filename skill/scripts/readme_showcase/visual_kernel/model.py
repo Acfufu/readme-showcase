@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from ...pipeline_contracts import ContractError, canonical_json_bytes, canonical_sha256
-from ..contracts.common import normalize_text
+from ..contracts.common import MAX_JSON_DEPTH, MAX_JSON_NODES, normalize_text
 from ..contracts.evidence import validate_evidence_graph
 from ..contracts.locale import parse_locale
 
@@ -49,16 +49,30 @@ def _fail(code: str, message: str) -> ContractError:
 
 
 def _reject_floats(value: Any, path: str = "$") -> None:
-    if isinstance(value, float):
-        raise _fail("E_SCHEMA_FLOAT", f"{path} must not contain floats")
-    if isinstance(value, list):
-        for index, item in enumerate(value):
-            _reject_floats(item, f"{path}[{index}]")
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise _fail("E_SCHEMA_KEY_TYPE", f"{path} contains a non-string object key")
-            _reject_floats(item, f"{path}.{key}")
+    stack = [(value, path, 0)]
+    nodes = 1
+    while stack:
+        item, item_path, depth = stack.pop()
+        if depth > MAX_JSON_DEPTH:
+            raise _fail("E_VISUAL_SPEC_SIZE", "visual spec exceeds structural limits")
+        if isinstance(item, float):
+            raise _fail("E_SCHEMA_FLOAT", f"{item_path} must not contain floats")
+        if isinstance(item, list):
+            nodes += len(item)
+            if nodes > MAX_JSON_NODES:
+                raise _fail("E_VISUAL_SPEC_SIZE", "visual spec exceeds structural limits")
+            stack.extend(
+                (item[index], f"{item_path}[{index}]", depth + 1)
+                for index in range(len(item) - 1, -1, -1)
+            )
+        elif isinstance(item, dict):
+            nodes += len(item)
+            if nodes > MAX_JSON_NODES:
+                raise _fail("E_VISUAL_SPEC_SIZE", "visual spec exceeds structural limits")
+            for key, child in reversed(item.items()):
+                if not isinstance(key, str):
+                    raise _fail("E_SCHEMA_KEY_TYPE", f"{item_path} contains a non-string object key")
+                stack.append((child, f"{item_path}.{key}", depth + 1))
 
 
 def _closed(

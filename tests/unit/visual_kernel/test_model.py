@@ -63,6 +63,18 @@ def flow_spec() -> dict[str, object]:
 
 
 class VisualSpecTests(unittest.TestCase):
+    def test_structural_limits_reject_deep_input_without_recursion_error(self) -> None:
+        nested: object = []
+        for _ in range(2_000):
+            nested = [nested]
+        payload = flow_spec()
+        payload["intent"]["label"] = nested  # type: ignore[index]
+
+        with self.assertRaises(ContractError) as raised:
+            validate_visual_spec(payload)
+
+        self.assertEqual(raised.exception.code, "E_VISUAL_SPEC_SIZE")
+
     def assert_code(self, code: str, payload: object, *, evidence: object | None = None) -> None:
         with self.assertRaises(ContractError) as raised:
             validate_visual_spec(payload, evidence_graph=evidence)

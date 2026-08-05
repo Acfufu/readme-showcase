@@ -23,7 +23,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
-from ...pipeline_contracts import ContractError, canonical_json_bytes
+from ...pipeline_contracts import ContractError, canonical_json_bytes, read_regular_bytes
 
 
 _NODE_VERSION = "22.22.3"
@@ -477,6 +477,36 @@ def _verify_vendor_identity() -> None:
         raise _fail("E_ENGINE_IDENTITY", "pinned ELK vendor identity changed")
 
 
+def _vendor_snapshots() -> tuple[tuple[str, bytes], ...]:
+    root = _skill_root() / "vendor" / "elkjs"
+    expected = (
+        ("package.json", _PACKAGE_SHA256),
+        ("lib/elk.bundled.js", _MODULE_SHA256),
+        ("LICENSE.md", _LICENSE_SHA256),
+    )
+    try:
+        observed = tuple(
+            (
+                relative,
+                read_regular_bytes(
+                    root.joinpath(*relative.split("/")),
+                    maximum=_MAX_GEOMETRY_BYTES,
+                    path_code="E_ENGINE_IDENTITY",
+                    size_code="E_ENGINE_IDENTITY",
+                ),
+            )
+            for relative, _ in expected
+        )
+    except ContractError:
+        raise _fail("E_ENGINE_IDENTITY", "pinned ELK vendor is unavailable") from None
+    if any(
+        hashlib.sha256(raw).hexdigest() != digest
+        for (_, raw), (_, digest) in zip(observed, expected, strict=True)
+    ):
+        raise _fail("E_ENGINE_IDENTITY", "pinned ELK vendor identity changed")
+    return observed
+
+
 def _attempt_directory(value: os.PathLike[str] | str) -> Path:
     try:
         raw = os.fspath(value)
@@ -654,7 +684,7 @@ def render_elk_geometry(envelope: Mapping[str, Any], attempt_dir: os.PathLike[st
     adapter = _adapter_path()
     renderer_raw, adapter_identity = _read_adapter_snapshot(adapter)
     renderer_sha256 = hashlib.sha256(renderer_raw).hexdigest()
-    _verify_vendor_identity()
+    vendor_snapshots = _vendor_snapshots()
     node_raw = shutil.which("node")
     if not node_raw:
         raise _fail("E_ENGINE_RUNTIME", "pinned Node runtime is unavailable")
@@ -671,13 +701,21 @@ def render_elk_geometry(envelope: Mapping[str, Any], attempt_dir: os.PathLike[st
         input_path = work / "input.json"
         geometry_path = work / "geometry.json"
         metadata_path = work / "metadata.json"
+        execution_root = work / "skill"
+        snapshot_adapter = execution_root / "scripts/render_elk.mjs"
         try:
             input_path.write_bytes(input_raw)
+            snapshot_adapter.parent.mkdir(parents=True)
+            snapshot_adapter.write_bytes(renderer_raw)
+            for relative, raw in vendor_snapshots:
+                destination = execution_root / "vendor/elkjs" / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(raw)
         except OSError:
             raise _fail("E_RUN_PATH", "cannot create ELK attempt input") from None
         command = [
             os.fspath(node),
-            os.fspath(adapter),
+            os.fspath(snapshot_adapter),
             "--input",
             os.fspath(input_path),
             "--geometry",

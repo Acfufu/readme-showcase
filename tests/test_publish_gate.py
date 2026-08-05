@@ -80,6 +80,7 @@ class PublishGateTests(unittest.TestCase):
     ) -> tuple[Path, dict[str, Any], Path, dict[str, Any]]:
         helper = pr_bundle.PrBundleTests(methodName="runTest")
         target, _, run_root, bundle, evaluation = helper.run_compiled_bundle(root)
+        write_canonical_json_atomic(run_root / "generated-readme-bundle.json", bundle)
         write_canonical_json_atomic(run_root / "evaluation-report.json", evaluation)
         pr = _CORE.build_pr_bundle(bundle, evaluation, run_root, target)
         preview_root = run_root / "output/preview"
@@ -392,6 +393,7 @@ class PublishGateTests(unittest.TestCase):
                         candidate.write_bytes(original)
 
             for relative, code in (
+                ("generated-readme-bundle.json", "E_APPROVAL_FINGERPRINT"),
                 ("evaluation-report.json", "E_EVALUATION_DRIFT"),
                 ("output/preview/index.html", "E_PREVIEW_DRIFT"),
                 ("output/preview/report.json", "E_PREVIEW_DRIFT"),
@@ -411,6 +413,22 @@ class PublishGateTests(unittest.TestCase):
                         self.assertIsNone(drift["write_authority"])
                     finally:
                         bound.write_bytes(original)
+
+    def test_compiled_approval_binds_manifest_evidence_to_evaluated_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _, pr, run_root, approval = self.compiled_fixture(root)
+            manifest_path = run_root / "asset-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for asset in manifest["assets"]:
+                asset["evidence_ids"] = [f"file:{'0' * 64}"]
+            write_canonical_json_atomic(manifest_path, manifest)
+
+            result = _PUBLISHING.check_approval_envelope(approval, pr, run_root)
+
+            self.assertEqual(result["status"], "fail")
+            self.assertIn("E_APPROVAL_FINGERPRINT", result["findings"])
+            self.assertIsNone(result["write_authority"])
 
     def test_compiled_pr_rejects_missing_and_symlinked_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
