@@ -1,8 +1,85 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc" data-readme-language="en">
-  <title id="title">Project and user installation scopes</title><desc id="desc">The official installer places one verified Skill in either the current repository or the Codex user home, then checks exact bytes.</desc>
-  <rect width="1200" height="420" rx="28" fill="#171713"/><text x="48" y="55" font-family="SFMono-Regular,Menlo,monospace" font-size="15" font-weight="700" letter-spacing="2" fill="#D7F45B">INSTALLATION ROUTER</text><text x="1152" y="55" text-anchor="end" font-family="SFMono-Regular,Menlo,monospace" font-size="14" fill="#8F8C84">ATOMIC · IDEMPOTENT · CHECKABLE</text>
-  <text x="48" y="116" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,PingFang SC,sans-serif" font-size="38" font-weight="800" fill="#FFFDF8">One installer. Two deliberate scopes.</text>
-  <g transform="translate(48 150)"><rect width="516" height="205" rx="18" fill="#F3EFE6"/><circle cx="42" cy="42" r="17" fill="#167C72"/><path d="m34 42 6 6 11-14" fill="none" stroke="#fff" stroke-width="3"/><text x="72" y="48" font-family="SFMono-Regular,Menlo,monospace" font-size="15" font-weight="700" fill="#171713">PROJECT</text><text x="28" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,PingFang SC,sans-serif" font-size="24" font-weight="800" fill="#171713">Shared with this repository</text><rect x="28" y="118" width="460" height="48" rx="8" fill="#FFFDF8"/><text x="46" y="149" font-family="SFMono-Regular,Menlo,monospace" font-size="17" fill="#2356B6">.agents/skills/readme-showcase</text><text x="28" y="190" font-family="SFMono-Regular,Menlo,monospace" font-size="12" fill="#716E65">--project --yes</text></g>
-  <g transform="translate(636 150)"><rect width="516" height="205" rx="18" fill="#FFFDF8"/><circle cx="42" cy="42" r="17" fill="#E65036"/><path d="M34 42h16M42 34v16" stroke="#fff" stroke-width="3"/><text x="72" y="48" font-family="SFMono-Regular,Menlo,monospace" font-size="15" font-weight="700" fill="#171713">USER</text><text x="28" y="94" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,PingFang SC,sans-serif" font-size="24" font-weight="800" fill="#171713">Available across Codex tasks</text><rect x="28" y="118" width="460" height="48" rx="8" fill="#F3EFE6"/><text x="46" y="149" font-family="SFMono-Regular,Menlo,monospace" font-size="17" fill="#A53120">${CODEX_HOME}/skills/readme-showcase</text><text x="28" y="190" font-family="SFMono-Regular,Menlo,monospace" font-size="12" fill="#716E65">--user --yes</text></g>
-  <path d="M48 389H1152" stroke="#3A3935"/><text x="48" y="407" font-family="SFMono-Regular,Menlo,monospace" font-size="12" fill="#8F8C84">VALIDATE → LOCK → STAGE → HASH → BACKUP → REPLACE → CHECK</text><text x="1152" y="407" text-anchor="end" font-family="SFMono-Regular,Menlo,monospace" font-size="12" fill="#D7F45B">ROLLBACK ON FAILURE</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc" data-readme-language="en">
+  <title id="title">Atomic installer with project and user scopes</title>
+  <desc id="desc">Repository files become a SHA-256 manifest, pass through one locked staging and atomic replacement flow, then install to project or Codex user scope. Installed bytes must match the source manifest; failures restore the backup.</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#2B2A26" stroke-width="1"/>
+    </pattern>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#8F8C84"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="500" rx="28" fill="#171713"/>
+  <rect width="1200" height="500" rx="28" fill="url(#grid)" opacity=".5"/>
+
+  <circle cx="48" cy="43" r="9" fill="#E65036"/>
+  <text x="68" y="49" font-family="SFMono-Regular,Menlo,monospace" font-size="15" font-weight="700" letter-spacing="2" fill="#FFFDF8">INSTALL CONTRACT</text>
+  <text x="1152" y="49" text-anchor="end" font-family="SFMono-Regular,Menlo,monospace" font-size="14" fill="#8F8C84">ONE INSTALLER · TWO SCOPES · EXACT BYTES</text>
+  <path d="M48 72H1152" stroke="#3A3935"/>
+
+  <text x="48" y="118" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,PingFang SC,sans-serif" font-size="35" font-weight="800" fill="#FFFDF8">Build once. Place deliberately. Prove every byte.</text>
+
+  <g id="source-contract" transform="translate(48 150)">
+    <rect width="230" height="244" rx="18" fill="#F3EFE6"/>
+    <text x="22" y="34" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" letter-spacing="1.5" fill="#E65036">01 · SOURCE</text>
+    <text x="22" y="72" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,PingFang SC,sans-serif" font-size="23" font-weight="800" fill="#171713">Verified package</text>
+    <g transform="translate(22 94)">
+      <rect width="186" height="39" rx="8" fill="#FFFDF8"/>
+      <path d="M15 11h14l6 6v12H15zM29 11v7h6" fill="none" stroke="#171713" stroke-width="2"/>
+      <text x="48" y="25" font-family="SFMono-Regular,Menlo,monospace" font-size="13" fill="#171713">skill/ + dataset/</text>
+    </g>
+    <text x="22" y="163" font-family="SFMono-Regular,Menlo,monospace" font-size="13" fill="#716E65">file → SHA-256</text>
+    <path d="M22 177H208" stroke="#C9C4B9"/>
+    <rect x="22" y="191" width="186" height="31" rx="7" fill="#D8EEE9"/>
+    <text x="115" y="212" text-anchor="middle" font-family="SFMono-Regular,Menlo,monospace" font-size="12" font-weight="700" fill="#0D6058">EXPECTED MANIFEST</text>
+  </g>
+
+  <path d="M290 272H326" stroke="#8F8C84" stroke-width="2" stroke-dasharray="5 6" marker-end="url(#arrow)"/>
+
+  <g id="atomic-installer" transform="translate(336 150)">
+    <rect width="254" height="244" rx="18" fill="#FFFDF8" stroke="#D7F45B" stroke-width="3"/>
+    <text x="22" y="34" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" letter-spacing="1.5" fill="#167C72">02 · ONE INSTALLER</text>
+    <text x="22" y="72" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,PingFang SC,sans-serif" font-size="23" font-weight="800" fill="#171713">Atomic transaction</text>
+    <g font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700">
+      <rect x="22" y="94" width="98" height="36" rx="8" fill="#171713"/><text x="71" y="117" text-anchor="middle" fill="#FFFDF8">LOCK</text>
+      <rect x="134" y="94" width="98" height="36" rx="8" fill="#171713"/><text x="183" y="117" text-anchor="middle" fill="#FFFDF8">STAGE</text>
+      <rect x="22" y="142" width="98" height="36" rx="8" fill="#171713"/><text x="71" y="165" text-anchor="middle" fill="#D7F45B">HASH</text>
+      <rect x="134" y="142" width="98" height="36" rx="8" fill="#171713"/><text x="183" y="165" text-anchor="middle" fill="#FFFDF8">REPLACE</text>
+    </g>
+    <path d="M120 112H134M183 130V142M134 160H120M71 178v17" fill="none" stroke="#8F8C84" stroke-width="2"/>
+    <rect x="22" y="195" width="210" height="27" rx="7" fill="#F6D8D1"/>
+    <text x="127" y="213" text-anchor="middle" font-family="SFMono-Regular,Menlo,monospace" font-size="11" font-weight="700" fill="#A53120">BACKUP → ROLLBACK ON FAILURE</text>
+  </g>
+
+  <path d="M602 272H638" stroke="#8F8C84" stroke-width="2" stroke-dasharray="5 6" marker-end="url(#arrow)"/>
+
+  <g id="scope-choice" transform="translate(648 150)">
+    <text x="0" y="34" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" letter-spacing="1.5" fill="#D7F45B">03 · EXPLICIT SCOPE</text>
+    <rect y="52" width="254" height="82" rx="14" fill="#F3EFE6"/>
+    <circle cx="28" cy="79" r="11" fill="#167C72"/><path d="m23 79 4 4 7-9" fill="none" stroke="#fff" stroke-width="2"/>
+    <text x="48" y="84" font-family="SFMono-Regular,Menlo,monospace" font-size="14" font-weight="700" fill="#171713">PROJECT</text>
+    <text x="20" y="116" font-family="SFMono-Regular,Menlo,monospace" font-size="12" fill="#2356B6">.agents/skills/readme-showcase</text>
+    <rect y="148" width="254" height="82" rx="14" fill="#FFFDF8"/>
+    <circle cx="28" cy="175" r="11" fill="#E65036"/><path d="M23 175h10M28 170v10" stroke="#fff" stroke-width="2"/>
+    <text x="48" y="180" font-family="SFMono-Regular,Menlo,monospace" font-size="14" font-weight="700" fill="#171713">USER</text>
+    <text x="20" y="212" font-family="SFMono-Regular,Menlo,monospace" font-size="12" fill="#A53120">${CODEX_HOME}/skills/readme-showcase</text>
+  </g>
+
+  <path d="M914 272H950" stroke="#8F8C84" stroke-width="2" stroke-dasharray="5 6" marker-end="url(#arrow)"/>
+
+  <g id="exact-byte-gate" transform="translate(960 150)">
+    <rect width="192" height="244" rx="18" fill="#D7F45B"/>
+    <text x="20" y="34" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" letter-spacing="1.5" fill="#171713">04 · VERIFY</text>
+    <circle cx="96" cy="93" r="35" fill="#171713"/>
+    <path d="m79 94 11 11 24-29" fill="none" stroke="#D7F45B" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="96" y="153" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,PingFang SC,sans-serif" font-size="21" font-weight="800" fill="#171713">Exact-byte match</text>
+    <rect x="20" y="174" width="152" height="31" rx="7" fill="#171713"/>
+    <text x="96" y="195" text-anchor="middle" font-family="SFMono-Regular,Menlo,monospace" font-size="12" font-weight="700" fill="#FFFDF8">EXPECTED == INSTALLED</text>
+    <text x="96" y="226" text-anchor="middle" font-family="SFMono-Regular,Menlo,monospace" font-size="12" font-weight="700" fill="#0D6058">status: current</text>
+  </g>
+
+  <path d="M48 436H1152" stroke="#3A3935"/>
+  <text x="48" y="469" font-family="SFMono-Regular,Menlo,monospace" font-size="13" fill="#8F8C84">SYMLINKS REJECTED · EXISTING TARGET VERIFIED · STAGED TREE CHECKED · INSTALLED TREE RECHECKED</text>
+  <text x="1152" y="469" text-anchor="end" font-family="SFMono-Regular,Menlo,monospace" font-size="13" font-weight="700" fill="#D7F45B">FAIL CLOSED</text>
 </svg>
