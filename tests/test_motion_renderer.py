@@ -267,6 +267,35 @@ class MotionRendererTests(unittest.TestCase):
             render_motion_gif._svg_dimensions(root)
         self.assertIn("unitless or px", str(unit_error.exception))
 
+    def test_deep_svg_fails_before_copy_or_render(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        root = ET.Element(
+            "{http://www.w3.org/2000/svg}svg",
+            {"width": "160", "height": "80", "viewBox": "0 0 160 80"},
+        )
+        cursor = root
+        for _ in range(2_000):
+            cursor = ET.SubElement(cursor, "{http://www.w3.org/2000/svg}g")
+        spec = render_motion_gif.load_spec(HERO_SPEC)
+        spec.update(reveals=[], layers=[])
+        workspace = self.root / "deep-svg"
+        workspace.mkdir()
+
+        with (
+            mock.patch.object(render_motion_gif, "render_svg") as renderer,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            render_motion_gif.build_frames(
+                root,
+                spec,
+                ("fake", "fake"),
+                workspace,
+            )
+
+        self.assertIn("SVG structure", str(raised.exception))
+        renderer.assert_not_called()
+        self.assertEqual(list(workspace.iterdir()), [])
+
     def test_cli_rejects_symlinked_svg_spec_and_timeline_inputs(self) -> None:
         self.assertIsNotNone(render_motion_gif)
         svg = self._write_svg()

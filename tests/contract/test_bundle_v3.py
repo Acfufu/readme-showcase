@@ -292,6 +292,22 @@ class BundleV3ContractTests(unittest.TestCase):
 
             self.assertEqual(raised.exception.code, "E_VISUAL_SPEC_SIZE")
 
+    def test_deep_bundle_object_fails_before_recursive_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self.make_bundle(root)
+            cursor: list[object] = []
+            bundle["nested"] = cursor
+            for _ in range(2_000):
+                child: list[object] = []
+                cursor.append(child)
+                cursor = child
+
+            with self.assertRaises(ContractError) as raised:
+                validate_generated_bundle_v3(bundle, root)
+
+            self.assertEqual(raised.exception.code, "E_INPUT_SIZE")
+
     def test_forged_self_consistent_svg_inventory_fails_manifest_and_bundle_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

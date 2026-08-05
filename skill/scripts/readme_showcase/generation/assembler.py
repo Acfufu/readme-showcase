@@ -19,7 +19,7 @@ from ...pipeline_contracts import (
 )
 from ..contracts.assets import validate_asset_manifest
 from ..contracts.claims import validate_claim_map
-from ..contracts.common import normalize_posix_path
+from ..contracts.common import MAX_JSON_NODES, normalize_posix_path
 from ..contracts.evidence import validate_evidence_graph
 from ..contracts.plan import validate_readme_plan, validate_readme_plan_v2
 from ..contracts.run import canonical_repository
@@ -57,15 +57,26 @@ _V3_SVG_PATH = re.compile(
 )
 
 
-def _reject_float(value: Any, path: str = "$") -> None:
-    if isinstance(value, float):
-        raise ContractError("E_SCHEMA_FLOAT", f"{path} must not contain floats")
-    if isinstance(value, list):
-        for index, child in enumerate(value):
-            _reject_float(child, f"{path}[{index}]")
-    elif isinstance(value, dict):
-        for key, child in value.items():
-            _reject_float(child, f"{path}.{key}")
+def _validate_bundle_structure(value: Any, path: str = "$") -> None:
+    stack = [(value, path, 0)]
+    nodes = 0
+    while stack:
+        item, item_path, depth = stack.pop()
+        nodes += 1
+        if depth > MAX_JSON_DEPTH or nodes > MAX_JSON_NODES:
+            raise ContractError("E_INPUT_SIZE", "generated bundle exceeds structural limits")
+        if isinstance(item, float):
+            raise ContractError("E_SCHEMA_FLOAT", f"{item_path} must not contain floats")
+        if isinstance(item, list):
+            stack.extend(
+                (item[index], f"{item_path}[{index}]", depth + 1)
+                for index in range(len(item) - 1, -1, -1)
+            )
+        elif isinstance(item, dict):
+            for key, child in reversed(item.items()):
+                if not isinstance(key, str):
+                    raise ContractError("E_SCHEMA_KEY_TYPE", f"{item_path} contains a non-string key")
+                stack.append((child, f"{item_path}.{key}", depth + 1))
 
 
 def _closed(value: Any, fields: set[str], context: str) -> dict[str, Any]:
@@ -268,7 +279,7 @@ def _validate_generated_bundle_v2(
     *,
     claims_override: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
-    _reject_float(payload)
+    _validate_bundle_structure(payload)
     bundle = _closed(payload, _BUNDLE_FIELDS, "generated bundle")
     if type(bundle["schema_version"]) is not int or bundle["schema_version"] != GENERATED_BUNDLE_SCHEMA_VERSION:
         raise ContractError("E_SCHEMA_VERSION", "generated bundle requires schema_version 2")
@@ -502,7 +513,7 @@ def _validate_generated_bundle_v3(payload: Any, artifact_root: Path) -> dict[str
     a stage-origin swap cannot become a publishable candidate.
     """
 
-    _reject_float(payload)
+    _validate_bundle_structure(payload)
     bundle = _closed(payload, _BUNDLE_V3_FIELDS, "generated bundle")
     if type(bundle["schema_version"]) is not int or bundle["schema_version"] != GENERATED_BUNDLE_V3_SCHEMA_VERSION:
         raise ContractError("E_SCHEMA_VERSION", "generated bundle requires schema_version 3")

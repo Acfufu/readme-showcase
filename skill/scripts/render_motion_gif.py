@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 if __package__ and __package__.startswith("skill."):
+    from skill.scripts.audit_readme import MAX_SVG_DEPTH, MAX_SVG_ELEMENTS
     from skill.scripts.pipeline_contracts import (
         ContractError,
         read_json_object_bytes,
@@ -27,6 +28,7 @@ if __package__ and __package__.startswith("skill."):
     from skill.scripts.readme_showcase.visual_kernel.timeline import Timeline
 else:  # The installed Skill runs this file directly from its scripts directory.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts.audit_readme import MAX_SVG_DEPTH, MAX_SVG_ELEMENTS
     from scripts.pipeline_contracts import (
         ContractError,
         read_json_object_bytes,
@@ -323,6 +325,17 @@ def _svg_dimensions(root: ET.Element) -> tuple[float, float]:
     return width, height
 
 
+def validate_svg_structure(root: ET.Element) -> None:
+    elements = 0
+    stack = [(root, 1)]
+    while stack:
+        node, depth = stack.pop()
+        elements += 1
+        if depth > MAX_SVG_DEPTH or elements > MAX_SVG_ELEMENTS:
+            fail("SVG structure exceeds depth or element limits")
+        stack.extend((child, depth + 1) for child in reversed(list(node)))
+
+
 def parse_hex_color(value: str) -> tuple[int, int, int]:
     if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
         fail("transparent_color must use #RRGGBB format")
@@ -463,6 +476,7 @@ def build_frames(
     renderer: tuple[str, str],
     workspace: Path,
 ) -> tuple[Path, int, int, int, bool]:
+    validate_svg_structure(root)
     frame_count = motion_frame_count(spec)
     validate_frame_budget(spec, _svg_dimensions(root), frame_count=frame_count)
     moving_ids = {
