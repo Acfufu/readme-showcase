@@ -1,5 +1,6 @@
 .DS_Store
 .omo/
+docs/architecture/visual-compiler/
 node_modules/
 __pycache__/
 *.pyc
