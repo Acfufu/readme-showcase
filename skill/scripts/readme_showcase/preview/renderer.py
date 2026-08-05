@@ -34,6 +34,10 @@ _ACTIVE_SVG_ELEMENTS = frozenset({"script", "foreignobject", "iframe", "object",
 _EXTERNAL_REFERENCE = re.compile(r"(?:https?:|//|data:|javascript:)", re.IGNORECASE)
 _ACTIVE_STYLE = re.compile(r"(?:url\s*\(|@import|expression\s*\(|javascript:)", re.IGNORECASE)
 _LOCAL_SVG_REFERENCE = re.compile(rb"url\(\s*#[A-Za-z_][A-Za-z0-9_.:-]*\s*\)", re.IGNORECASE)
+_MAX_PREVIEW_TREE_DEPTH = 16
+_MAX_PREVIEW_TREE_ENTRIES = 10_000
+_MAX_PREVIEW_TREE_BYTES = 64 * 1024 * 1024
+_MAX_PREVIEW_FILE_BYTES = MAX_PREVIEW_INPUT_BYTES
 
 
 def _local_name(value: str) -> str:
@@ -78,39 +82,26 @@ def _collect_assets(
     snapshot: PreviewInputSnapshot,
 ) -> dict[str, bytes]:
     root = workspace.root / "stages/05-candidate/assets"
-    try:
-        info = root.lstat()
-    except FileNotFoundError:
+    scanned = _enumerate_preview_tree(root, context="candidate assets")
+    if scanned is None:
         return {"assets/README.txt": b"No candidate assets were provided.\n"}
-    except OSError as exc:
-        raise ContractError("E_PREVIEW_PATH", "cannot inspect candidate assets") from exc
-    if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
-        raise ContractError("E_PREVIEW_PATH", "candidate assets must be a real directory")
+    root_fd, files = scanned
     output: dict[str, bytes] = {}
-    for directory, names, files in os.walk(root, topdown=True, followlinks=False):
-        base = Path(directory)
-        names.sort(key=os.fsencode)
-        files.sort(key=os.fsencode)
-        for name in names:
-            child = base / name
-            child_info = child.lstat()
-            if not stat.S_ISDIR(child_info.st_mode) or stat.S_ISLNK(child_info.st_mode):
-                raise ContractError("E_PREVIEW_PATH", "candidate assets contain an unsafe directory")
-        for name in files:
-            source = base / name
-            source_info = source.lstat()
-            if not stat.S_ISREG(source_info.st_mode) or stat.S_ISLNK(source_info.st_mode):
-                raise ContractError("E_PREVIEW_PATH", "candidate assets contain a symlink or special file")
-            relative = source.relative_to(root).as_posix()
+    try:
+        for relative, parts, source_info in sorted(files, key=lambda item: os.fsencode(item[0])):
             pure = PurePosixPath(relative)
             if pure.is_absolute() or ".." in pure.parts or pure.suffix.casefold() not in _ASSET_SUFFIXES:
                 raise ContractError("E_PREVIEW_PATH", "candidate asset path or type is not allowlisted")
-            if source_info.st_size > MAX_PREVIEW_INPUT_BYTES:
-                raise ContractError("E_PREVIEW_PATH", "candidate asset exceeds preview size limit")
-            raw = snapshot.read(source) or b""
+            source = root.joinpath(*parts)
+            snapshot_raw = snapshot.read(source) or b""
+            raw = _read_preview_relative(root_fd, parts, source_info, context="candidate assets")
+            if raw != snapshot_raw:
+                raise ContractError("E_PREVIEW_STALE", "candidate asset bytes changed during preview rendering")
             if pure.suffix.casefold() == ".svg":
                 _validate_svg(raw)
             output[f"assets/{relative}"] = raw
+    finally:
+        os.close(root_fd)
     return output or {"assets/README.txt": b"No candidate assets were provided.\n"}
 
 
@@ -316,21 +307,223 @@ def _compiled_index(report: dict[str, Any], readmes: dict[str, str], compiled: d
     )
 
 
-def _tree_bytes(root: Path) -> dict[str, bytes] | None:
+def _open_preview_directory(parent: int | None, name: str | Path, *, context: str) -> int:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
+    try:
+        descriptor = os.open(name, flags, **({"dir_fd": parent} if parent is not None else {}))
+        info = os.fstat(descriptor)
+    except OSError as exc:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise ContractError("E_PREVIEW_PATH", f"{context} directory is unavailable") from exc
+    if not stat.S_ISDIR(info.st_mode):
+        os.close(descriptor)
+        raise ContractError("E_PREVIEW_PATH", f"{context} must be a real directory")
+    return descriptor
+
+
+def _open_preview_child_directory(parent: int, name: str, expected: os.stat_result, *, context: str) -> int:
+    descriptor = _open_preview_directory(parent, name, context=context)
+    try:
+        observed = os.fstat(descriptor)
+    except OSError as exc:
+        os.close(descriptor)
+        raise ContractError("E_PREVIEW_PATH", f"{context} directory is unavailable") from exc
+    if (observed.st_dev, observed.st_ino) != (expected.st_dev, expected.st_ino):
+        os.close(descriptor)
+        raise ContractError("E_PREVIEW_PATH", f"{context} directory changed during read")
+    return descriptor
+
+
+def _open_preview_relative_directory(
+    root: int,
+    parts: tuple[str, ...],
+    expected: os.stat_result,
+    *,
+    context: str,
+) -> int:
+    parent = os.dup(root)
+    try:
+        if not parts:
+            observed = os.fstat(parent)
+            if (observed.st_dev, observed.st_ino) != (expected.st_dev, expected.st_ino):
+                raise ContractError("E_PREVIEW_PATH", f"{context} directory changed during read")
+            return parent
+        for name in parts[:-1]:
+            child = _open_preview_directory(parent, name, context=context)
+            os.close(parent)
+            parent = child
+        child = _open_preview_child_directory(parent, parts[-1], expected, context=context)
+        os.close(parent)
+        return child
+    except BaseException:
+        os.close(parent)
+        raise
+
+
+def _read_preview_file(parent: int, name: str, expected: os.stat_result, *, context: str) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = -1
+    try:
+        try:
+            descriptor = os.open(name, flags, dir_fd=parent)
+            opened = os.fstat(descriptor)
+        except OSError as exc:
+            raise ContractError("E_PREVIEW_PATH", f"{context} file is unavailable") from exc
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
+            != (expected.st_dev, expected.st_ino, expected.st_size, expected.st_mtime_ns)
+        ):
+            raise ContractError("E_PREVIEW_PATH", f"{context} file changed during read")
+        chunks: list[bytes] = []
+        remaining = _MAX_PREVIEW_FILE_BYTES + 1
+        while remaining:
+            try:
+                chunk = os.read(descriptor, min(64 * 1024, remaining))
+            except OSError as exc:
+                raise ContractError("E_PREVIEW_PATH", f"cannot read {context} file") from exc
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if len(raw) > _MAX_PREVIEW_FILE_BYTES or (
+            len(raw) != opened.st_size
+            or (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            != (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
+        ):
+            raise ContractError("E_PREVIEW_PATH", f"{context} file changed during read")
+        return raw
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _read_preview_relative(
+    root: int,
+    parts: tuple[str, ...],
+    expected: os.stat_result,
+    *,
+    context: str,
+) -> bytes:
+    parent = os.dup(root)
+    try:
+        for name in parts[:-1]:
+            child = _open_preview_directory(parent, name, context=context)
+            os.close(parent)
+            parent = child
+        return _read_preview_file(parent, parts[-1], expected, context=context)
+    finally:
+        os.close(parent)
+
+
+def _enumerate_preview_tree(
+    root: Path,
+    *,
+    context: str,
+) -> tuple[int, list[tuple[str, tuple[str, ...], os.stat_result]]] | None:
     try:
         info = root.lstat()
     except FileNotFoundError:
         return None
+    except OSError as exc:
+        raise ContractError("E_PREVIEW_PATH", f"{context} directory is unavailable") from exc
     if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
-        raise ContractError("E_PREVIEW_PATH", "preview destination must be a real directory")
-    output: dict[str, bytes] = {}
-    for path in sorted(root.rglob("*"), key=lambda item: os.fsencode(item.relative_to(root).as_posix())):
-        info = path.lstat()
-        if stat.S_ISLNK(info.st_mode) or (not stat.S_ISDIR(info.st_mode) and not stat.S_ISREG(info.st_mode)):
-            raise ContractError("E_PREVIEW_PATH", "preview destination contains unsafe data")
-        if stat.S_ISREG(info.st_mode):
-            output[path.relative_to(root).as_posix()] = path.read_bytes()
-    return output
+        raise ContractError("E_PREVIEW_PATH", f"{context} must be a real directory")
+
+    # Pin the root before walking it.  Every child directory is opened from a
+    # descriptor with O_NOFOLLOW and checked against its scanned identity.
+    root_fd = _open_preview_directory(None, root, context=context)
+    try:
+        root_observed = os.fstat(root_fd)
+    except OSError as exc:
+        os.close(root_fd)
+        raise ContractError("E_PREVIEW_PATH", f"{context} directory is unavailable") from exc
+    if (root_observed.st_dev, root_observed.st_ino) != (info.st_dev, info.st_ino):
+        os.close(root_fd)
+        raise ContractError("E_PREVIEW_PATH", f"{context} changed during read")
+
+    # Enumerate metadata before reading any bytes.  This keeps hostile trees
+    # from growing an unbounded path list or byte map before a limit is seen.
+    files: list[tuple[str, tuple[str, ...], os.stat_result]] = []
+    pending: list[tuple[str, tuple[str, ...], int, os.stat_result]] = [("", (), 0, info)]
+    entries_seen = 0
+    total_bytes = 0
+    try:
+        while pending:
+            prefix, path_parts, depth, expected_directory = pending.pop()
+            directory = _open_preview_relative_directory(
+                root_fd,
+                path_parts,
+                expected_directory,
+                context=context,
+            )
+            try:
+                if depth > _MAX_PREVIEW_TREE_DEPTH:
+                    raise ContractError("E_PREVIEW_PATH", f"{context} tree exceeds its depth bound")
+                try:
+                    children = []
+                    with os.scandir(directory) as iterator:
+                        for child in iterator:
+                            entries_seen += 1
+                            if entries_seen > _MAX_PREVIEW_TREE_ENTRIES:
+                                raise ContractError("E_PREVIEW_PATH", f"{context} tree exceeds its entry bound")
+                            children.append(child)
+                except OSError as exc:
+                    raise ContractError("E_PREVIEW_PATH", f"{context} directory is unavailable") from exc
+                children.sort(key=lambda item: os.fsencode(item.name))
+                for child in children:
+                    relative = f"{prefix}/{child.name}" if prefix else child.name
+                    child_parts = (*path_parts, child.name)
+                    try:
+                        child_info = child.stat(follow_symlinks=False)
+                    except OSError as exc:
+                        raise ContractError("E_PREVIEW_PATH", f"{context} entry is unavailable") from exc
+                    if stat.S_ISLNK(child_info.st_mode):
+                        raise ContractError("E_PREVIEW_PATH", f"{context} contains unsafe data")
+                    if stat.S_ISDIR(child_info.st_mode):
+                        if depth + 1 > _MAX_PREVIEW_TREE_DEPTH:
+                            raise ContractError("E_PREVIEW_PATH", f"{context} tree exceeds its depth bound")
+                        pending.append((relative, child_parts, depth + 1, child_info))
+                        continue
+                    if not stat.S_ISREG(child_info.st_mode):
+                        raise ContractError("E_PREVIEW_PATH", f"{context} contains unsafe data")
+                    size = child_info.st_size
+                    if size > _MAX_PREVIEW_FILE_BYTES:
+                        raise ContractError("E_PREVIEW_PATH", f"{context} file exceeds its per-file byte bound")
+                    total_bytes += size
+                    if total_bytes > _MAX_PREVIEW_TREE_BYTES:
+                        raise ContractError("E_PREVIEW_PATH", f"{context} tree exceeds its aggregate byte bound")
+                    files.append((relative, child_parts, child_info))
+            finally:
+                os.close(directory)
+
+    except BaseException:
+        os.close(root_fd)
+        raise
+    return root_fd, files
+
+
+def _tree_bytes(root: Path) -> dict[str, bytes] | None:
+    scanned = _enumerate_preview_tree(root, context="preview destination")
+    if scanned is None:
+        return None
+    root_fd, files = scanned
+    try:
+        return {
+            relative: _read_preview_relative(
+                root_fd,
+                parts,
+                expected,
+                context="preview destination",
+            )
+            for relative, parts, expected in sorted(files, key=lambda item: os.fsencode(item[0]))
+        }
+    finally:
+        os.close(root_fd)
 
 
 def _readme_documents(report: dict[str, Any], readmes: dict[str, str]) -> dict[str, bytes]:

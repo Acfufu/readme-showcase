@@ -157,6 +157,142 @@ class PreviewReportTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(first_bytes, self.preview_bytes())
 
+    def test_existing_preview_tree_bounds_fail_before_reads(self) -> None:
+        root = self.root / "existing-preview"
+        root.mkdir()
+        for index in range(renderer_module._MAX_PREVIEW_TREE_ENTRIES + 1):
+            (root / f"entry-{index:05d}").write_bytes(b"")
+        with mock.patch.object(renderer_module, "_read_preview_relative", side_effect=AssertionError("read")):
+            with self.assertRaises(ContractError) as raised:
+                renderer_module._tree_bytes(root)
+        self.assertEqual(raised.exception.code, "E_PREVIEW_PATH")
+        self.assertIn("entry bound", str(raised.exception))
+
+        shutil.rmtree(root)
+        root.mkdir()
+        nested = root
+        for index in range(renderer_module._MAX_PREVIEW_TREE_DEPTH + 1):
+            nested /= f"depth-{index:02d}"
+            nested.mkdir()
+        (nested / "zero").write_bytes(b"")
+        with mock.patch.object(renderer_module, "_read_preview_relative", side_effect=AssertionError("read")):
+            with self.assertRaises(ContractError) as raised:
+                renderer_module._tree_bytes(root)
+        self.assertEqual(raised.exception.code, "E_PREVIEW_PATH")
+        self.assertIn("depth bound", str(raised.exception))
+
+    def test_existing_preview_byte_bounds_fail_before_reads(self) -> None:
+        root = self.root / "existing-preview"
+        root.mkdir()
+        (root / "oversized").write_bytes(b"12")
+        with mock.patch.object(renderer_module, "_MAX_PREVIEW_FILE_BYTES", 1):
+            with mock.patch.object(renderer_module, "_read_preview_relative", side_effect=AssertionError("read")):
+                with self.assertRaises(ContractError) as raised:
+                    renderer_module._tree_bytes(root)
+        self.assertEqual(raised.exception.code, "E_PREVIEW_PATH")
+        self.assertIn("per-file byte bound", str(raised.exception))
+
+        (root / "oversized").unlink()
+        (root / "first").write_bytes(b"1")
+        (root / "second").write_bytes(b"1")
+        with mock.patch.object(renderer_module, "_MAX_PREVIEW_TREE_BYTES", 1):
+            with mock.patch.object(renderer_module, "_read_preview_relative", side_effect=AssertionError("read")):
+                with self.assertRaises(ContractError) as raised:
+                    renderer_module._tree_bytes(root)
+        self.assertEqual(raised.exception.code, "E_PREVIEW_PATH")
+        self.assertIn("aggregate byte bound", str(raised.exception))
+
+    def test_candidate_asset_tree_bounds_fail_before_reads(self) -> None:
+        workspace_root = self.root / "asset-workspace"
+        assets_root = workspace_root / "stages/05-candidate/assets"
+        assets_root.mkdir(parents=True)
+        workspace = mock.Mock()
+        workspace.root = workspace_root
+        snapshot = report_module.PreviewInputSnapshot()
+
+        for index in range(renderer_module._MAX_PREVIEW_TREE_ENTRIES + 1):
+            (assets_root / f"asset-{index:05d}.png").write_bytes(b"")
+        with mock.patch.object(renderer_module, "_read_preview_relative", side_effect=AssertionError("read")):
+            with self.assertRaises(ContractError) as raised:
+                renderer_module._collect_assets(workspace, snapshot)
+        self.assertEqual(raised.exception.code, "E_PREVIEW_PATH")
+        self.assertIn("entry bound", str(raised.exception))
+
+        shutil.rmtree(assets_root)
+        assets_root.mkdir(parents=True)
+        nested = assets_root
+        for index in range(renderer_module._MAX_PREVIEW_TREE_DEPTH + 1):
+            nested /= f"depth-{index:02d}"
+            nested.mkdir()
+        (nested / "asset.png").write_bytes(b"")
+        with mock.patch.object(renderer_module, "_read_preview_relative", side_effect=AssertionError("read")):
+            with self.assertRaises(ContractError) as raised:
+                renderer_module._collect_assets(workspace, report_module.PreviewInputSnapshot())
+        self.assertEqual(raised.exception.code, "E_PREVIEW_PATH")
+        self.assertIn("depth bound", str(raised.exception))
+
+    def test_preview_tree_directory_swap_fails_closed(self) -> None:
+        root = self.root / "existing-preview"
+        nested = root / "nested"
+        outside = self.root / "outside"
+        nested.mkdir(parents=True)
+        outside.mkdir()
+        (outside / "secret").write_bytes(b"outside")
+        (nested / "safe").write_bytes(b"safe")
+        original = renderer_module._open_preview_child_directory
+        swapped = False
+
+        def swap_before_open(
+            parent: int,
+            name: str,
+            expected: os.stat_result,
+            *,
+            context: str,
+        ) -> int:
+            nonlocal swapped
+            if not swapped:
+                nested.rename(self.root / "nested-original")
+                nested.symlink_to(outside, target_is_directory=True)
+                swapped = True
+            return original(parent, name, expected, context=context)
+
+        with mock.patch.object(renderer_module, "_open_preview_child_directory", side_effect=swap_before_open):
+            with self.assertRaises(ContractError) as raised:
+                renderer_module._tree_bytes(root)
+        self.assertTrue(swapped)
+        self.assertEqual(raised.exception.code, "E_PREVIEW_PATH")
+        self.assertIn("directory", str(raised.exception))
+        self.assertEqual((outside / "secret").read_bytes(), b"outside")
+
+    def test_preview_tree_inspection_errors_use_preview_contract(self) -> None:
+        root = self.root / "existing-preview"
+        root.mkdir()
+        with mock.patch.object(Path, "lstat", side_effect=PermissionError("denied")):
+            with self.assertRaises(ContractError) as raised:
+                renderer_module._tree_bytes(root)
+        self.assertEqual(raised.exception.code, "E_PREVIEW_PATH")
+
+    def test_existing_preview_tree_bound_preserves_last_good_bytes(self) -> None:
+        self.assertEqual(self.prepare().returncode, 0)
+        rendered = self.cli("preview", "--workspace", str(self.workspace))
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        before = self.preview_bytes()
+
+        preview_root = self.workspace / "output/preview"
+        overflow = preview_root / "overflow"
+        overflow.mkdir()
+        (overflow / "extra").write_bytes(b"")
+        with mock.patch.object(renderer_module, "_MAX_PREVIEW_TREE_ENTRIES", len(before) + 1):
+            with self.assertRaises(ContractError) as raised:
+                runner_module.preview_run(self.workspace)
+        self.assertEqual(raised.exception.code, "E_PREVIEW_PATH")
+        self.assertIn("entry bound", str(raised.exception))
+        for relative, raw in before.items():
+            self.assertEqual((preview_root / relative).read_bytes(), raw)
+
+        shutil.rmtree(overflow)
+        self.assertEqual(before, self.preview_bytes())
+
     def test_compiled_v3_preview_accepts_nested_stage_outputs(self) -> None:
         stage6 = self.prepare_compiled()
 
