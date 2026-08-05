@@ -366,10 +366,16 @@ def _validate_asset_manifest_v3(
     }
     if referenced_artifacts != inventory_artifacts:
         raise ContractError("E_VISUAL_FINGERPRINT", "asset manifest compiled refs do not close over inventory artifacts")
+    compiled_files = {"compiled/inventory.json": canonical_json_bytes(inventory)}
     for path, digest in referenced_artifacts.items():
         raw = _v3_read(artifact_root, path, f"asset manifest compiled.{path}")
         if hashlib.sha256(raw).hexdigest() != digest:
             raise ContractError("E_BUNDLE_HASH", f"asset manifest compiled artifact bytes changed: {path}")
+        compiled_files[path] = raw
+    # Local import avoids coupling the v2 contract path to visual-kernel setup.
+    from ..visual_kernel.artifacts import _preflight_files
+
+    _preflight_files(compiled_files, require_inventory=True)
 
     if evidence_graph is not None:
         graph = validate_evidence_graph(dict(evidence_graph))

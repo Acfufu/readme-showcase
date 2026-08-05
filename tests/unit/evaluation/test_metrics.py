@@ -22,6 +22,7 @@ from skill.scripts.readme_showcase.visual_kernel.fingerprint import build_layere
 from skill.scripts.readme_showcase.visual_kernel.model import validate_visual_spec
 from skill.scripts.readme_showcase.visual_kernel.reader import load_compiled_visual
 from tests.contract.test_bundle_v3 import BundleV3ContractTests
+from tests.unit.visual_kernel.test_artifacts import forge_authoritative_svg_attempt
 
 
 class AdvisoryMetricTests(unittest.TestCase):
@@ -413,6 +414,18 @@ class AdvisoryMetricTests(unittest.TestCase):
                 missing_report["hard_gate"]["findings"][0]["code"],
                 {"E_PATH", "E_VISUAL_FINGERPRINT", "E_VISUAL_PATH"},
             )
+
+    def test_compiled_bundle_v3_evaluation_rejects_forged_self_consistent_svg_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = BundleV3ContractTests("runTest").make_bundle(root)
+            manifest = json.loads((root / "asset-manifest.json").read_bytes())
+            forge_authoritative_svg_attempt(root, manifest, bundle)
+
+            report = evaluate_generated_bundle(bundle, root)
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["hard_gate"]["status"], "fail")
+            self.assertEqual(report["hard_gate"]["findings"][0]["code"], "E_VISUAL_SVG_SECURITY")
 
     def test_compiled_bundle_v3_rejects_author_and_gate_byte_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -9,7 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from skill.scripts.pipeline_contracts import ContractError
+from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes
 from skill.scripts.readme_showcase.orchestration import workspace as workspace_module
 from skill.scripts.readme_showcase.orchestration.workspace import RunWorkspace
 from skill.scripts.readme_showcase.visual_kernel import artifacts as artifacts_module
@@ -29,6 +29,117 @@ from tests.unit.visual_kernel.test_scene import EVIDENCE, _build, _spec
 
 
 IDENTITIES = {name: hashlib.sha256(name.encode("utf-8")).hexdigest() for name in ("kernel", "elk", "renderer")}
+
+
+def forge_self_consistent_svg_inventory(artifacts: dict[str, bytes]) -> dict[str, bytes]:
+    """Replace one SVG with active content and consistently re-sign every projection."""
+
+    forged = dict(artifacts)
+    inventory = json.loads(forged["compiled/inventory.json"])
+    layers = inventory["layers"]
+    svg_record = next(
+        item for item in layers[7]["records"]
+        if item["path"].startswith("assets/readme-showcase/")
+    )
+    svg_path = svg_record["path"]
+    parts = svg_path.split("/")
+    locale, variant = parts[2], parts[3][:-4]
+    forged[svg_path] = forged[svg_path].replace(b"<svg ", b'<svg onload="alert(1)" ', 1)
+    svg_sha256 = hashlib.sha256(forged[svg_path]).hexdigest()
+
+    gate_path = f"compiled/gates/{locale}/{variant}.json"
+    gate = json.loads(forged[gate_path])
+    gate["svg_sha256"] = svg_sha256
+    forged[gate_path] = canonical_json_bytes(gate)
+    gate_sha256 = hashlib.sha256(forged[gate_path]).hexdigest()
+    gate_record = next(
+        item for item in layers[4]["records"]
+        if (item["locale"], item["variant"]) == (locale, variant)
+    )
+    gate_record["sha256"] = gate_sha256
+    next(
+        item for item in layers[5]["records"]
+        if (item["locale"], item["variant"]) == (locale, variant)
+    )["prior_sha256"] = gate_sha256
+
+    report_prior = hashlib.sha256(canonical_json_bytes({
+        "gates": layers[4]["records"],
+        "timelines": layers[5]["records"],
+        "interactions": layers[6]["records"],
+    })).hexdigest()
+    for record in layers[7]["records"]:
+        record["prior_sha256"] = report_prior
+        record["sha256"] = hashlib.sha256(forged[record["path"]]).hexdigest()
+    rebuilt = build_layered_fingerprint(
+        layers[0]["sha256"],
+        layers[1]["records"],
+        layers[2]["sha256"],
+        layers[3]["values"],
+        layers[4]["records"],
+        layers[5]["records"],
+        layers[6]["records"],
+        layers[7]["records"],
+    )
+    forged["compiled/inventory.json"] = rebuilt.canonical_bytes()
+    return forged
+
+
+def forge_authoritative_svg_attempt(
+    root: Path,
+    manifest: dict[str, object],
+    bundle: dict[str, object],
+) -> dict[str, bytes]:
+    inventory = json.loads((root / "compiled/inventory.json").read_bytes())
+    paths = [record["path"] for record in inventory["layers"][-1]["records"]]
+    paths.append("compiled/inventory.json")
+    forged = forge_self_consistent_svg_inventory({path: (root / path).read_bytes() for path in paths})
+    for path, raw in forged.items():
+        (root / path).write_bytes(raw)
+
+    compiled = manifest["compiled"]
+    assert isinstance(compiled, dict)
+    for name in ("spec", "theme", "inventory"):
+        ref = compiled[name]
+        assert isinstance(ref, dict)
+        ref["sha256"] = hashlib.sha256(forged[ref["path"]]).hexdigest()
+    for name in ("scenes", "gates", "timelines", "interactions", "svgs"):
+        refs = compiled[name]
+        assert isinstance(refs, list)
+        for ref in refs:
+            ref["sha256"] = hashlib.sha256(forged[ref["path"]]).hexdigest()
+    assets = manifest["assets"]
+    assert isinstance(assets, list)
+    for asset in assets:
+        key = (asset["locale"], asset["variant"])
+        asset["artifact_sha256"] = next(
+            ref["sha256"] for ref in compiled["svgs"]
+            if (ref["locale"], ref["variant"]) == key
+        )
+        asset["gate_sha256"] = next(
+            ref["sha256"] for ref in compiled["gates"]
+            if (ref["locale"], ref["variant"]) == key
+        )
+    manifest_raw = canonical_json_bytes(manifest)
+    (root / "asset-manifest.json").write_bytes(manifest_raw)
+
+    bundle_compiled = bundle["compiled"]
+    bundle_artifacts = bundle["artifacts"]
+    assert isinstance(bundle_compiled, dict) and isinstance(bundle_artifacts, dict)
+    bundle_compiled["inventory"] = copy.deepcopy(compiled["inventory"])
+    bundle_compiled["fingerprint"] = json.loads(forged["compiled/inventory.json"])["inventory_sha256"]
+    bundle_artifacts["asset_manifest"]["sha256"] = hashlib.sha256(manifest_raw).hexdigest()
+    candidate = bundle.get("candidate")
+    if isinstance(candidate, dict):
+        candidate_assets = candidate.get("assets")
+        if isinstance(candidate_assets, list):
+            svg_hashes = {ref["path"]: ref["sha256"] for ref in compiled["svgs"]}
+            for ref in candidate_assets:
+                ref["sha256"] = svg_hashes[ref["path"]]
+            candidate["candidate_sha256"] = hashlib.sha256(canonical_json_bytes({
+                "readmes": candidate["readmes"],
+                "assets": candidate_assets,
+            })).hexdigest()
+    return forged
 
 
 class CompiledArtifactTests(unittest.TestCase):
@@ -184,6 +295,31 @@ class CompiledArtifactTests(unittest.TestCase):
                 with self.subTest(path=path), self.assertRaises(ContractError) as raised:
                     promote_compiled_artifacts(workspace, without(path))
                 self.assertEqual(raised.exception.code, "E_VISUAL_FINGERPRINT")
+
+    def test_self_consistent_inventory_cannot_authorize_malicious_svg(self) -> None:
+        spec, theme, records = self._inputs()
+        baseline = dict(build_compiled_artifacts(spec, theme, records[:1], IDENTITIES, evidence_graph=EVIDENCE))
+        forged = forge_self_consistent_svg_inventory(baseline)
+
+        with self.assertRaises(ContractError) as direct:
+            artifacts_module._preflight_files(forged, require_inventory=True)
+        self.assertEqual(direct.exception.code, "E_VISUAL_SVG_SECURITY")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "target"
+            target.mkdir()
+            workspace = RunWorkspace(root / "run", target)
+            workspace.initialize(
+                repository="owner/repo",
+                base_sha="a" * 40,
+                configuration={"mode": "readme", "project_type": "tool", "locales": ["en"], "scanner_profile": "balanced"},
+                clock=lambda: "2026-08-04T00:00:00Z",
+            )
+            with self.assertRaises(ContractError) as promoted:
+                promote_compiled_artifacts(workspace, forged)
+            self.assertEqual(promoted.exception.code, "E_VISUAL_SVG_SECURITY")
+            self.assertFalse((workspace.root / "stages/06-bundle-assemble/attempts/1").exists())
 
     def test_closed_records_duplicate_and_path_drift_fail_before_promotion(self) -> None:
         spec, theme, records = self._inputs()

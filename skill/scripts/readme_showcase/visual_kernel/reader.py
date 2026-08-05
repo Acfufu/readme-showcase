@@ -31,6 +31,8 @@ _SHA256 = frozenset("0123456789abcdef")
 _INVENTORY_PATH = "compiled/inventory.json"
 _MANIFEST_PATH = "asset-manifest.json"
 _RETENTION_MARKER = "manual"
+_MAX_TREE_DEPTH = 16
+_MAX_TREE_ENTRIES = 10_000
 _PATH_ERROR_CODES = frozenset(
     {
         "E_EVIDENCE_PATH",
@@ -192,11 +194,28 @@ def _open_child_directory(parent: int, name: str) -> int:
             raise _path_error(f"compiled artifact ancestry is unavailable: {name}") from None
 
 
-def _enumerate_tree(descriptor: int, prefix: str) -> tuple[set[str], set[str]]:
+def _enumerate_tree(
+    descriptor: int,
+    prefix: str,
+    *,
+    depth: int = 0,
+    remaining: list[int] | None = None,
+) -> tuple[set[str], set[str]]:
+    if depth > _MAX_TREE_DEPTH:
+        raise _fail("E_VISUAL_RESOURCE", "compiled artifact tree exceeds its depth bound")
+    budget = [_MAX_TREE_ENTRIES] if remaining is None else remaining
     files: set[str] = set()
     directories: set[str] = {prefix}
+    names: list[str] = []
     try:
-        names = os.listdir(descriptor)
+        with os.scandir(descriptor) as entries:
+            for entry in entries:
+                budget[0] -= 1
+                if budget[0] < 0:
+                    raise _fail("E_VISUAL_RESOURCE", "compiled artifact tree exceeds its entry bound")
+                names.append(entry.name)
+    except ContractError:
+        raise
     except OSError:
         raise _path_error(f"compiled artifact directory is unavailable: {prefix}") from None
     for name in sorted(names, key=os.fsencode):
@@ -212,7 +231,12 @@ def _enumerate_tree(descriptor: int, prefix: str) -> tuple[set[str], set[str]]:
         if stat.S_ISDIR(info.st_mode):
             child = _open_child_directory(descriptor, name)
             try:
-                child_files, child_directories = _enumerate_tree(child, relative)
+                child_files, child_directories = _enumerate_tree(
+                    child,
+                    relative,
+                    depth=depth + 1,
+                    remaining=budget,
+                )
             finally:
                 os.close(child)
             files.update(child_files)
@@ -230,6 +254,7 @@ def _enumerate_artifact_trees(root: Path, expected_files: set[str]) -> set[str]:
     roots = (("compiled", "compiled"), ("assets/readme-showcase", "assets/readme-showcase"))
     all_files: set[str] = set()
     all_directories: set[str] = set()
+    remaining = [_MAX_TREE_ENTRIES]
     for relative, label in roots:
         path = root.joinpath(*PurePosixPath(relative).parts)
         try:
@@ -237,7 +262,7 @@ def _enumerate_artifact_trees(root: Path, expected_files: set[str]) -> set[str]:
         except ContractError:
             raise _path_error(f"compiled artifact directory is unavailable: {label}") from None
         try:
-            files, directories = _enumerate_tree(descriptor, relative)
+            files, directories = _enumerate_tree(descriptor, relative, remaining=remaining)
         finally:
             os.close(descriptor)
         all_files.update(files)
@@ -276,6 +301,8 @@ def _load_asset_manifest(root: Path, bundle: Mapping[str, Any]) -> dict[str, Any
     except ContractError as exc:
         if exc.code in _PATH_ERROR_CODES:
             raise _path_error("asset manifest contains an unsafe path") from None
+        if exc.code in {"E_VISUAL_RESOURCE", "E_VISUAL_SVG_SECURITY"}:
+            raise _fail(exc.code, "asset manifest compiled artifact semantics are invalid") from None
         raise _fingerprint_error("asset manifest does not bind compiled artifacts") from None
     if canonical_json_bytes(normalized) != raw:
         raise _fingerprint_error("asset manifest must use canonical bytes")

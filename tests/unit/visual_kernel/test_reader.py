@@ -214,6 +214,37 @@ class CompiledVisualReaderTests(unittest.TestCase):
                     path.rmdir()
             root.rmdir()
 
+    def test_self_consistent_malicious_svg_is_rejected_on_authoritative_load(self) -> None:
+        root, bundle, _, _ = self._attempt()
+        try:
+            manifest = json.loads((root / "asset-manifest.json").read_bytes())
+            artifacts_test.forge_authoritative_svg_attempt(root, manifest, bundle)
+            self._assert_code(root, bundle, "E_VISUAL_SVG_SECURITY")
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file() or path.is_symlink():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_deep_zero_byte_tree_fails_before_unbounded_recursion(self) -> None:
+        root, bundle, _, _ = self._attempt()
+        try:
+            nested = root / "compiled"
+            for index in range(reader_module._MAX_TREE_DEPTH + 1):
+                nested /= f"depth-{index:02d}"
+                nested.mkdir()
+            (nested / "zero").write_bytes(b"")
+            self._assert_code(root, bundle, "E_VISUAL_RESOURCE")
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file() or path.is_symlink():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
     def test_extra_file_and_symlinked_artifact_fail_with_path_code(self) -> None:
         root, bundle, _, _ = self._attempt()
         try:

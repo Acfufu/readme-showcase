@@ -244,6 +244,16 @@ def _validate_inventory(files: Mapping[str, bytes]) -> None:
             raise _fail("E_VISUAL_FINGERPRINT", f"compiled inventory hash drift at {path}")
 
 
+def _validate_artifact_semantics(files: Mapping[str, bytes]) -> None:
+    """Revalidate inventory-bound bytes at every authoritative boundary."""
+
+    for path, raw in files.items():
+        kind, _ = _path_kind_limit(path)
+        if kind == "inventory":
+            continue
+        validate_visual_security(**{"spec" if kind == "visual-spec" else kind: raw})
+
+
 def _preflight_files(files: Mapping[str, bytes], *, require_inventory: bool = False) -> dict[str, bytes]:
     if not isinstance(files, Mapping) or not files:
         raise _fail("E_SCHEMA_TYPE", "compiled artifact set must be a non-empty mapping")
@@ -264,6 +274,7 @@ def _preflight_files(files: Mapping[str, bytes], *, require_inventory: bool = Fa
         raise _fail("E_VISUAL_RESOURCE", "compiled artifact set exceeds the 16 MiB aggregate limit")
     if require_inventory:
         _validate_inventory(normalized)
+        _validate_artifact_semantics(normalized)
     return {path: normalized[path] for path in sorted(normalized, key=lambda item: item.encode("utf-8"))}
 
 

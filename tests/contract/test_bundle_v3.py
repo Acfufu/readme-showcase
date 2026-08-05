@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes, canonical_sha256
+from skill.scripts.readme_showcase.contracts.assets import validate_asset_manifest_v3
 from skill.scripts.readme_showcase.generation.assembler import (
     assemble_generated_bundle_v3,
     canonical_markdown_blocks,
@@ -24,6 +25,7 @@ from skill.scripts.readme_showcase.visual_kernel.svg import serialize_svg
 from skill.scripts.readme_showcase.visual_kernel.theme import resolve_theme
 from skill.scripts.readme_showcase.visual_kernel.timeline import derive_timeline
 from tests.unit.visual_kernel.test_scene import EVIDENCE, _build, _spec
+from tests.unit.visual_kernel.test_artifacts import forge_authoritative_svg_attempt
 
 
 class BundleV3ContractTests(unittest.TestCase):
@@ -276,6 +278,20 @@ class BundleV3ContractTests(unittest.TestCase):
             self.assertEqual(report["status"], "pass")
             self.assertEqual(report["candidate_count"], 4)
             self.assertEqual(first["compiled"]["retention"], "manual")
+
+    def test_forged_self_consistent_svg_inventory_fails_manifest_and_bundle_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self.make_bundle(root)
+            manifest = json.loads((root / "asset-manifest.json").read_bytes())
+            forge_authoritative_svg_attempt(root, manifest, bundle)
+
+            with self.assertRaises(ContractError) as asset_rejected:
+                validate_asset_manifest_v3(manifest, artifact_root=root)
+            self.assertEqual(asset_rejected.exception.code, "E_VISUAL_SVG_SECURITY")
+            with self.assertRaises(ContractError) as bundle_rejected:
+                validate_generated_bundle_v3(bundle, root)
+            self.assertEqual(bundle_rejected.exception.code, "E_VISUAL_SVG_SECURITY")
 
     def test_mode_projection_keeps_internal_compiled_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
