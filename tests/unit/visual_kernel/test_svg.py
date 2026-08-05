@@ -12,6 +12,7 @@ from pathlib import Path
 from skill.scripts.audit_readme import audit_readme, audit_svg_bytes
 from skill.scripts.pipeline_contracts import ContractError
 from skill.scripts.readme_showcase.visual_kernel.scene import Scene
+from skill.scripts.readme_showcase.visual_kernel.geometry import validate_visual_geometry
 from skill.scripts.readme_showcase.visual_kernel.svg import serialize_svg
 from skill.scripts.readme_showcase.visual_kernel.theme import resolve_theme
 
@@ -26,6 +27,27 @@ def _elements(raw: bytes) -> list[ET.Element]:
 
 
 class SvgSerializationTests(unittest.TestCase):
+    def test_cjk_intent_title_is_inset_in_scene_and_serialized_svg(self) -> None:
+        theme = resolve_theme()
+        for variant in ("desktop", "mobile"):
+            with self.subTest(variant=variant):
+                scene = _build("flow", variant, cjk=True)
+                title = next(
+                    item
+                    for item in scene.primitives
+                    if item.kind == "text" and item.source_id == "__scene_intent__"
+                )
+                self.assertEqual(title.x, theme.spacing["canvas"])
+                self.assertIs(validate_visual_geometry(scene), scene)
+
+                root = ET.fromstring(serialize_svg(scene, theme))
+                serialized = next(
+                    item
+                    for item in root.iter()
+                    if item.attrib.get("data-source-id") == "__scene_intent__"
+                )
+                self.assertEqual(serialized.attrib["x"], str(theme.spacing["canvas"]))
+
     def test_both_variants_are_static_accessible_and_cover_all_primitives(self) -> None:
         for variant in ("desktop", "mobile"):
             with self.subTest(variant=variant):

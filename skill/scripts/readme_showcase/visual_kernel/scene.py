@@ -794,7 +794,7 @@ def build_scene(
         if fit.font_size < minimum_font:
             raise _fail("E_VISUAL_TEXT_FIT", f"text fit for {source_id} is below the {variant} minimum font size")
         if source_id == _INTENT_KEY:
-            x, y = 0, min(fit.font_size, max(0, canvas[1]))
+            x, y = theme.spacing["canvas"], min(fit.font_size, max(0, canvas[1]))
         elif source_id in geometry_groups:
             raw_rect = geometry_groups[source_id]
             x = raw_rect["x"] + min(spacing, raw_rect["width"])
