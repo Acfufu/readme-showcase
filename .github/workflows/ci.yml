@@ -96,8 +96,11 @@ jobs:
               tests.test_schema_parity \
               tests.test_documentation_contract \
               tests.test_elk_adapter \
+              tests.test_pipeline_contracts \
               tests.unit.visual_kernel.test_elk_backend \
-              tests.e2e.test_compiled_visual_qa
+              tests.e2e.test_compiled_visual_qa \
+              tests.e2e.test_preview_report \
+              tests.e2e.test_resumable_pipeline
       - name: Pack and install the skill without network
         shell: bash
         run: |
@@ -116,7 +119,8 @@ jobs:
           set -euo pipefail
           PYTHON_BIN="$(command -v python)"
           sudo unshare --net --setuid "$(id -u)" --setgid "$(id -g)" -- \
-            env PATH="${PATH}" NPM_CONFIG_OFFLINE=true PYTHONDONTWRITEBYTECODE=1 \
+            env PATH="${PATH}" NPM_CONFIG_CACHE="${HOME}/.npm" NPM_CONFIG_OFFLINE=true \
+            PYTHONDONTWRITEBYTECODE=1 \
             "${PYTHON_BIN}" -m unittest -v \
               tests.test_installer.InstallerTests.test_packed_npm_binary_installs_and_checks_skill
       - run: npm pack --dry-run

@@ -364,6 +364,10 @@ class ResumablePipelineTests(unittest.TestCase):
         self.assertEqual(self.git("status", "--porcelain"), "")
         self.assertFalse((self.target / "state-home").exists())
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled pipeline runs in isolated Node 22 lane",
+    )
     def test_compiled_default_state_cli_lifecycle_is_resumable_and_clean(self) -> None:
         helper = PrBundleTests(methodName="runTest")
         compiled_root = self.root / "compiled-target"
@@ -467,6 +471,10 @@ class ResumablePipelineTests(unittest.TestCase):
         self.assertFalse(any(path.name == "venv" for path in workspace.rglob("*")))
         self.assertEqual(list(temp_root.iterdir()), [])
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled pipeline runs in isolated Node 22 lane",
+    )
     def test_compiled_failures_preserve_last_good_and_resume_immutably(self) -> None:
         helper = PrBundleTests(methodName="runTest")
         compiled_root = self.root / "compiled-failure-target"

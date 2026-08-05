@@ -49,6 +49,10 @@ def _json_bytes(artifacts: dict[str, bytes], path: str) -> dict[str, object]:
     return value
 
 
+@unittest.skipIf(
+    os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+    "compiled visual QA runs in isolated Node 22 lane",
+)
 class CompiledVisualQATests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

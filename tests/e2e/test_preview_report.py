@@ -293,6 +293,10 @@ class PreviewReportTests(unittest.TestCase):
         shutil.rmtree(overflow)
         self.assertEqual(before, self.preview_bytes())
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled preview runs in isolated Node 22 lane",
+    )
     def test_compiled_v3_preview_accepts_nested_stage_outputs(self) -> None:
         stage6 = self.prepare_compiled()
 
@@ -337,6 +341,10 @@ class PreviewReportTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(first_bytes, self.preview_bytes())
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled preview runs in isolated Node 22 lane",
+    )
     def test_compiled_v3_preview_exposes_safe_viewports_and_static_fallback(self) -> None:
         stage6 = self.prepare_compiled()
         rendered = self.cli("preview", "--workspace", str(self.workspace))
@@ -368,6 +376,10 @@ class PreviewReportTests(unittest.TestCase):
         for identifier in interaction["focus_order"]:
             self.assertIn(identifier, index)
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled preview runs in isolated Node 22 lane",
+    )
     def test_compiled_artifact_drift_preserves_last_good_preview(self) -> None:
         stage6 = self.prepare_compiled()
         rendered = self.cli("preview", "--workspace", str(self.workspace))

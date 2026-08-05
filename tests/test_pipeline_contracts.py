@@ -853,6 +853,10 @@ class BundleAssembleStageTests(unittest.TestCase):
         self.assertEqual(result.files, {"generated-readme-bundle.json": canonical_json_bytes(expected)})
         self.assertEqual(tuple(stage.name for stage in STAGES), STAGE_NAMES)
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled bundle runs in isolated Node 22 lane",
+    )
     def test_compiled_stage_emits_real_bundle_v3_and_complete_nested_topology(self) -> None:
         plan, candidate = self._compiled_inputs()
         with tempfile.TemporaryDirectory() as temporary:
@@ -906,6 +910,10 @@ class BundleAssembleStageTests(unittest.TestCase):
             self.assertEqual(bundle["compiled"]["retention"], "manual")
             self.assertNotIn("evaluation", bundle["artifacts"])
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled bundle runs in isolated Node 22 lane",
+    )
     def test_compiled_stage_adapts_v1_scan_evidence_without_promoting_raw_stage1(self) -> None:
         plan, candidate, v1_evidence, evidence_v2 = self._compiled_inputs_with_v1_evidence()
         with tempfile.TemporaryDirectory() as temporary:
@@ -968,6 +976,10 @@ class BundleAssembleStageTests(unittest.TestCase):
                 before,
             )
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled bundle runs in isolated Node 22 lane",
+    )
     def test_nested_write_failure_preserves_prior_current_attempt_and_stage5(self) -> None:
         plan, candidate = self._compiled_inputs()
         with tempfile.TemporaryDirectory() as source_temporary, tempfile.TemporaryDirectory() as workspace_temporary:
@@ -1139,6 +1151,10 @@ class MaterializeStageTests(unittest.TestCase):
                 }
                 self.assertEqual(self._files(destination), expected)
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled materialization runs in isolated Node 22 lane",
+    )
     def test_v3_validation_materializes_stage6_compiled_and_stage5_author_origins(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1183,6 +1199,10 @@ class MaterializeStageTests(unittest.TestCase):
                 stage1_before["repository-evidence.json"],
             )
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled materialization runs in isolated Node 22 lane",
+    )
     def test_v3_v1_evidence_projects_canonical_v2_without_mutating_stage1(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1205,6 +1225,10 @@ class MaterializeStageTests(unittest.TestCase):
                 stage1_before["repository-evidence.json"],
             )
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled materialization runs in isolated Node 22 lane",
+    )
     def test_v3_hostile_stage6_inputs_fail_before_destination_acceptance(self) -> None:
         cases = ("hash", "extra", "missing", "symlink", "missing-manifest")
         for case in cases:

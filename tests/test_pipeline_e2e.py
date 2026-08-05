@@ -403,6 +403,10 @@ class OfflinePipelineE2ETests(unittest.TestCase):
             self.assertEqual((target / "README.md").read_bytes(), before)
             self.assertEqual((target / ".git/index").read_bytes(), index_before)
 
+    @unittest.skipIf(
+        os.environ.get("README_SHOWCASE_SKIP_NODE") == "1",
+        "compiled pipeline runs in isolated Node 22 lane",
+    )
     def test_compiled_v3_runner_lifecycle_and_failed_compile_retry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
