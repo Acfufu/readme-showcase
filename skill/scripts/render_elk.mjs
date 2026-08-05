@@ -354,15 +354,19 @@ function textWidth(value) {
 }
 
 function graphInput(input) {
-  const groups = new Map(input.groups.map((item) => [item.id, {
-    id: item.id,
-    layoutOptions: {
-      "elk.padding": "[top=46,left=24,bottom=24,right=24]",
-      "elk.spacing.nodeNode": "56",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "96",
-    },
-    children: [],
-  }]));
+  const groups = new Map(input.groups.map((item) => {
+    const titleLines = wrapLabel(item.label);
+    const titlePadding = 46 + Math.max(0, titleLines.length - 1) * 20;
+    return [item.id, {
+      id: item.id,
+      layoutOptions: {
+        "elk.padding": `[top=${titlePadding},left=24,bottom=24,right=24]`,
+        "elk.spacing.nodeNode": "56",
+        "elk.layered.spacing.nodeNodeBetweenLayers": "96",
+      },
+      children: [],
+    }];
+  }));
   const rootChildren = [];
   for (const item of input.groups) {
     (item.parent_id === null ? rootChildren : groups.get(item.parent_id).children).push(groups.get(item.id));
@@ -424,6 +428,12 @@ function textElement(label, x, y, color, id) {
   return `<text id="${id}" x="${number(x)}" y="${number(start)}" fill="${color}" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">\n${lines.map((line, index) => `<tspan x="${number(x)}" dy="${index === 0 ? 0 : 20}">${xml(line)}</tspan>`).join("\n")}\n</text>`;
 }
 
+function groupTitleElement(label, x, y, color, id) {
+  const lines = wrapLabel(label);
+  const baseline = y + Math.max(0, lines.length - 2) * 10;
+  return textElement(label, x, baseline, color, id);
+}
+
 function renderSvg(layout, input) {
   if (!Number.isFinite(layout.width) || !Number.isFinite(layout.height) || layout.width <= 0 || layout.height <= 0) {
     fail("E_ENGINE_RENDER", "ELK returned invalid canvas geometry");
@@ -460,7 +470,7 @@ function renderSvg(layout, input) {
   for (const group of groups) {
     const semantic = groupById.get(group.id);
     output.push(`<rect id="${svgId("group", group.id)}" x="${number(group.x)}" y="${number(group.y)}" width="${number(group.width)}" height="${number(group.height)}" rx="18" fill="${palette.background}" stroke="${palette.node_border}" stroke-width="1.5" stroke-dasharray="6 5"/>`);
-    output.push(textElement(semantic.label, group.x + group.width / 2, group.y + 25, palette.node_text, svgId("group-label", group.id)));
+    output.push(groupTitleElement(semantic.label, group.x + group.width / 2, group.y + 25, palette.node_text, svgId("group-label", group.id)));
   }
   for (const [index, edge] of (layout.edges ?? []).entries()) {
     const offset = positions.get(edge.container ?? "root") ?? { x: 0, y: 0 };
@@ -921,6 +931,10 @@ async function canonicalPath(rawPath) {
   return absolute;
 }
 
+function redactedPath(rawPath) {
+  return basename(String(rawPath)) || "<path>";
+}
+
 function directoryIdentity(entry) {
   return { dev: entry.dev, ino: entry.ino };
 }
@@ -939,10 +953,10 @@ async function safeDirectory(rawPath, code, exitCode = 1) {
     try {
       entry = await lstat(next, { bigint: true });
     } catch {
-      fail(code, `directory is unavailable: ${rawPath}`, exitCode);
+      fail(code, `directory is unavailable: ${redactedPath(rawPath)}`, exitCode);
     }
     if (entry.isSymbolicLink() || !entry.isDirectory()) {
-      fail(code, `directory ancestry must not contain links: ${rawPath}`, exitCode);
+      fail(code, `directory ancestry must not contain links: ${redactedPath(rawPath)}`, exitCode);
     }
     current = next;
     finalEntry = entry;
@@ -961,7 +975,7 @@ async function safeDirectory(rawPath, code, exitCode = 1) {
       || !observed.isDirectory()
       || !sameDirectoryIdentity(directoryIdentity(observed), directoryIdentity(finalEntry))
     ) {
-      fail(code, `directory changed during validation: ${rawPath}`, exitCode);
+      fail(code, `directory changed during validation: ${redactedPath(rawPath)}`, exitCode);
     }
     return {
       path: current,
@@ -970,7 +984,7 @@ async function safeDirectory(rawPath, code, exitCode = 1) {
     };
   } catch (error) {
     if (error instanceof AdapterError) throw error;
-    fail(code, `directory is unavailable: ${rawPath}`, exitCode);
+    fail(code, `directory is unavailable: ${redactedPath(rawPath)}`, exitCode);
   }
 }
 
@@ -1030,10 +1044,10 @@ async function validateDestination(parent, name, code, exitCode = 1) {
     entry = await lstat(join(parent, name), { bigint: true });
   } catch (error) {
     if (error?.code === "ENOENT") return;
-    fail(code, `destination is unavailable: ${join(parent, name)}`, exitCode);
+    fail(code, `destination is unavailable: ${redactedPath(join(parent, name))}`, exitCode);
   }
   if (entry.isSymbolicLink() || !entry.isFile()) {
-    fail(code, `destination must be absent or a regular file: ${join(parent, name)}`, exitCode);
+    fail(code, `destination must be absent or a regular file: ${redactedPath(join(parent, name))}`, exitCode);
   }
 }
 

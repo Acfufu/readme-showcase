@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -200,6 +201,47 @@ class ELKAdapterTests(unittest.TestCase):
             self.assertIn("E_OUTPUT_PATH", result.stderr)
             self.assertFalse(output.exists())
             self.assertFalse(metadata.exists())
+
+    def test_normal_cli_errors_redact_absolute_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            run = base / "run"
+            missing = base / "secret-parent"
+            run.mkdir()
+            input_path = run / "diagram.diagram.json"
+            shutil.copyfile(FIXTURES / "architecture.json", input_path)
+            result = self.invoke_adapter(
+                input_path,
+                missing / "diagram.svg",
+                missing / "diagram.engine.json",
+            )
+
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("E_OUTPUT_PATH", result.stderr)
+            self.assertNotIn(str(base), result.stderr)
+            self.assertIn("secret-parent", result.stderr)
+
+    def test_multiline_group_titles_clear_group_border_and_children(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            payload = json.loads((FIXTURES / "architecture.json").read_text(encoding="utf-8"))
+            payload["groups"][0]["label"] = "Default runner · eight stages · state/readme-showcase/runs"
+            result, output, _ = self.run_adapter(base, "architecture.json", input_value=payload)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            svg = output.read_text(encoding="utf-8")
+            group = re.search(r'<rect id="group-services"[^>]*\by="([0-9.]+)"[^>]*>', svg)
+            title = re.search(r'<text id="group-label-services"[^>]*\by="([0-9.]+)"[^>]*>([\s\S]*?)</text>', svg)
+            node = re.search(r'<rect id="node-api"[^>]*\by="([0-9.]+)"[^>]*>', svg)
+            self.assertIsNotNone(group)
+            self.assertIsNotNone(title)
+            self.assertIsNotNone(node)
+            group_y = float(group.group(1))
+            title_y = float(title.group(1))
+            title_lines = re.findall(r"<tspan\b[^>]*>([^<]*)</tspan>", title.group(2))
+            node_y = float(node.group(1))
+            self.assertGreaterEqual(title_y, group_y + 10)
+            self.assertEqual(len(title_lines), 3)
+            self.assertLess(title_y + (len(title_lines) - 1) * 20 + 10, node_y)
 
     def test_parent_replacement_race_preserves_last_good(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
