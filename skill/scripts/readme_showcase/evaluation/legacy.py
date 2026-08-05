@@ -213,10 +213,10 @@ def _v3_compiled_metrics(
                     findings.append({"code": "E_VISUAL_DETERMINISM", "message": f"gate failed for {locale}/{variant}"})
         except (KeyError, TypeError, ValueError, ContractError) as exc:
             gate_failed_keys.add((locale, variant))
+            variant_incomplete_keys.add((locale, variant))
             code = getattr(exc, "code", "E_VISUAL_DETERMINISM")
             message = str(exc)
             findings.append({"code": code, "message": message})
-            variant_covered += 1
             continue
         variant_covered += 1
 

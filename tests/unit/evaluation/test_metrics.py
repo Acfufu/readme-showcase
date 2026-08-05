@@ -7,6 +7,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes, canonical_sha256, write_canonical_json_atomic
@@ -16,7 +17,10 @@ from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
 from skill.scripts.readme_showcase.evaluation.contract import validate_advisory_metrics, validate_metric
 from skill.scripts.readme_showcase.evaluation.metrics import compute_advisory_metrics
 from skill.scripts.pipeline_core import evaluate_generated_bundle
+from skill.scripts.readme_showcase.evaluation.legacy import _v3_compiled_metrics
 from skill.scripts.readme_showcase.visual_kernel.fingerprint import build_layered_fingerprint
+from skill.scripts.readme_showcase.visual_kernel.model import validate_visual_spec
+from skill.scripts.readme_showcase.visual_kernel.reader import load_compiled_visual
 from tests.contract.test_bundle_v3 import BundleV3ContractTests
 
 
@@ -458,6 +462,41 @@ class AdvisoryMetricTests(unittest.TestCase):
             self.assertEqual(report["hard_gate"]["status"], "fail")
             self.assertEqual(report["compiled"]["gate_pass"]["covered"], 1)
             self.assertEqual(report["compiled"]["gate_pass"]["total"], 2)
+
+    def test_compiled_bundle_v3_malformed_gate_does_not_count_variant_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = BundleV3ContractTests("runTest").make_bundle(root)
+            loaded = load_compiled_visual(root, bundle)
+            malformed_gate = json.loads(loaded.artifacts["compiled/gates/en/desktop.json"])
+            malformed_gate["status"] = "invalid"
+            artifacts = dict(loaded.artifacts)
+            artifacts["compiled/gates/en/desktop.json"] = canonical_json_bytes(malformed_gate)
+            malformed_loaded = SimpleNamespace(
+                artifacts=artifacts,
+                inventory_sha256=loaded.inventory_sha256,
+            )
+            spec_payload = json.loads((root / "visual-spec.json").read_bytes())
+            evidence = json.loads((root / "repository-evidence.json").read_bytes())
+            spec = validate_visual_spec(spec_payload, evidence_graph=evidence)
+            claims = json.loads((root / "claim-map.json").read_bytes())
+
+            metrics, findings = _v3_compiled_metrics(
+                malformed_loaded,
+                bundle,
+                spec,
+                claims,
+                evidence,
+            )
+
+            self.assertEqual(metrics["variant_completeness"], {
+                "basis_points": 5000,
+                "covered": 1,
+                "reasons": ["variant-incomplete:en/desktop"],
+                "status": "measured",
+                "total": 2,
+            })
+            self.assertEqual(findings[0]["code"], "E_SCHEMA_VALUE")
 
 
 def _walk(value: Any) -> list[Any]:
