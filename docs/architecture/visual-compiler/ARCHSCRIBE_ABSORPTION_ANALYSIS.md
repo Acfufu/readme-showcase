@@ -1,8 +1,8 @@
 # readme-showcase × Archscribe：独立 Visual Kernel 目标流
 
 > 复核日期：2026-08-05
-> 执行基线：`codex/archscribe-independent-visual-kernel` / `4f652fffef9f31495f81555e4d4d44ae544893e6`
-> 执行基线 tree：`8be30e440100b98034967d7b21ec9cb9fc9ed7c7`
+> 实现状态：以包含本文件的提交及其 tree 为准。
+> 最终验收身份：以 ULW evidence/checkpoint 中记录的提交及其 tree 为准。
 > Archscribe 仅作为行为参考：[`46ea42cfc6c557ab238867c390bb18320fd36769`](https://github.com/lazypay/Archscribe/tree/46ea42cfc6c557ab238867c390bb18320fd36769)
 > 范围：记录当前实现、兼容边界与 opt-in 目标流；不修改生产路由、README 发布状态或远端仓库。
 
