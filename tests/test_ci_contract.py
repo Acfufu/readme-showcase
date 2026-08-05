@@ -109,6 +109,7 @@ class CiContractTests(unittest.TestCase):
         self.assertIn("tests.unit.visual_kernel.test_elk_backend", self.workflow)
         self.assertIn("tests.e2e.test_compiled_visual_qa", self.workflow)
         self.assertIn("VISUAL_QA_EVIDENCE_DIR", self.workflow)
+        self.assertIn("VISUAL_QA_EVIDENCE_DIR: /tmp/readme-showcase-visual-kernel-evidence", self.workflow)
         self.assertIn("rsvg-convert", self.workflow)
         self.assertIn("npm pack --dry-run", self.workflow)
         self.assertIn("persist-credentials: false", self.workflow)

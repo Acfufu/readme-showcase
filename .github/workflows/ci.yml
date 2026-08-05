@@ -59,7 +59,7 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     env:
-      VISUAL_QA_EVIDENCE_DIR: ${{ runner.temp }}/visual-kernel-evidence
+      VISUAL_QA_EVIDENCE_DIR: /tmp/readme-showcase-visual-kernel-evidence
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
