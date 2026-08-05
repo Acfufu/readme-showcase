@@ -85,10 +85,7 @@ platform path:
 
 Runtime acceptance on 2026-08-06 verified that both CLIs loaded the Skill,
 executed its audit-only route, reported a seeded broken local link, and left the
-fixture unchanged. Both runs used the `deepseek-v4-flash` model ID; OpenCode
-records it as `opencode-go/deepseek-v4-flash`, whose catalog name is
-`DeepSeek V4 Flash (New)`. This acceptance does not extend to README authoring,
-visual generation, or publication routes.
+fixture unchanged.
 
 ## Five commands, three execution modes
 

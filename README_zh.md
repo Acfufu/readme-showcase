@@ -79,10 +79,7 @@ Code 或 OpenCode 副本。格式兼容不代表当前面向 Codex 的安装器�
 | OpenCode | 能识别当前 `.agents/skills` 项目级安装；已通过 OpenCode 1.18.13 的 audit-only 运行时验收；当前 `~/.codex/skills` 用户级安装不在 OpenCode 发现路径中 | 要求它使用 `readme-showcase` Skill，由原生 `skill` 工具加载 |
 
 2026-08-06 的运行时验收确认两套 CLI 都能加载该 Skill、执行 audit-only 路由、
-报告预置的本地断链，并保持验收夹具不变。两次运行均使用
-`deepseek-v4-flash` 模型 ID；OpenCode 会话记录为
-`opencode-go/deepseek-v4-flash`，其模型目录名称为
-`DeepSeek V4 Flash (New)`。本次验收不覆盖 README 编写、视觉生成或发布路由。
+报告预置的本地断链，并保持验收夹具不变。
 
 ## 五条命令，三种执行模式
 
