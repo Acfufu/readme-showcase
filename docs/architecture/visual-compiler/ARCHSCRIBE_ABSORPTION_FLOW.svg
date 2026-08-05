@@ -5,10 +5,10 @@
 <marker id="elk-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0 L10 4 L0 8 Z" fill="#7dd3fc"/></marker>
 </defs>
 <rect x="0" y="0" width="1444" height="4133" fill="#07111f"/>
-<rect id="group-legend" x="56" y="24" width="1364" height="206" rx="18" fill="#07111f" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="6 5"/>
-<text id="group-label-legend" x="738" y="39" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
-<tspan x="738" dy="0">Categories — prefixes</tspan>
-<tspan x="738" dy="20">are semantic status</tspan>
+<rect id="group-legend" x="68" y="24" width="1352" height="206" rx="18" fill="#07111f" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text id="group-label-legend" x="744" y="39" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="744" dy="0">Categories — prefixes</tspan>
+<tspan x="744" dy="20">are semantic status</tspan>
 </text>
 <path id="edge-0-0" d="M728 957 L728 1245" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
 <rect id="edge-label-bg-0-0" x="627" y="1087" width="94" height="28" rx="8" fill="#07111f"/>
@@ -35,10 +35,10 @@
 <text id="edge-label-text-4-0" x="1234" y="384" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
 <tspan x="1234" dy="0">status</tspan>
 </text>
-<path id="edge-5-0" d="M188 206 L188 411 L657 411 L657 523" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
-<rect id="edge-label-bg-5-0" x="103" y="365" width="78" height="28" rx="8" fill="#07111f"/>
-<text id="edge-label-text-5-0" x="142" y="384" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
-<tspan x="142" dy="0">status</tspan>
+<path id="edge-5-0" d="M194 206 L194 411 L657 411 L657 523" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
+<rect id="edge-label-bg-5-0" x="109" y="365" width="78" height="28" rx="8" fill="#07111f"/>
+<text id="edge-label-text-5-0" x="148" y="384" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="148" dy="0">status</tspan>
 </text>
 <path id="edge-6-0" d="M728 593 L728 881" fill="none" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round" marker-end="url(#elk-arrow)"/>
 <rect id="edge-label-bg-6-0" x="607" y="723" width="114" height="28" rx="8" fill="#07111f"/>
@@ -116,11 +116,12 @@
 <tspan x="1280" dy="20">not copied; external</tspan>
 <tspan x="1280" dy="20">repo unchanged</tspan>
 </text>
-<rect id="node-deferred_key" x="80" y="110" width="216" height="96" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="7 5" filter="url(#elk-shadow)"/>
-<text id="node-label-deferred_key" x="188" y="143" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
-<tspan x="188" dy="0">[后置]</tspan>
-<tspan x="188" dy="20">browser/PNG/HTML/live</tspan>
-<tspan x="188" dy="20">provider not claimed</tspan>
+<rect id="node-deferred_key" x="92" y="90" width="204" height="116" rx="16" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="7 5" filter="url(#elk-shadow)"/>
+<text id="node-label-deferred_key" x="194" y="123" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">
+<tspan x="194" dy="0">[后置] Browser output</tspan>
+<tspan x="194" dy="20">deferred — PNG, HTML,</tspan>
+<tspan x="194" dy="20">live provider not</tspan>
+<tspan x="194" dy="20">claimed</tspan>
 </text>
 <rect id="node-source" x="624" y="881" width="208" height="76" rx="8" fill="#11263e" stroke="#38bdf8" stroke-width="1.5" filter="url(#elk-shadow)"/>
 <text id="node-label-source" x="728" y="914" fill="#f8fafc" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="14" font-weight="600" text-anchor="middle">

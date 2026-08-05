@@ -51,7 +51,7 @@
     },
     {
       "id": "deferred_key",
-      "label": "[后置] browser/PNG/HTML/live provider not claimed",
+      "label": "[后置] Browser output deferred — PNG, HTML, live provider not claimed",
       "group_id": "legend",
       "kind": "external",
       "claim_id": "node_deferred_key"
