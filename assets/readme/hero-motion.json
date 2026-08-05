@@ -9,30 +9,28 @@
   "max_size_mb": 2.0,
   "reveals": [
     {
-      "id": "title-highlight",
+      "id": "verification-strip",
       "axis": "x",
-      "start": 0.2,
-      "end": 0.9,
-      "exit": {"start": 4.45, "end": 5.16}
-    },
-    {
-      "id": "verification-stamp",
-      "axis": "x",
-      "start": 1.15,
-      "end": 1.75,
+      "start": 1.65,
+      "end": 2.2,
       "exit": {"start": 4.45, "end": 5.16}
     }
   ],
   "layers": [
     {
-      "id": "evidence-docket",
-      "enter": {"start": 0.35, "end": 1.2, "from": [58, -10]},
-      "exit": {"start": 4.45, "end": 5.16, "to": [24, -6]}
+      "id": "evidence-stack",
+      "enter": {"start": 0.2, "end": 0.9, "from": [-54, 10]},
+      "exit": {"start": 4.45, "end": 5.16, "to": [-24, 6]}
     },
     {
-      "id": "command-prompt",
-      "enter": {"start": 0.75, "end": 1.45, "from": [0, 20]},
+      "id": "agent-core",
+      "enter": {"start": 0.55, "end": 1.25, "from": [0, 24]},
       "exit": {"start": 4.45, "end": 5.16, "to": [0, 10]}
+    },
+    {
+      "id": "candidate-card",
+      "enter": {"start": 0.95, "end": 1.7, "from": [58, -10]},
+      "exit": {"start": 4.45, "end": 5.16, "to": [24, -6]}
     }
   ]
 }

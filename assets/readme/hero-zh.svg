@@ -1,13 +1,64 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
-  <title id="title">README Showcase 证据账本</title><desc id="desc">本地验收台将仓库证据整理成双语、可审查的 GitHub 主页，同时保持远端发布锁定。</desc>
-  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#101722"/><stop offset="1" stop-color="#172434"/></linearGradient><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#8FA1B5" stroke-opacity=".08"/></pattern></defs>
-  <rect width="1200" height="520" rx="28" fill="url(#bg)"/><rect width="1200" height="520" rx="28" fill="url(#grid)"/><path d="M48 58h10m-5-5v10" stroke="#17A398" stroke-width="2"/><text x="76" y="65" fill="#AEBCCB" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="17" letter-spacing="2">README SHOWCASE /</text><text x="286" y="65" fill="#AEBCCB" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="17" letter-spacing="2">本地验收台</text><circle cx="1095" cy="60" r="5" fill="#17A398"/><text x="1110" y="66" fill="#AEBCCB" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="15">就绪</text>
-  <g id="identity"><text x="64" y="156" fill="#F4F7FA" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="56" font-weight="750">证据进入。</text><text x="64" y="225" fill="#F4F7FA" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="56" font-weight="750">可审查主页交付。</text><text x="66" y="270" fill="#AEBCCB" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="20">项目原生文案、视觉、声明映射与本地交付。</text></g>
-  <g id="title-highlight"><rect x="65" y="289" width="455" height="6" rx="3" fill="#17A398"/><circle cx="530" cy="292" r="6" fill="#F1B94B"/></g>
-  <g id="command-prompt"><rect x="64" y="337" width="544" height="94" rx="14" fill="#0A1018" stroke="#314156" stroke-width="2"/><circle cx="91" cy="363" r="5" fill="#F16D64"/><circle cx="109" cy="363" r="5" fill="#F1B94B"/><circle cx="127" cy="363" r="5" fill="#17A398"/><text x="89" y="405" fill="#17A398" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18">$</text><text x="113" y="405" fill="#E5EBF1" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18">npx --yes github:Acfufu/readme-showcase</text></g>
-  <g id="evidence-docket"><rect x="670" y="108" width="466" height="340" rx="18" fill="#F4F7FA"/><rect x="670" y="108" width="466" height="58" rx="18" fill="#DCE4EA"/><path d="M670 148h466" stroke="#DCE4EA" stroke-width="36"/><text x="698" y="144" fill="#101722" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="17" font-weight="700" letter-spacing="2">候选交付回执</text><text x="1090" y="144" text-anchor="end" fill="#5F6B7A" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="14">本地</text>
-    <g font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="16"><text x="698" y="205" fill="#5F6B7A">数据集</text><text x="1090" y="205" text-anchor="end" fill="#101722" font-weight="700">20 训练 / 2 测试</text><path d="M698 222h392" stroke="#C9D3DC"/><text x="698" y="258" fill="#5F6B7A">语言</text><text x="1090" y="258" text-anchor="end" fill="#101722" font-weight="700">7 个明确标签</text><path d="M698 275h392" stroke="#C9D3DC"/><text x="698" y="311" fill="#5F6B7A">运行时</text><text x="1090" y="311" text-anchor="end" fill="#101722" font-weight="700">PY 3.11+ / NODE 22.22.3</text><path d="M698 328h392" stroke="#C9D3DC"/><text x="698" y="364" fill="#5F6B7A">布局引擎</text><text x="1090" y="364" text-anchor="end" fill="#101722" font-weight="700">ELK 0.9.3 · 固定版本</text></g>
-    <g id="verification-stamp"><rect x="698" y="389" width="392" height="39" rx="8" fill="#DDF3EF" stroke="#17A398" stroke-width="2"/><circle cx="721" cy="408" r="8" fill="#17A398"/><path d="m717 408 3 3 6-7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><text x="740" y="414" fill="#0F6E68" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="15" font-weight="700">本地交付 · 远端锁定</text></g>
+  <title id="title">README Showcase 证据轨道</title>
+  <desc id="desc">仓库证据经过单一 README Agent，形成已验证的本地候选，同时远端发布门保持锁定。</desc>
+  <defs>
+    <pattern id="paper-grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#171713" stroke-opacity=".055"/></pattern>
+    <filter id="card-shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="7" stdDeviation="0" flood-color="#171713" flood-opacity=".16"/></filter>
+  </defs>
+  <rect width="1200" height="520" rx="30" fill="#F3EFE6"/>
+  <rect width="1200" height="520" rx="30" fill="url(#paper-grid)"/>
+  <path d="M0 92H1200" stroke="#171713" stroke-width="2"/>
+  <circle cx="49" cy="46" r="10" fill="#E65036"/>
+  <text x="72" y="53" fill="#171713" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="18" font-weight="700" letter-spacing="2">README SHOWCASE</text>
+  <text x="1150" y="53" text-anchor="end" fill="#716E65" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="15">单一 AGENT · 本地优先</text>
+
+  <g id="identity">
+    <text x="54" y="168" fill="#171713" font-family="system-ui,sans-serif" font-size="62" font-weight="800" letter-spacing="-2">让仓库事实，</text>
+    <text x="54" y="238" fill="#171713" font-family="system-ui,sans-serif" font-size="62" font-weight="800" letter-spacing="-2">变得可审查。</text>
+    <text x="58" y="281" fill="#716E65" font-family="system-ui,sans-serif" font-size="20">证据约束文案、视觉、门禁与本地交付。</text>
   </g>
-  <text x="64" y="482" fill="#77899D" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="14">扫描 → 检索 → 编写 → 校验 → 评估 → 预览</text><text x="1136" y="482" text-anchor="end" fill="#F1B94B" font-family="PingFang SC,Microsoft YaHei,system-ui,sans-serif" font-size="14">发布需要明确批准</text>
+
+  <g id="evidence-stack" filter="url(#card-shadow)">
+    <rect x="62" y="335" width="205" height="105" rx="12" fill="#FFFDF8" stroke="#171713" stroke-width="2" transform="rotate(-3 164 387)"/>
+    <rect x="54" y="326" width="205" height="105" rx="12" fill="#FFFDF8" stroke="#171713" stroke-width="2"/>
+    <text x="75" y="357" fill="#E65036" font-family="system-ui,sans-serif" font-size="14" font-weight="700" letter-spacing="1.5">仓库证据</text>
+    <path d="M75 373H234M75 388H210M75 403H223" stroke="#171713" stroke-width="5" stroke-linecap="round" opacity=".75"/>
+    <rect x="75" y="415" width="88" height="6" rx="3" fill="#167C72"/>
+  </g>
+
+  <path d="M284 382H431" stroke="#171713" stroke-width="3" stroke-dasharray="7 8"/>
+  <path d="m421 372 11 10-11 10" fill="none" stroke="#171713" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g id="agent-core" filter="url(#card-shadow)">
+    <rect x="446" y="326" width="270" height="112" rx="56" fill="#171713"/>
+    <circle cx="491" cy="382" r="27" fill="#D7F45B"/>
+    <path d="m479 382 9 9 16-19" fill="none" stroke="#171713" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="532" y="373" fill="#FFFDF8" font-family="system-ui,sans-serif" font-size="14" font-weight="700">单一 README AGENT</text>
+    <text x="532" y="402" fill="#BDB8AE" font-family="system-ui,sans-serif" font-size="14">扫描 · 草拟 · 门禁</text>
+  </g>
+
+  <path d="M731 382H832" stroke="#171713" stroke-width="3" stroke-dasharray="7 8"/>
+  <path d="m822 372 11 10-11 10" fill="none" stroke="#171713" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g id="candidate-card" filter="url(#card-shadow)">
+    <rect x="848" y="305" width="296" height="154" rx="14" fill="#FFFDF8" stroke="#171713" stroke-width="2"/>
+    <rect x="848" y="305" width="296" height="42" rx="14" fill="#E65036"/>
+    <path d="M848 333H1144" stroke="#E65036" stroke-width="28"/>
+    <text x="867" y="332" fill="#FFFDF8" font-family="system-ui,sans-serif" font-size="14" font-weight="700" letter-spacing="1.5">本地候选</text>
+    <text x="867" y="377" fill="#716E65" font-family="system-ui,sans-serif" font-size="13">声明</text>
+    <text x="1121" y="377" text-anchor="end" fill="#171713" font-family="system-ui,sans-serif" font-size="13" font-weight="700">已绑定</text>
+    <text x="867" y="403" fill="#716E65" font-family="system-ui,sans-serif" font-size="13">资产</text>
+    <text x="1121" y="403" text-anchor="end" fill="#171713" font-family="system-ui,sans-serif" font-size="13" font-weight="700">已检查</text>
+    <g id="verification-strip"><rect x="866" y="420" width="256" height="25" rx="6" fill="#D8EEE9"/><circle cx="881" cy="432.5" r="6" fill="#167C72"/><path d="m878 433 2 2 4-5" fill="none" stroke="#fff" stroke-width="1.7"/><text x="895" y="437" fill="#0D6058" font-family="system-ui,sans-serif" font-size="11" font-weight="700">已生成指纹 · 仅本地</text></g>
+  </g>
+
+  <g id="remote-lock">
+    <rect x="892" y="117" width="252" height="112" rx="14" fill="none" stroke="#171713" stroke-width="2" stroke-dasharray="8 7"/>
+    <path d="M929 156v-9a15 15 0 0 1 30 0v9m-35 0h40v35h-40z" fill="none" stroke="#171713" stroke-width="3"/>
+    <text x="982" y="160" fill="#171713" font-family="system-ui,sans-serif" font-size="14" font-weight="700">远端发布</text>
+    <text x="982" y="187" fill="#E65036" font-family="system-ui,sans-serif" font-size="13" font-weight="700">默认锁定</text>
+  </g>
+
+  <text x="54" y="491" fill="#716E65" font-family="system-ui,sans-serif" font-size="13">证据 → 单一 AGENT → 硬门禁 → 本地预览</text>
+  <text x="1145" y="491" text-anchor="end" fill="#E65036" font-family="system-ui,sans-serif" font-size="13" font-weight="700">越过此处必须另行批准</text>
 </svg>
