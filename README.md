@@ -80,12 +80,15 @@ platform path:
 | Platform | Current discovery and installer support | Invocation |
 | --- | --- | --- |
 | Codex | Officially installed and verified in project or user scope | `$readme-showcase shape .` |
-| Claude Code | Recognizes `readme-showcase` under `.claude/skills`; the current installer does not write that target | `/readme-showcase shape .` |
-| OpenCode | Recognizes the current project install under `.agents/skills`; the current user install under `~/.codex/skills` is not an OpenCode discovery path | Ask it to use the `readme-showcase` Skill so its native `skill` tool loads it |
+| Claude Code | Recognizes `readme-showcase` under `.claude/skills`; audit-only runtime acceptance passed with Claude Code 2.1.222; the current installer does not write that target | `/readme-showcase shape .` |
+| OpenCode | Recognizes the current project install under `.agents/skills`; audit-only runtime acceptance passed with OpenCode 1.18.13; the current user install under `~/.codex/skills` is not an OpenCode discovery path | Ask it to use the `readme-showcase` Skill so its native `skill` tool loads it |
 
-Codex is the currently verified end-to-end installation path. Claude Code and
-OpenCode compatibility above covers Skill format, discovery, and invocation;
-it is not a claim of completed runtime acceptance on those platforms.
+Runtime acceptance on 2026-08-06 verified that both CLIs loaded the Skill,
+executed its audit-only route, reported a seeded broken local link, and left the
+fixture unchanged. Both runs used the `deepseek-v4-flash` model ID; OpenCode
+records it as `opencode-go/deepseek-v4-flash`, whose catalog name is
+`DeepSeek V4 Flash (New)`. This acceptance does not extend to README authoring,
+visual generation, or publication routes.
 
 ## Five commands, three execution modes
 
