@@ -70,6 +70,23 @@ Please install this Skill: https://github.com/Acfufu/readme-showcase
 The Agent should confirm scope, run the official installer and `skills check`,
 then report the installed path and status.
 
+## One Skill source, three Agent platforms
+
+This repository authors one portable Agent Skills package under `skill/`; it
+does not maintain separate Codex, Claude Code, or OpenCode copies. Format
+compatibility does not mean the current Codex-oriented installer supports every
+platform path:
+
+| Platform | Current discovery and installer support | Invocation |
+| --- | --- | --- |
+| Codex | Officially installed and verified in project or user scope | `$readme-showcase shape .` |
+| Claude Code | Recognizes `readme-showcase` under `.claude/skills`; the current installer does not write that target | `/readme-showcase shape .` |
+| OpenCode | Recognizes the current project install under `.agents/skills`; the current user install under `~/.codex/skills` is not an OpenCode discovery path | Ask it to use the `readme-showcase` Skill so its native `skill` tool loads it |
+
+Codex is the currently verified end-to-end installation path. Claude Code and
+OpenCode compatibility above covers Skill format, discovery, and invocation;
+it is not a claim of completed runtime acceptance on those platforms.
+
 ## Five commands, three execution modes
 
 ![Five commands route planning, audit, redesign, polish, and visualization into bounded README work](assets/readme/command-deck.png)

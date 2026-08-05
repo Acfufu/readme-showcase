@@ -66,6 +66,21 @@ npx --yes github:Acfufu/readme-showcase skills install --user --yes
 
 代理应确认范围，运行官方安装器与 `skills check`，再报告安装路径和状态。
 
+## 一份 Skill 源码，三个 Agent 平台
+
+本仓库只维护 `skill/` 下的一份可移植 Agent Skills 包，不分别维护 Codex、Claude
+Code 或 OpenCode 副本。格式兼容不代表当前面向 Codex 的安装器已经支持所有平台
+路径：
+
+| 平台 | 当前发现与安装器支持 | 调用方式 |
+| --- | --- | --- |
+| Codex | 已正式支持并验证项目级与用户级安装 | `$readme-showcase shape .` |
+| Claude Code | 能识别 `.claude/skills` 下的 `readme-showcase`；当前安装器不会写入该目标 | `/readme-showcase shape .` |
+| OpenCode | 能识别当前 `.agents/skills` 项目级安装；当前 `~/.codex/skills` 用户级安装不在 OpenCode 发现路径中 | 要求它使用 `readme-showcase` Skill，由原生 `skill` 工具加载 |
+
+Codex 是目前完成端到端验证的安装路径。上表对 Claude Code 与 OpenCode 的兼容性
+仅指 Skill 格式、发现与调用方式，不代表这两个平台已经完成运行时验收。
+
 ## 五条命令，三种执行模式
 
 ![五条命令分别负责规划、审计、重构、精修和视觉生成，并保持明确的工作边界](assets/readme/command-deck-zh.png)
