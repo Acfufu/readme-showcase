@@ -228,6 +228,7 @@ ELK route.
 5. Render or preview the result before handoff.
 
 Read [references/visual-production.md](references/visual-production.md) before creating or revising visual assets.
+Read [references/diagram-patterns.md](references/diagram-patterns.md) before authoring a diagram-shaped asset.
 
 ## Asset-only mode
 

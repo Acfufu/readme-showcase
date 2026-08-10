@@ -170,6 +170,9 @@ Build in this order:
 
 Use system fonts. Name groups by role, keep coordinates maintainable, supply complete backgrounds for light/dark surroundings, and use meaningful Markdown alt text. Never hide commands or critical instructions inside images.
 
+For diagram-shaped assets, choose a pattern from
+[diagram-patterns.md](diagram-patterns.md) before authoring coordinates.
+
 ## Preview and Validate
 
 Render every asset and inspect:
