@@ -97,6 +97,10 @@ Use this section only when the project changes an established workflow or solves
 
 Use a before/after diagram for changed ownership, data flow, or component responsibility. Otherwise use a short comparison table.
 
+A diagram must be self-evident: if a reader needs a paragraph to understand
+it, redraw the diagram. The Markdown caption and alt text carry the claim;
+the picture never relies on prose elsewhere in the section.
+
 ### 5. Differentiators
 
 Compare against a real baseline:
