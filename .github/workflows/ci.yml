@@ -266,7 +266,10 @@ jobs:
           PY
           git diff --exit-code
           test -z "$(git status --porcelain)"
-      - uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        # Gitea Actions does not support upload-artifact v4 (@actions/artifact v2);
+        # skip there so the local CI mirror stays green while GitHub keeps v4 pinned.
+        if: env.GITEA_ACTIONS != 'true'
         with:
           name: elk-real-engine-evidence
           if-no-files-found: error
