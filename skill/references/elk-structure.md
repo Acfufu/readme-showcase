@@ -11,6 +11,7 @@ semantics, SVG bytes, evaluation, fallback, and publishing authority.
 | Story, art direction, composition, and visual QA | adapted `beautify-github-readme` rules |
 | `architecture`, `flowchart`, or `c4` node/group/edge geometry | vendored `elkjs@0.9.3` |
 | Standalone safe SVG serialization | `render_elk.mjs` |
+| Route fallback | any `elk` gate failure (missing Node, hash mismatch, nondeterministic render, unsafe bytes) → `static` route, preserving last-known-good bytes |
 
 Coordinates, fonts, URLs, resources, arbitrary metadata, remote images, remote
 fonts, network access, and README mutations are excluded from the semantic

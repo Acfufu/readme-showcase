@@ -202,6 +202,7 @@ branch, and base SHA.
 | `none` | Diagram adds no material proof or comprehension | Keep facts and instructions in Markdown |
 | `static` | Project identity/composition matters more than automatic layout; diagram is compact; type is unsupported by ELK | Skill-authored project-native static SVG |
 | `elk` | Allowed `architecture`, `flowchart`, or `c4` body diagram has relationship-heavy grouping, routing, or label wrapping and exact Node 22.22.3 is available | Strict semantic JSON plus project-serialized standalone SVG |
+| Fallback | Any route that fails its gate, dependency check, or determinism check | Select `static`; preserve README, semantic source, raw SVG, metadata, and last-known-good asset bytes |
 
 ELK never owns hero/title bar, palette choice, claims, README copy,
 surrounding composition, alt/caption, acceptance, fallback, or publishing.
