@@ -266,7 +266,7 @@ jobs:
           PY
           git diff --exit-code
           test -z "$(git status --porcelain)"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5
         with:
           name: elk-real-engine-evidence
           if-no-files-found: error
