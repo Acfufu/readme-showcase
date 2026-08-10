@@ -259,6 +259,46 @@ class ReadmeHardGateTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 1)
                     self.assertIn("diagram.svg:", result.stdout)
 
+    def test_external_a_href_and_xlink_href_fail_closed(self) -> None:
+        variants = {
+            "a-external": VALID_SVG.replace(
+                "<text>Agent</text>",
+                '<a href="https://example.com/"><text>Agent</text></a>',
+            ),
+            "use-xlink-external": (
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" '
+                'height="480" viewBox="0 0 1200 480" role="img" '
+                'aria-labelledby="title">'
+                '<title id="title">Architecture</title>'
+                '<use xlink:href="https://example.com/x.svg"/></svg>\n'
+            ),
+            "use-unresolved": VALID_SVG.replace(
+                "<text>", '<use href="#missing"/><text>'
+            ),
+        }
+        for name, svg in variants.items():
+            with self.subTest(variant=name):
+                issues = audit_svg_bytes(svg.encode("utf-8"))
+                self.assertTrue(
+                    any(
+                        code in {"E_SVG_UNSAFE", "E_SVG_REFERENCE"}
+                        for code, _ in issues
+                    ),
+                    f"{name}: {issues}",
+                )
+
+    def test_resolved_use_href_passes_audit(self) -> None:
+        svg = VALID_SVG.replace(
+            "<text>", '<use href="#title"/><text>'
+        )
+        issues = audit_svg_bytes(svg.encode("utf-8"))
+        self.assertEqual(
+            issues,
+            [],
+            f"resolved use href must pass: {issues}",
+        )
+
     def test_zero_equivalent_opacity_never_binds_visible_labels(self) -> None:
         variants = {
             "decimal": '<text opacity="0.000">Agent</text>',
