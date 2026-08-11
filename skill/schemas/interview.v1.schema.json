@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Acfufu/readme-showcase/schemas/interview.v1.schema.json",
   "title": "Novice Interview v1",
+  "x-supported-ui-locales": ["en", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de"],
   "x-python-semantic-validation": {
     "codes": [
       "E_SCHEMA_TYPE",
@@ -45,78 +46,108 @@
       "id": "goal",
       "prompt": "What do you want?",
       "label_zh": "想达到什么效果？",
+      "label_zh-Hant": "想達到什麼效果？",
+      "label_ja": "何をしたいですか？",
+      "label_ko": "무엇을 원하세요?",
+      "label_fr": "Que voulez-vous ?",
+      "label_de": "Was möchtest du?",
       "multiple": false,
       "default": "5",
       "options": [
-        {"key": "1", "label": "Full redesign", "label_zh": "全新改版", "description": "Rebuild the whole README narrative and visuals", "routes_to": "redesign", "plan": {"mode": "readme", "commands": ["redesign"]}},
-        {"key": "2", "label": "Refine one area", "label_zh": "只改局部", "description": "Keep the current README, fix the named part", "routes_to": "polish", "plan": {"mode": "readme", "commands": ["polish"]}},
-        {"key": "3", "label": "Visuals only", "label_zh": "只要视觉图", "description": "Generate hero/diagram assets, leave text untouched", "routes_to": "visualize", "plan": {"mode": "asset-only", "commands": ["visualize"]}},
-        {"key": "4", "label": "Diagnose first", "label_zh": "先诊断问题", "description": "Report findings only, change nothing", "routes_to": "audit", "plan": {"mode": "audit-only", "commands": ["audit"]}},
-        {"key": "5", "label": "Not sure", "label_zh": "不确定", "description": "Diagnose, then recommend concrete next steps", "routes_to": "audit-then-recommend", "plan": {"mode": "audit-only", "commands": ["audit"]}}
+        {"key": "1", "label": "Full redesign", "label_zh": "全新改版", "label_zh-Hant": "全新改版", "label_ja": "全面リニューアル", "label_ko": "전체 재디자인", "label_fr": "Refonte complète", "label_de": "Komplettes Redesign", "description": "Rebuild the whole README narrative and visuals", "description_zh": "重建整个 README 的叙事与视觉", "description_zh-Hant": "重建整個 README 的敘事與視覺", "description_ja": "README 全体の構成とビジュアルを再構築", "description_ko": "README 전체의 스토리와 비주얼 재구축", "description_fr": "Reconstruit tout le récit et les visuels du README", "description_de": "Baut die gesamte README-Erzählung und -Visuals neu", "routes_to": "redesign", "plan": {"mode": "readme", "commands": ["redesign"]}},
+        {"key": "2", "label": "Refine one area", "label_zh": "只改局部", "label_zh-Hant": "只改局部", "label_ja": "部分修正", "label_ko": "특정 부분만 수정", "label_fr": "Affiner une partie", "label_de": "Bereich verfeinern", "description": "Keep the current README, fix the named part", "description_zh": "保留现有 README，只修指定部分", "description_zh-Hant": "保留現有 README，只修指定部分", "description_ja": "既存 README を保ち、指定箇所だけ修正", "description_ko": "기존 README 유지, 지정된 부분만 수정", "description_fr": "Garde le README actuel, corrige la partie nommée", "description_de": "Bestehendes README behalten, benannten Teil fixen", "routes_to": "polish", "plan": {"mode": "readme", "commands": ["polish"]}},
+        {"key": "3", "label": "Visuals only", "label_zh": "只要视觉图", "label_zh-Hant": "只要視覺圖", "label_ja": "ビジュアルのみ", "label_ko": "비주얼만", "label_fr": "Visuels uniquement", "label_de": "Nur Visuals", "description": "Generate hero/diagram assets, leave text untouched", "description_zh": "只生成英雄图/图表资产，不动文字", "description_zh-Hant": "只生成英雄圖/圖表資產，不動文字", "description_ja": "ヒーロー/ダイアグラム画像のみ生成、テキストは触らない", "description_ko": "히어로/다이어그램 자산만 생성, 텍스트는 유지", "description_fr": "Génère des visuels héro/diagrammes, ne touche pas au texte", "description_de": "Hero-/Diagramm-Assets erzeugen, Text unangetastet", "routes_to": "visualize", "plan": {"mode": "asset-only", "commands": ["visualize"]}},
+        {"key": "4", "label": "Diagnose first", "label_zh": "先诊断问题", "label_zh-Hant": "先診斷問題", "label_ja": "まず診断", "label_ko": "먼저 진단", "label_fr": "Diagnostiquer d'abord", "label_de": "Erst diagnostizieren", "description": "Report findings only, change nothing", "description_zh": "只输出诊断结果，不改动任何内容", "description_zh-Hant": "只輸出診斷結果，不改動任何內容", "description_ja": "調査結果のみ報告、変更なし", "description_ko": "진단 결과만 보고, 변경 없음", "description_fr": "Rapporte uniquement les constats, ne change rien", "description_de": "Nur Befunde melden, nichts ändern", "routes_to": "audit", "plan": {"mode": "audit-only", "commands": ["audit"]}},
+        {"key": "5", "label": "Not sure", "label_zh": "不确定", "label_zh-Hant": "不確定", "label_ja": "わからない", "label_ko": "잘 모르겠음", "label_fr": "Pas sûr", "label_de": "Unsicher", "description": "Diagnose, then recommend concrete next steps", "description_zh": "先诊断，再推荐具体下一步", "description_zh-Hant": "先診斷，再推薦具體下一步", "description_ja": "診断してから具体的な次の手順を提案", "description_ko": "진단 후 구체적인 다음 단계 추천", "description_fr": "Diagnostique, puis recommande des étapes concrètes", "description_de": "Diagnostizieren, dann konkrete nächste Schritte vorschlagen", "routes_to": "audit-then-recommend", "plan": {"mode": "audit-only", "commands": ["audit"]}}
       ]
     },
     {
       "id": "scope",
       "prompt": "Whole README or visuals only?",
       "label_zh": "范围：整个 README 还是只做视觉？",
+      "label_zh-Hant": "範圍：整個 README 還是只做視覺？",
+      "label_ja": "README 全体ですか、ビジュアルだけですか？",
+      "label_ko": "README 전체인가요, 비주얼만인가요?",
+      "label_fr": "Tout le README ou seulement les visuels ?",
+      "label_de": "Ganzes README oder nur Visuals?",
       "multiple": false,
       "default": "3",
       "options": [
-        {"key": "1", "label": "Whole README", "label_zh": "整个 README", "description": "Content and visuals together", "plan": {"mode": "readme"}},
-        {"key": "2", "label": "Visual assets only", "label_zh": "只做视觉资产", "description": "Assets without touching README text", "plan": {"mode": "asset-only"}},
-        {"key": "3", "label": "You decide", "label_zh": "由你判断", "description": "Resolve scope from the goal answer", "plan": {}}
+        {"key": "1", "label": "Whole README", "label_zh": "整个 README", "label_zh-Hant": "整個 README", "label_ja": "README 全体", "label_ko": "전체 README", "label_fr": "Tout le README", "label_de": "Ganzes README", "description": "Content and visuals together", "description_zh": "内容与视觉一起做", "description_zh-Hant": "內容與視覺一起做", "description_ja": "内容とビジュアルをまとめて", "description_ko": "콘텐츠와 비주얼 함께", "description_fr": "Contenu et visuels ensemble", "description_de": "Inhalt und Visuals zusammen", "plan": {"mode": "readme"}},
+        {"key": "2", "label": "Visual assets only", "label_zh": "只做视觉资产", "label_zh-Hant": "只做視覺資產", "label_ja": "ビジュアル資産のみ", "label_ko": "비주얼 자산만", "label_fr": "Visuels uniquement", "label_de": "Nur visuelle Assets", "description": "Assets without touching README text", "description_zh": "只做资产，不改 README 文字", "description_zh-Hant": "只做資產，不改 README 文字", "description_ja": "README のテキストには触れず資産のみ", "description_ko": "README 텍스트는 건드리지 않고 자산만", "description_fr": "Des assets sans toucher au texte du README", "description_de": "Assets ohne README-Textänderung", "plan": {"mode": "asset-only"}},
+        {"key": "3", "label": "You decide", "label_zh": "由你判断", "label_zh-Hant": "由你判斷", "label_ja": "お任せ", "label_ko": "알아서 결정", "label_fr": "Vous décidez", "label_de": "Du entscheidest", "description": "Resolve scope from the goal answer", "description_zh": "根据目标答案决定范围", "description_zh-Hant": "根據目標答案決定範圍", "description_ja": "目標の回答から範囲を決定", "description_ko": "목표 답변에서 범위 결정", "description_fr": "Résout la portée depuis la réponse à l'objectif", "description_de": "Umfang aus der Zielantwort ableiten", "plan": {}}
       ]
     },
     {
       "id": "audience",
       "prompt": "Who reads this?",
       "label_zh": "主要读者是谁？",
+      "label_zh-Hant": "主要讀者是誰？",
+      "label_ja": "誰が読みますか？",
+      "label_ko": "누가 읽나요?",
+      "label_fr": "Qui va le lire ?",
+      "label_de": "Wer liest das?",
       "multiple": false,
       "default": "4",
       "options": [
-        {"key": "1", "label": "End users", "label_zh": "终端用户", "description": "Outcomes and usage first", "plan": {}},
-        {"key": "2", "label": "Developers", "label_zh": "开发者", "description": "API, install, and examples first", "plan": {}},
-        {"key": "3", "label": "Contributors", "label_zh": "贡献者", "description": "Development workflow and boundaries first", "plan": {}},
-        {"key": "4", "label": "Mixed", "label_zh": "混合", "description": "Balance usage, install, and contribution", "plan": {}}
+        {"key": "1", "label": "End users", "label_zh": "终端用户", "label_zh-Hant": "終端用戶", "label_ja": "エンドユーザー", "label_ko": "최종 사용자", "label_fr": "Utilisateurs finaux", "label_de": "Endnutzer", "description": "Outcomes and usage first", "description_zh": "成果与用法优先", "description_zh-Hant": "成果與用法優先", "description_ja": "成果と使い方を優先", "description_ko": "결과와 사용법 우선", "description_fr": "Résultats et usage en premier", "description_de": "Ergebnisse und Nutzung zuerst", "plan": {}},
+        {"key": "2", "label": "Developers", "label_zh": "开发者", "label_zh-Hant": "開發者", "label_ja": "開発者", "label_ko": "개발자", "label_fr": "Développeurs", "label_de": "Entwickler", "description": "API, install, and examples first", "description_zh": "API、安装、示例优先", "description_zh-Hant": "API、安裝、示例優先", "description_ja": "API・インストール・例を優先", "description_ko": "API, 설치, 예제 우선", "description_fr": "API, installation et exemples d'abord", "description_de": "API, Installation und Beispiele zuerst", "plan": {}},
+        {"key": "3", "label": "Contributors", "label_zh": "贡献者", "label_zh-Hant": "貢獻者", "label_ja": "コントリビューター", "label_ko": "기여자", "label_fr": "Contributeurs", "label_de": "Mitwirkende", "description": "Development workflow and boundaries first", "description_zh": "开发流程与边界优先", "description_zh-Hant": "開發流程與邊界優先", "description_ja": "開発フローと境界を優先", "description_ko": "개발 워크플로와 경계 우선", "description_fr": "Processus de développement et limites d'abord", "description_de": "Entwicklungsworkflow und Grenzen zuerst", "plan": {}},
+        {"key": "4", "label": "Mixed", "label_zh": "混合", "label_zh-Hant": "混合", "label_ja": "混合", "label_ko": "혼합", "label_fr": "Mixte", "label_de": "Gemischt", "description": "Balance usage, install, and contribution", "description_zh": "用法、安装、贡献平衡", "description_zh-Hant": "用法、安裝、貢獻平衡", "description_ja": "使い方・インストール・貢献のバランス", "description_ko": "사용법, 설치, 기여 균형", "description_fr": "Équilibre usage, installation et contribution", "description_de": "Nutzung, Installation und Beiträge ausbalancieren", "plan": {}}
       ]
     },
     {
       "id": "proof",
       "prompt": "Best real showcase?",
       "label_zh": "最拿得出手的真实展示？",
+      "label_zh-Hant": "最拿得出手的真實展示？",
+      "label_ja": "一番の実証素材は？",
+      "label_ko": "가장 좋은 실제 시연 자료는?",
+      "label_fr": "Meilleure preuve réelle ?",
+      "label_de": "Bester echter Beweis?",
       "multiple": false,
       "default": "4",
       "options": [
-        {"key": "1", "label": "Screenshots", "label_zh": "截图", "description": "Screenshot-led hero", "plan": {"visual_intent": "screenshot-led"}},
-        {"key": "2", "label": "CLI/terminal output", "label_zh": "CLI/终端输出", "description": "Terminal-output-led hero", "plan": {"visual_intent": "terminal-output-led"}},
-        {"key": "3", "label": "Example code", "label_zh": "示例代码", "description": "Example-led hero", "plan": {"visual_intent": "example-led"}},
-        {"key": "4", "label": "None", "label_zh": "都没有", "description": "Markdown hero, no fabricated visual proof", "plan": {"visual_intent": "markdown-only"}}
+        {"key": "1", "label": "Screenshots", "label_zh": "截图", "label_zh-Hant": "截圖", "label_ja": "スクリーンショット", "label_ko": "스크린샷", "label_fr": "Captures d'écran", "label_de": "Screenshots", "description": "Screenshot-led hero", "description_zh": "以截图为主视觉", "description_zh-Hant": "以截圖為主視覺", "description_ja": "スクリーンショット中心のヒーロー", "description_ko": "스크린샷 중심 히어로", "description_fr": "Hero piloté par les captures", "description_de": "Screenshot-geführter Hero", "plan": {"visual_intent": "screenshot-led"}},
+        {"key": "2", "label": "CLI/terminal output", "label_zh": "CLI/终端输出", "label_zh-Hant": "CLI/終端輸出", "label_ja": "CLI/ターミナル出力", "label_ko": "CLI/터미널 출력", "label_fr": "Sortie CLI/terminal", "label_de": "CLI-/Terminal-Ausgabe", "description": "Terminal-output-led hero", "description_zh": "以终端输出为主视觉", "description_zh-Hant": "以終端輸出為主視覺", "description_ja": "ターミナル出力中心のヒーロー", "description_ko": "터미널 출력 중심 히어로", "description_fr": "Hero piloté par la sortie terminal", "description_de": "Terminal-Ausgabe-geführter Hero", "plan": {"visual_intent": "terminal-output-led"}},
+        {"key": "3", "label": "Example code", "label_zh": "示例代码", "label_zh-Hant": "示例程式碼", "label_ja": "サンプルコード", "label_ko": "예제 코드", "label_fr": "Code d'exemple", "label_de": "Beispielcode", "description": "Example-led hero", "description_zh": "以示例代码为主视觉", "description_zh-Hant": "以示例程式碼為主視覺", "description_ja": "サンプルコード中心のヒーロー", "description_ko": "예제 중심 히어로", "description_fr": "Hero piloté par l'exemple", "description_de": "Beispiel-geführter Hero", "plan": {"visual_intent": "example-led"}},
+        {"key": "4", "label": "None", "label_zh": "都没有", "label_zh-Hant": "都沒有", "label_ja": "なし", "label_ko": "없음", "label_fr": "Aucun", "label_de": "Keine", "description": "Markdown hero, no fabricated visual proof", "description_zh": "纯 Markdown 主视觉，不虚构视觉证据", "description_zh-Hant": "純 Markdown 主視覺，不虛構視覺證據", "description_ja": "Markdown 中心、偽のビジュアルは作らない", "description_ko": "마크다운 중심, 가짜 비주얼 없음", "description_fr": "Hero Markdown, aucune preuve visuelle inventée", "description_de": "Markdown-Hero, keine erfundenen Belege", "plan": {"visual_intent": "markdown-only"}}
       ]
     },
     {
       "id": "style",
       "prompt": "Visual style?",
       "label_zh": "风格偏好？",
+      "label_zh-Hant": "風格偏好？",
+      "label_ja": "ビジュアルスタイルは？",
+      "label_ko": "비주얼 스타일은?",
+      "label_fr": "Style visuel ?",
+      "label_de": "Visueller Stil?",
       "multiple": false,
       "default": "5",
       "options": [
-        {"key": "1", "label": "Follow existing brand", "label_zh": "跟随现有品牌", "description": "Reuse logo, tokens, and palette", "plan": {"visual_intent": "brand-continuity"}},
-        {"key": "2", "label": "Minimal", "label_zh": "极简", "description": "Editorial, sparse, restrained", "plan": {"visual_intent": "minimal-editorial"}},
-        {"key": "3", "label": "Dark technical", "label_zh": "技术暗色", "description": "Dark palette, dense and technical", "plan": {"visual_intent": "dark-technical"}},
-        {"key": "4", "label": "Expressive", "label_zh": "活泼", "description": "Colorful and energetic", "plan": {"visual_intent": "expressive"}},
-        {"key": "5", "label": "You recommend", "label_zh": "你推荐", "description": "Agent picks from repository evidence", "plan": {"visual_intent": "agent-recommended"}}
+        {"key": "1", "label": "Follow existing brand", "label_zh": "跟随现有品牌", "label_zh-Hant": "跟隨現有品牌", "label_ja": "既存ブランドに沿う", "label_ko": "기존 브랜드 유지", "label_fr": "Suivre la marque", "label_de": "Bestehende Marke folgen", "description": "Reuse logo, tokens, and palette", "description_zh": "复用 logo、设计令牌与配色", "description_zh-Hant": "複用 logo、設計令牌與配色", "description_ja": "ロゴ・トークン・配色を再利用", "description_ko": "로고, 토큰, 팔레트 재사용", "description_fr": "Réutilise logo, tokens et palette", "description_de": "Logo, Tokens und Palette wiederverwenden", "plan": {"visual_intent": "brand-continuity"}},
+        {"key": "2", "label": "Minimal", "label_zh": "极简", "label_zh-Hant": "極簡", "label_ja": "ミニマル", "label_ko": "미니멀", "label_fr": "Minimaliste", "label_de": "Minimal", "description": "Editorial, sparse, restrained", "description_zh": "编辑式、留白、克制", "description_zh-Hant": "編輯式、留白、克制", "description_ja": "エディトリアルで簡素", "description_ko": "에디토리얼, 절제된 디자인", "description_fr": "Éditorial, épuré, sobre", "description_de": "Redaktionell, sparsam, zurückhaltend", "plan": {"visual_intent": "minimal-editorial"}},
+        {"key": "3", "label": "Dark technical", "label_zh": "技术暗色", "label_zh-Hant": "技術暗色", "label_ja": "ダークテクニカル", "label_ko": "다크 테크니컬", "label_fr": "Sombre technique", "label_de": "Dunkel-technisch", "description": "Dark palette, dense and technical", "description_zh": "暗色系，密集且技术感", "description_zh-Hant": "暗色系，密集且技術感", "description_ja": "ダーク基調で密度の高い技術感", "description_ko": "다크 팔레트, 밀도 높은 기술감", "description_fr": "Palette sombre, dense et technique", "description_de": "Dunkle Palette, dicht und technisch", "plan": {"visual_intent": "dark-technical"}},
+        {"key": "4", "label": "Expressive", "label_zh": "活泼", "label_zh-Hant": "活潑", "label_ja": "表現的", "label_ko": "활기찬", "label_fr": "Expressif", "label_de": "Ausdrucksstark", "description": "Colorful and energetic", "description_zh": "色彩丰富、有活力", "description_zh-Hant": "色彩豐富、有活力", "description_ja": "カラフルで活発", "description_ko": "다채롭고 에너지 넘치는", "description_fr": "Coloré et énergique", "description_de": "Bunt und energisch", "plan": {"visual_intent": "expressive"}},
+        {"key": "5", "label": "You recommend", "label_zh": "你推荐", "label_zh-Hant": "你推薦", "label_ja": "おすすめ", "label_ko": "추천해줘", "label_fr": "Vous recommandez", "label_de": "Du empfiehlst", "description": "Agent picks from repository evidence", "description_zh": "由 Agent 根据仓库证据推荐", "description_zh-Hant": "由 Agent 根據倉庫證據推薦", "description_ja": "エージェントがリポジトリの証拠から選定", "description_ko": "에이전트가 저장소 증거에서 선택", "description_fr": "L'agent choisit à partir des preuves du dépôt", "description_de": "Agent wählt aus Repository-Belegen", "plan": {"visual_intent": "agent-recommended"}}
       ]
     },
     {
       "id": "extras",
       "prompt": "Extras? (multi-select)",
       "label_zh": "附加项？（可多选）",
+      "label_zh-Hant": "附加項？（可多選）",
+      "label_ja": "追加オプション？（複数選択可）",
+      "label_ko": "추가 옵션? (다중 선택)",
+      "label_fr": "Extras ? (sélection multiple)",
+      "label_de": "Extras? (Mehrfachauswahl)",
       "multiple": true,
       "default": "3",
       "options": [
-        {"key": "1", "label": "Animated GIF", "label_zh": "GIF 动图", "description": "Motion intent via commands/visual_intent, never diagram_route", "plan": {"visual_intent": "motion-requested"}},
-        {"key": "2", "label": "Localization", "label_zh": "多语言", "description": "Extend locales from pre-fill plus selection", "plan": {"locales": []}},
-        {"key": "3", "label": "None", "label_zh": "无", "description": "No extras", "plan": {}}
+        {"key": "1", "label": "Animated GIF", "label_zh": "GIF 动图", "label_zh-Hant": "GIF 動圖", "label_ja": "GIFアニメーション", "label_ko": "GIF 애니메이션", "label_fr": "GIF animé", "label_de": "Animiertes GIF", "description": "Motion intent via commands/visual_intent, never diagram_route", "description_zh": "通过 commands/visual_intent 表达动效，绝不走 diagram_route", "description_zh-Hant": "透過 commands/visual_intent 表達動效，絕不走 diagram_route", "description_ja": "commands/visual_intent で動きを表現、diagram_route は使わない", "description_ko": "commands/visual_intent로 모션 표현, diagram_route 아님", "description_fr": "Intention de mouvement via commands/visual_intent, jamais diagram_route", "description_de": "Motion über commands/visual_intent, nie diagram_route", "plan": {"visual_intent": "motion-requested"}},
+        {"key": "2", "label": "Localization", "label_zh": "多语言", "label_zh-Hant": "多語言", "label_ja": "ローカライズ", "label_ko": "다국어", "label_fr": "Localisation", "label_de": "Lokalisierung", "description": "Extend locales from pre-fill plus selection", "description_zh": "基于预填与选择扩展语言", "description_zh-Hant": "基於預填與選擇擴展語言", "description_ja": "事前検出と選択でロケールを拡張", "description_ko": "사전 검출과 선택으로 언어 확장", "description_fr": "Étend les locales à partir du pré-remplissage et du choix", "description_de": "Locales aus Vorauswahl plus Auswahl erweitern", "plan": {"locales": []}},
+        {"key": "3", "label": "None", "label_zh": "无", "label_zh-Hant": "無", "label_ja": "なし", "label_ko": "없음", "label_fr": "Aucun", "label_de": "Keine", "description": "No extras", "description_zh": "无附加项", "description_zh-Hant": "無附加項", "description_ja": "追加なし", "description_ko": "추가 옵션 없음", "description_fr": "Pas d'extras", "description_de": "Keine Extras", "plan": {}}
       ]
     }
   ]
