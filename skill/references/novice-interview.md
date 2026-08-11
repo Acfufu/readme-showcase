@@ -8,14 +8,18 @@ preview, or publication approval, and it never writes candidate files.
 
 The machine-readable catalog for the fixed question set lives in
 [`schemas/interview.v1.schema.json`](../schemas/interview.v1.schema.json)
-under `x-question-catalog`; the tables in this reference mirror it and must
-stay byte-consistent in ids, option keys, labels, defaults, and plan mappings.
+under `x-question-catalog`; the schema catalog is the single source of truth
+for all localized strings; the EN/zh columns in this table mirror it and
+must stay byte-consistent in ids, option keys, defaults, and plan
+mappings, with labels compared case-normalized (other locales live only
+in the catalog).
 
 ## 1. Activation
 
 Enter the guided interview only when: bare invocation AND at least one novice
 signal (no command vocabulary in the request; a plain-language ask such as
-"帮我做"/"怎么做"; no explicit scope or target named).
+"帮我做"/"怎么做"; no explicit scope or target named). On entry, resolve the
+interview UI locale via the ladder in section 4.
 
 Precedence is strict, evaluated in this order — the interview never swallows a
 command:
@@ -48,6 +52,9 @@ question defaults:
 - README existence and language (e.g. `README.md` en, `README_zh.md`
   zh-Hans) → `locales` default; guarantee at least one locale
   (`[{"tag":"en","readme_path":"README.md"}]` when nothing is detected).
+  The detected repository README language is also the interview UI locale
+  default for bare invocations (ladder L2 in section 4); the plan `locales`
+  behavior is unchanged.
 - Logo, design tokens, screenshots, CLI outputs, diagrams present in the
   repository → `proof` and `style` defaults.
 - Dirty tree and latest run state → surface in the plan summary, never hide.
@@ -71,9 +78,32 @@ routes) is:
 | extras | Extras? (multi-select) | 1 GIF 动图 (animated GIF) → motion intent via `commands`/`visual_intent`, never `diagram_route` · 2 多语言 (localization) → `locales` from pre-fill + selection · 3 无 (none) → no extras | 3 |
 
 Rendering rule: `prompt` is the EN canonical prompt; `label_zh` carries the
-Chinese button text; agents render per the user's language. Multi-select
-serialization: multiple `extras` keys are recorded as comma-joined digits in
-`choice` (e.g. `"1,2"`), within the 1–64 character limit.
+Chinese button text; every other supported UI locale
+(`x-supported-ui-locales`: `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `fr`,
+`de`) has its own label/description fields in the catalog. Resolve the
+interview UI locale once on entry with this deterministic ladder:
+
+- **L1 — Request script detection.** Scan the user's request text for
+  writing systems, first matching bullet wins, most specific script first:
+  Hiragana/Katakana → `ja`; Hangul → `ko`; traditional-only characters
+  (fixed small set: 為、與、後、裏、說、時) present → `zh-Hant`; Han
+  characters → `zh-Hans`. Latin or other script → L2.
+- **L2 — Repository README language.** For bare invocations with no usable
+  text signal, use the pre-fill detection from section 3: a Chinese
+  `README.md` → `zh-Hans`; `README_zh.md` exists with an English
+  `README.md` → `en`; Japanese/Korean README → the corresponding tag;
+  bilingual or ambiguous → `en`. No README at all → L3.
+- **L3 — Inline language switch.** Render in EN and, before panel 1, ask in
+  one inline chat line (not a panel, not a catalog question): "Continue in
+  English / 用中文继续" — on answer, re-render in the chosen locale.
+
+Rendering source: every label and description is taken from the catalog
+fields for the resolved locale (`label_zh-Hant`, `description_ja`, ...);
+a missing field (should not happen, locked by tests) falls back to
+`label_zh` then `label`. The interview never asks about language as one of
+the six questions. Multi-select serialization: multiple `extras` keys are
+recorded as comma-joined digits in `choice` (e.g. `"1,2"`), within the
+1–64 character limit.
 
 ## 5. Panel batching
 
@@ -89,7 +119,9 @@ serialization: multiple `extras` keys are recorded as comma-joined digits in
   expose the `question` tool, which renders a panel with selectable buttons and
   a custom-answer input. Use one tool call per panel. `header` ≤30 characters
   (the question id); option `label` 1–5 words; option `description` = one-line
-  consequence; `multiple: true` for `extras`. Do NOT add "Other"/catch-all
+  consequence; `multiple: true` for `extras`. Labels and descriptions are
+  taken from the catalog fields of the locale resolved in section 4
+  (`label_zh-Hant`, `description_ko`, ...). Do NOT add "Other"/catch-all
   options — the tool adds a custom-answer input automatically (`custom` is
   enabled by default).
 - **Fallback (Claude Code, Codex, pi, and other harnesses):** numbered text

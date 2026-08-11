@@ -46,7 +46,9 @@ three concrete commands with targets and wait. Never
 auto-run a recommendation.
 
 Read [references/novice-interview.md](references/novice-interview.md) before
-entering the guided interview.
+entering the guided interview. The interview renders in the locale resolved
+by the section 4 ladder (request-script detection → repository README
+language → English with an inline language switch).
 
 ## Inspect before writing
 
