@@ -209,7 +209,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("state/readme-showcase/", skill)
         self.assertIn("Never\ncreate `.readme-showcase-run-*`", skill)
         self.assertIn("Never create a per-run virtual environment", skill)
-        self.assertIn("10 production `train`", skill)
+        self.assertIn("20 production `train`", skill)
         self.assertIn("elkjs@0.9.3", elk)
         self.assertIn("EPL-2.0", elk)
         self.assertNotIn("engine lock", elk.lower())

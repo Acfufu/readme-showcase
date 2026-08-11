@@ -36,7 +36,7 @@ If a claim has no source, remove it or label it explicitly as a limitation or fu
 
 ## Retrieval Dataset Boundary
 
-Revision 2 contains 12 project-owned abstract pattern records: 10 production
+Revision 3 contains 22 project-owned abstract pattern records: 20 production
 `train` records and two isolated `test` records. Sources are pinned public
 repository commits with material SHA-256 plus commit-pinned SPDX/license
 evidence. Human review rewrites only `summary`, `structure`, and `proof`;

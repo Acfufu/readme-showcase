@@ -70,7 +70,7 @@ Ownership stays fixed:
 | Adapted `beautify-github-readme` rules | Story order, project-native title/palette/art direction/composition, visual and motion QA |
 | Optional verified ELK | `architecture` / `flowchart` / `c4` body geometry only; project code owns safe SVG bytes |
 
-Dataset revision 2 contains 10 production `train` patterns and two isolated
+Dataset revision 3 contains 20 production `train` patterns and two isolated
 `test` patterns. Records are newly authored abstractions bound to pinned public
 repository commits and per-source license evidence; they contain no copied
 README text, code, assets, or benchmark answers.
