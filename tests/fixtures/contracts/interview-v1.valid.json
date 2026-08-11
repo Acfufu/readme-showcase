@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "answers": [
+    {"question_id": "goal", "choice": "5", "confidence": "defaulted"},
+    {"question_id": "scope", "choice": "3", "confidence": "defaulted"},
+    {"question_id": "audience", "choice": "4", "confidence": "defaulted"},
+    {"question_id": "proof", "choice": "4", "confidence": "defaulted"},
+    {"question_id": "style", "choice": "5", "confidence": "defaulted"},
+    {"question_id": "extras", "choice": "3", "confidence": "defaulted"}
+  ]
+}

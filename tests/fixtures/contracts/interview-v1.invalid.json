@@ -1,0 +1,110 @@
+{
+  "cases": [
+    {
+      "name": "unknown-field",
+      "code": "E_SCHEMA_UNKNOWN_FIELD",
+      "payload": {
+        "schema_version": 1,
+        "answers": [
+          {"question_id": "goal", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "scope", "choice": "3", "confidence": "defaulted"},
+          {"question_id": "audience", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "proof", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "style", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "extras", "choice": "3", "confidence": "defaulted"}
+        ],
+        "extra": true
+      }
+    },
+    {
+      "name": "wrong-schema-version",
+      "code": "E_SCHEMA_VERSION",
+      "payload": {
+        "schema_version": 2,
+        "answers": [
+          {"question_id": "goal", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "scope", "choice": "3", "confidence": "defaulted"},
+          {"question_id": "audience", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "proof", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "style", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "extras", "choice": "3", "confidence": "defaulted"}
+        ]
+      }
+    },
+    {
+      "name": "answer-count-mismatch",
+      "code": "E_INTERVIEW_ANSWER_COUNT",
+      "payload": {
+        "schema_version": 1,
+        "answers": [
+          {"question_id": "goal", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "scope", "choice": "3", "confidence": "defaulted"},
+          {"question_id": "audience", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "proof", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "style", "choice": "5", "confidence": "defaulted"}
+        ]
+      }
+    },
+    {
+      "name": "unknown-question-id",
+      "code": "E_INTERVIEW_QUESTION_ID",
+      "payload": {
+        "schema_version": 1,
+        "answers": [
+          {"question_id": "goal", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "scope", "choice": "3", "confidence": "defaulted"},
+          {"question_id": "audience", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "proof", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "style", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "bogus", "choice": "3", "confidence": "defaulted"}
+        ]
+      }
+    },
+    {
+      "name": "bad-confidence",
+      "code": "E_INTERVIEW_CONFIDENCE",
+      "payload": {
+        "schema_version": 1,
+        "answers": [
+          {"question_id": "goal", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "scope", "choice": "3", "confidence": "defaulted"},
+          {"question_id": "audience", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "proof", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "style", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "extras", "choice": "3", "confidence": "maybe"}
+        ]
+      }
+    },
+    {
+      "name": "empty-choice",
+      "code": "E_INTERVIEW_CHOICE",
+      "payload": {
+        "schema_version": 1,
+        "answers": [
+          {"question_id": "goal", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "scope", "choice": "3", "confidence": "defaulted"},
+          {"question_id": "audience", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "proof", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "style", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "extras", "choice": "", "confidence": "defaulted"}
+        ]
+      }
+    },
+    {
+      "name": "duplicate-question-id",
+      "code": "E_INTERVIEW_DUPLICATE",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "answers": [
+          {"question_id": "goal", "choice": "5", "confidence": "defaulted"},
+          {"question_id": "goal", "choice": "1", "confidence": "explicit"},
+          {"question_id": "scope", "choice": "3", "confidence": "defaulted"},
+          {"question_id": "audience", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "proof", "choice": "4", "confidence": "defaulted"},
+          {"question_id": "style", "choice": "5", "confidence": "defaulted"}
+        ]
+      }
+    }
+  ]
+}

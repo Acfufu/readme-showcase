@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/interview.v1.schema.json",
+  "title": "Novice Interview v1",
+  "x-python-semantic-validation": {
+    "codes": [
+      "E_SCHEMA_TYPE",
+      "E_SCHEMA_MISSING_FIELD",
+      "E_SCHEMA_UNKNOWN_FIELD",
+      "E_SCHEMA_VERSION",
+      "E_INTERVIEW_ANSWER_COUNT",
+      "E_INTERVIEW_QUESTION_ID",
+      "E_INTERVIEW_CONFIDENCE",
+      "E_INTERVIEW_CHOICE",
+      "E_INTERVIEW_DUPLICATE"
+    ],
+    "validator": "skill.scripts.readme_showcase.contracts.interview.validate_interview"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "answers"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "answers": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"$ref": "#/$defs/questionAnswer"}
+    }
+  },
+  "$defs": {
+    "questionAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question_id", "choice", "confidence"],
+      "properties": {
+        "question_id": {"enum": ["goal", "scope", "audience", "proof", "style", "extras"]},
+        "choice": {"type": "string", "minLength": 1, "maxLength": 64},
+        "confidence": {"enum": ["explicit", "defaulted", "uncertain", "custom"]}
+      }
+    }
+  },
+  "x-question-catalog": [
+    {
+      "id": "goal",
+      "prompt": "What do you want?",
+      "label_zh": "想达到什么效果？",
+      "multiple": false,
+      "default": "5",
+      "options": [
+        {"key": "1", "label": "Full redesign", "label_zh": "全新改版", "description": "Rebuild the whole README narrative and visuals", "routes_to": "redesign", "plan": {"mode": "readme", "commands": ["redesign"]}},
+        {"key": "2", "label": "Refine one area", "label_zh": "只改局部", "description": "Keep the current README, fix the named part", "routes_to": "polish", "plan": {"mode": "readme", "commands": ["polish"]}},
+        {"key": "3", "label": "Visuals only", "label_zh": "只要视觉图", "description": "Generate hero/diagram assets, leave text untouched", "routes_to": "visualize", "plan": {"mode": "asset-only", "commands": ["visualize"]}},
+        {"key": "4", "label": "Diagnose first", "label_zh": "先诊断问题", "description": "Report findings only, change nothing", "routes_to": "audit", "plan": {"mode": "audit-only", "commands": ["audit"]}},
+        {"key": "5", "label": "Not sure", "label_zh": "不确定", "description": "Diagnose, then recommend concrete next steps", "routes_to": "audit-then-recommend", "plan": {"mode": "audit-only", "commands": ["audit"]}}
+      ]
+    },
+    {
+      "id": "scope",
+      "prompt": "Whole README or visuals only?",
+      "label_zh": "范围：整个 README 还是只做视觉？",
+      "multiple": false,
+      "default": "3",
+      "options": [
+        {"key": "1", "label": "Whole README", "label_zh": "整个 README", "description": "Content and visuals together", "plan": {"mode": "readme"}},
+        {"key": "2", "label": "Visual assets only", "label_zh": "只做视觉资产", "description": "Assets without touching README text", "plan": {"mode": "asset-only"}},
+        {"key": "3", "label": "You decide", "label_zh": "由你判断", "description": "Resolve scope from the goal answer", "plan": {}}
+      ]
+    },
+    {
+      "id": "audience",
+      "prompt": "Who reads this?",
+      "label_zh": "主要读者是谁？",
+      "multiple": false,
+      "default": "4",
+      "options": [
+        {"key": "1", "label": "End users", "label_zh": "终端用户", "description": "Outcomes and usage first", "plan": {}},
+        {"key": "2", "label": "Developers", "label_zh": "开发者", "description": "API, install, and examples first", "plan": {}},
+        {"key": "3", "label": "Contributors", "label_zh": "贡献者", "description": "Development workflow and boundaries first", "plan": {}},
+        {"key": "4", "label": "Mixed", "label_zh": "混合", "description": "Balance usage, install, and contribution", "plan": {}}
+      ]
+    },
+    {
+      "id": "proof",
+      "prompt": "Best real showcase?",
+      "label_zh": "最拿得出手的真实展示？",
+      "multiple": false,
+      "default": "4",
+      "options": [
+        {"key": "1", "label": "Screenshots", "label_zh": "截图", "description": "Screenshot-led hero", "plan": {"visual_intent": "screenshot-led"}},
+        {"key": "2", "label": "CLI/terminal output", "label_zh": "CLI/终端输出", "description": "Terminal-output-led hero", "plan": {"visual_intent": "terminal-output-led"}},
+        {"key": "3", "label": "Example code", "label_zh": "示例代码", "description": "Example-led hero", "plan": {"visual_intent": "example-led"}},
+        {"key": "4", "label": "None", "label_zh": "都没有", "description": "Markdown hero, no fabricated visual proof", "plan": {"visual_intent": "markdown-only"}}
+      ]
+    },
+    {
+      "id": "style",
+      "prompt": "Visual style?",
+      "label_zh": "风格偏好？",
+      "multiple": false,
+      "default": "5",
+      "options": [
+        {"key": "1", "label": "Follow existing brand", "label_zh": "跟随现有品牌", "description": "Reuse logo, tokens, and palette", "plan": {"visual_intent": "brand-continuity"}},
+        {"key": "2", "label": "Minimal", "label_zh": "极简", "description": "Editorial, sparse, restrained", "plan": {"visual_intent": "minimal-editorial"}},
+        {"key": "3", "label": "Dark technical", "label_zh": "技术暗色", "description": "Dark palette, dense and technical", "plan": {"visual_intent": "dark-technical"}},
+        {"key": "4", "label": "Expressive", "label_zh": "活泼", "description": "Colorful and energetic", "plan": {"visual_intent": "expressive"}},
+        {"key": "5", "label": "You recommend", "label_zh": "你推荐", "description": "Agent picks from repository evidence", "plan": {"visual_intent": "agent-recommended"}}
+      ]
+    },
+    {
+      "id": "extras",
+      "prompt": "Extras? (multi-select)",
+      "label_zh": "附加项？（可多选）",
+      "multiple": true,
+      "default": "3",
+      "options": [
+        {"key": "1", "label": "Animated GIF", "label_zh": "GIF 动图", "description": "Motion intent via commands/visual_intent, never diagram_route", "plan": {"visual_intent": "motion-requested"}},
+        {"key": "2", "label": "Localization", "label_zh": "多语言", "description": "Extend locales from pre-fill plus selection", "plan": {"locales": []}},
+        {"key": "3", "label": "None", "label_zh": "无", "description": "No extras", "plan": {}}
+      ]
+    }
+  ]
+}

@@ -37,8 +37,16 @@ publication authority.
 
 Read [references/commands.md](references/commands.md) for command contracts and
 routing. A bare invocation inspects the current README, dirty tree, and latest
-run, recommends the two or three highest-value commands, and waits. Never
+run. If the request shows novice signals — no command vocabulary, a
+plain-language ask, or no explicit scope — enter the guided interview in
+[references/novice-interview.md](references/novice-interview.md): ask the fixed
+question set via the platform-native question UI when available, map answers to
+a canonical README Plan, then stop for approval. Otherwise recommend two or
+three concrete commands with targets and wait. Never
 auto-run a recommendation.
+
+Read [references/novice-interview.md](references/novice-interview.md) before
+entering the guided interview.
 
 ## Inspect before writing
 
