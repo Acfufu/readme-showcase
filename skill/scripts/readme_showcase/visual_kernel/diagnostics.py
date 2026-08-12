@@ -98,7 +98,8 @@ class VisualDiagnostic:
     as_contract_error = to_contract_error
 
 
-_COUNT_CONSISTENCY_FIELDS = frozenset({"pass", "scene_count", "claim_count", "inventory_count", "mismatches"})
+_COUNT_CONSISTENCY_FIELDS = frozenset({"pass", "scene_count", "claim_count", "inventory_count", "mismatches", "sampled"})
+_SAMPLED_NAMES = frozenset({"scene", "claim"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +116,7 @@ class CountConsistency:
     claim_count: int
     inventory_count: int
     mismatches: tuple[str, ...] = ()
+    sampled: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.pass_) is not bool:
@@ -135,6 +137,19 @@ class CountConsistency:
             raise _schema_value("count consistency cannot pass with mismatches")
         if not self.pass_ and not self.mismatches:
             raise _schema_value("count consistency failure requires mismatches")
+        if type(self.sampled) is not tuple:
+            if isinstance(self.sampled, Sequence) and not isinstance(self.sampled, (str, bytes)):
+                object.__setattr__(self, "sampled", tuple(self.sampled))
+            else:
+                raise _schema_type("count consistency sampled must be an array")
+        if any(type(item) is not str or not item or item not in _SAMPLED_NAMES for item in self.sampled):
+            raise _schema_type("count consistency sampled must contain only 'scene' or 'claim'")
+        if self.sampled != tuple(sorted(set(self.sampled))):
+            raise _schema_value("count consistency sampled must be sorted and unique")
+        if self.pass_ and self.sampled:
+            raise _schema_value("count consistency cannot pass with sampled violations")
+        if self.sampled and not self.mismatches:
+            raise _schema_value("count consistency sampled violations require mismatches")
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -143,6 +158,7 @@ class CountConsistency:
             "claim_count": self.claim_count,
             "inventory_count": self.inventory_count,
             "mismatches": list(self.mismatches),
+            "sampled": list(self.sampled),
         }
 
     def canonical_bytes(self) -> bytes:
@@ -171,6 +187,7 @@ def validate_count_consistency(value: Any) -> CountConsistency:
         raw["claim_count"],
         raw["inventory_count"],
         raw["mismatches"],
+        raw["sampled"],
     )
 
 

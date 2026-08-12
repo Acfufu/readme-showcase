@@ -304,9 +304,9 @@ def count_consistency_gate(
     """Reverse inventory gate: scene and claim counts must agree and both
     must fit the evidence inventory.
 
-    Returns ``{"pass": bool, "mismatches": [...]}``.  A count that exceeds
-    the inventory is a ``(sample)`` violation: the rendered scene or the
-    claims describe more elements than the evidence can support.
+    Returns ``{"pass": bool, "mismatches": [...], "sampled": [...]}``.  A
+    count that exceeds the inventory is a ``(sample)`` violation: the rendered
+    scene or the claims describe more elements than the evidence can support.
     """
 
     for name, value in (
@@ -317,12 +317,14 @@ def count_consistency_gate(
         if type(value) is not int or value < 0:
             raise _fail("E_SCHEMA_TYPE", f"{name} must be a non-negative integer")
     mismatches: list[str] = []
+    sampled: list[str] = []
     if scene_node_count != claim_count:
         mismatches.append(f"scene:{scene_node_count} != claim:{claim_count}")
     for name, count in (("scene", scene_node_count), ("claim", claim_count)):
         if count > evidence_inventory:
             mismatches.append(f"{name}:{count} > inventory:{evidence_inventory} (sample)")
-    return {"pass": not mismatches, "mismatches": sorted(mismatches)}
+            sampled.append(name)
+    return {"pass": not mismatches, "mismatches": sorted(mismatches), "sampled": sorted(sampled)}
 
 
 def _scene_element_count(scene: Scene) -> int:
@@ -483,6 +485,7 @@ def run_visual_gates(
         claim_count,
         evidence_inventory,
         tuple(count_result["mismatches"]),
+        tuple(count_result.get("sampled", [])),
     )
 
     report = VisualGateReport.build(

@@ -68,7 +68,7 @@
         "artifacts": {
           "asset_manifest": {
             "path": "asset-manifest.json",
-            "sha256": "61d0589f0c82dca0ae17afdbede9ea932c0e88ecf3adede159fab404864428a0"
+            "sha256": "74e3ac51b048afa6dea52cbb073003bdd78af9d50e5b7ac9db13e80e5830452f"
           },
           "claim_map": {
             "path": "claim-map.json",
@@ -118,7 +118,7 @@
           "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
           "inventory": {
             "path": "compiled/inventory.json",
-            "sha256": "07a028b6243f822fc8995ee597945f8a4be6ea6cf1f921a8612413dd6699f14c"
+            "sha256": "72029cb1e3e910f9837d4a85a07329dea80b56ae1287772546b246beca018599"
           },
           "retention": "manual"
         },
@@ -213,10 +213,6 @@
             "path": "claim-map.json",
             "sha256": "15ee49bbe3a8c1a78f2f129640b82f4f59d1b6a887ec157451db80cfe679c6da"
           },
-          "evaluation": {
-            "path": "evaluation.json",
-            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-          },
           "evidence": {
             "path": "repository-evidence.json",
             "sha256": "45779141ed93be36d4c37f1105f596b885e2e020514c67db1f65316117749ed0"
@@ -232,6 +228,10 @@
           "visual_spec": {
             "path": "visual-spec.json",
             "sha256": "0c58880b9ea0f525010be8ea55402441e613c8e7323597f2e6511768984a7a32"
+          },
+          "evaluation": {
+            "path": "evaluation.json",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
           }
         },
         "candidate": {
@@ -349,7 +349,7 @@
         "artifacts": {
           "asset_manifest": {
             "path": "asset-manifest.json",
-            "sha256": "61d0589f0c82dca0ae17afdbede9ea932c0e88ecf3adede159fab404864428a0"
+            "sha256": "74e3ac51b048afa6dea52cbb073003bdd78af9d50e5b7ac9db13e80e5830452f"
           },
           "claim_map": {
             "path": "claim-map.json",

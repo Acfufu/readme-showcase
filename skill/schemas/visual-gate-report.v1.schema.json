@@ -151,7 +151,7 @@
       "$comment": "Reverse inventory projection: rendered scene element counts must equal the claim-map diagram label count, and both must fit the evidence inventory. A mismatch that exceeds the inventory is a (sample) violation.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["pass", "scene_count", "claim_count", "inventory_count", "mismatches"],
+      "required": ["pass", "scene_count", "claim_count", "inventory_count", "mismatches", "sampled"],
       "properties": {
         "pass": {"type": "boolean"},
         "scene_count": {"type": "integer", "minimum": 0},
@@ -161,6 +161,11 @@
           "type": "array",
           "uniqueItems": true,
           "items": {"type": "string", "minLength": 1}
+        },
+        "sampled": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["scene", "claim"]}
         }
       }
     }

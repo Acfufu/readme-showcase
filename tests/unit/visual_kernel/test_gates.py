@@ -10,6 +10,7 @@ from skill.scripts.readme_showcase.visual_kernel.diagnostics import (
     CountConsistency,
     VisualDiagnostic,
     VisualGateReport,
+    validate_count_consistency,
 )
 from skill.scripts.readme_showcase.visual_kernel.gates import (
     count_consistency_gate,
@@ -201,6 +202,29 @@ class CountConsistencyGateTests(unittest.TestCase):
         result = count_consistency_gate(8, 8, 20)
         self.assertIs(result["pass"], True)
         self.assertEqual(result["mismatches"], [])
+        self.assertEqual(result["sampled"], [])
+
+    def test_count_gate_reports_sampled_fields_structurally(self) -> None:
+        result = count_consistency_gate(scene_node_count=5, claim_count=5, evidence_inventory=3)
+        self.assertFalse(result["pass"])
+        self.assertEqual(result["sampled"], ["claim", "scene"])
+
+    def test_count_gate_sampled_empty_when_within_inventory(self) -> None:
+        result = count_consistency_gate(scene_node_count=2, claim_count=2, evidence_inventory=3)
+        self.assertTrue(result["pass"])
+        self.assertEqual(result["sampled"], [])
+
+    def test_count_consistency_round_trips_sampled_field(self) -> None:
+        value = validate_count_consistency({
+            "pass": False,
+            "scene_count": 5,
+            "claim_count": 5,
+            "inventory_count": 3,
+            "mismatches": ["claim:5 > inventory:3 (sample)", "scene:5 > inventory:3 (sample)"],
+            "sampled": ["claim", "scene"],
+        })
+        self.assertEqual(value.sampled, ("claim", "scene"))
+        self.assertEqual(value.as_dict()["sampled"], ["claim", "scene"])
 
     def test_scene_claim_mismatch_fails(self) -> None:
         result = count_consistency_gate(8, 20, 30)
