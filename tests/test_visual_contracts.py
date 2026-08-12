@@ -109,6 +109,14 @@ class VisualContractTests(unittest.TestCase):
         self.assertIn("query", text)
         self.assertIn("Asset Replacement Contract", text)
 
+    def test_visual_production_doc_pins_logo_search_contract(self) -> None:
+        doc = REPO_ROOT / "skill/references/visual-production.md"
+        text = doc.read_text(encoding="utf-8")
+        self.assertIn("Logo Protocol", text)
+        self.assertIn("invent", text)
+        self.assertIn("logo", text)
+        self.assertIn("VeloxDB", text)
+
     def update_manifest(
         self,
         root: Path,

@@ -5,11 +5,12 @@ Read this reference before creating or revising README assets. Visuals must comm
 ## Contents
 
 1. [Derive the visual system](#derive-the-visual-system)
-2. [Choose the opening](#choose-the-opening)
-3. [Use GitHub-safe assets](#use-github-safe-assets)
-4. [Choose a structure implementation](#choose-a-structure-implementation)
-5. [Produce SVG](#produce-svg)
-6. [Preview and validate](#preview-and-validate)
+2. [Find the logo, do not invent it](#find-the-logo-do-not-invent-it)
+3. [Choose the opening](#choose-the-opening)
+4. [Use GitHub-safe assets](#use-github-safe-assets)
+5. [Choose a structure implementation](#choose-a-structure-implementation)
+6. [Produce SVG](#produce-svg)
+7. [Preview and validate](#preview-and-validate)
 
 ## Derive the Visual System
 
@@ -42,6 +43,29 @@ Composition: split / integrated / artifact wall / background proof / title-only
 ```
 
 Do not apply the same template to every repository. A CLI may use command rhythm and cursor marks; a data project may use measured charts and labels; an Agent Skill may use its real invocation, state flow, and stop gates.
+
+## Find the Logo, Do Not Invent It
+
+Never draw a fictional mark for a project that already ships one. A made-up
+logo presents invented product truth and passes off the Skill's work as the
+project's identity. The real incident: repo-visuals once shipped a fake purple
+"V lightning" logo for VeloxDB instead of the project's actual logo at
+`<homepage>/logo-dark.svg`.
+
+Follow the Logo Protocol search order, in this exact sequence, and stop at the
+first hit:
+
+1. README and tracked repo files, including Markdown image links, favicons,
+   and existing `assets/`.
+2. Project-owned `assets/` and branding directories, whatever their layout.
+3. The project website or brand page referenced by the repository.
+4. Public documentation that shows an official mark.
+
+Prefer vector sources (SVG) over raster ones, and never re-draw the found mark
+from memory. When the search genuinely finds no official logo, do not invent
+one: use a typographic treatment of the project name built from the derived
+visual system instead. Record where each logo search step was checked so the
+absence is an audited fact, not an omission.
 
 ## Choose the Opening
 
