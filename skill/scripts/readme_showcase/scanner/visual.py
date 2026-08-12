@@ -38,7 +38,7 @@ _DESIGN_TOKEN_NAMES = frozenset({
 _HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}\b")
 # SVG attributes and CSS/JSON declarations alike: `font-family="..."`,
 # `font-family: ...;`, or `"font-family": "..."`.
-_FONT_STACK = re.compile(r"""font-family\s*(?::|=)\s*["']?([^"';}]+)["']?""")
+_FONT_STACK = re.compile(r"""font-family\s*(?::\s*|=)\s*((?:"[^"]*"(?:\s*,\s*"[^"]*")*)|(?:'[^']*'(?:\s*,\s*'[^']*')*)|(?:[^;}\n]+))""")
 _NEUTRAL_HEX = re.compile(r"#([0-9a-fA-F]{2})\1\1\Z")
 
 

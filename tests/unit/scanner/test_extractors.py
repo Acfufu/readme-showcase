@@ -16,6 +16,7 @@ from skill.scripts.readme_showcase.contracts.evidence import validate_fact
 from skill.scripts.pipeline_contracts import ContractError
 from skill.scripts.readme_showcase.evidence.adapters import adapt_verified_command_observation
 from skill.scripts.readme_showcase.scanner.extractors import ExtractorService, extract_repository
+from skill.scripts.readme_showcase.scanner.visual import svg_tokens
 
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "repositories"
@@ -193,6 +194,14 @@ class ExtractorTests(unittest.TestCase):
         del missing["input_hashes"]
         with self.assertRaisesRegex(ValueError, "input_hashes"):
             adapt_verified_command_observation(missing, path="evidence/tests.json", source_bytes=raw)
+
+    def test_font_stack_keeps_quoted_multi_family(self) -> None:
+        tokens = svg_tokens('font-family: "Inter", "Noto Sans SC";')
+        self.assertEqual(tokens["typography"], ["Inter", "Noto Sans SC"])
+
+    def test_font_stack_handles_unquoted_stack(self) -> None:
+        tokens = svg_tokens("font-family: Inter, sans-serif;")
+        self.assertEqual(tokens["typography"], ["Inter", "sans-serif"])
 
     @staticmethod
     def tree_hash(root: Path) -> str:
