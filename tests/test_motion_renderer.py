@@ -27,6 +27,28 @@ HERO_SPEC = REPO_ROOT / "assets/readme/hero-motion.json"
 HERO_SHA256 = "e54ed1893de5f37d1b315f10d33a1be08dbbb789785bb389db5c75485cacbd55"
 
 
+MOTION_PRODUCTION = REPO_ROOT / "skill/references/motion-production.md"
+
+
+class MotionProductionContractTests(unittest.TestCase):
+    """Doc contracts for motion-production.md (no Pillow required)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.text = MOTION_PRODUCTION.read_text(encoding="utf-8")
+
+    def test_doc_asserts_dual_engine_playback_matrix(self) -> None:
+        self.assertIn("SMIL", self.text)
+        self.assertIn("@keyframes", self.text)
+        self.assertIn("Chrome 151", self.text)
+        self.assertIn("Firefox 153", self.text)
+
+    def test_doc_contains_static_frame_contract(self) -> None:
+        lowered = self.text.lower()
+        self.assertIn("frozen frame", lowered)
+        self.assertIn("reduced-motion", lowered)
+
+
 @unittest.skipUnless(render_motion_gif is not None, "Pillow is required for motion renderer tests")
 class MotionRendererTests(unittest.TestCase):
     def setUp(self) -> None:

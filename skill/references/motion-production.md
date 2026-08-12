@@ -1,15 +1,17 @@
 # Optional GitHub README Motion
 
-This workflow is adapted from oil-oil's MIT-licensed `beautify-github-readme`. Use motion only when it explains a sequence, transition, state change, or relationship. GIF is opt-in and never the default because GitHub does not play animation embedded inside SVG.
+This workflow is adapted from oil-oil's MIT-licensed `beautify-github-readme`. Use motion only when it explains a sequence, transition, state change, or relationship. GIF is opt-in and never the default: static SVG is cheaper, deterministic, and always readable, while every animated asset must still satisfy the [Static Frame Contract](#static-frame-contract).
 
 ## Contents
 
 1. [Gate](#gate)
 2. [Motion defaults](#motion-defaults)
-3. [Motion spec](#motion-spec)
-4. [Render](#render)
-5. [Verify](#verify)
-6. [Upstream license](#upstream-license)
+3. [GitHub playback matrix](#github-playback-matrix)
+4. [Static frame contract](#static-frame-contract)
+5. [Motion spec](#motion-spec)
+6. [Render](#render)
+7. [Verify](#verify)
+8. [Upstream license](#upstream-license)
 
 ## Gate
 
@@ -31,6 +33,37 @@ Do not replace a README image reference without separate approval.
 - Start at `30 FPS`, `4–6` seconds, and the SVG's native width.
 - Aim for about `2 MB`; treat `5 MB` as a practical ceiling.
 - Avoid flashes, rapid pulses, and motion that competes with reading.
+
+## GitHub Playback Matrix
+
+GitHub's README layer renders SVG through an `<img>` tag and does not sanitize
+file content: the `?sanitize=true` parameter is a no-op. Script execution is
+blocked by a server-side CSP (`default-src 'none'; style-src 'unsafe-inline';
+sandbox`), but animation is not. Dual-engine playback testing on 2026-08-12
+confirmed both SVG animation engines play in current Chrome and Firefox:
+
+| Engine | Technique | Chrome 151 | Firefox 153 |
+| --- | --- | --- | --- |
+| SMIL | `<animate>` / `<animateTransform>` | plays | plays |
+| CSS | `@keyframes` | plays | plays |
+
+Both engines animate in both browsers through GitHub README `<img>` rendering.
+GIF therefore stays opt-in for legibility, size, and deterministic frames — not
+because SVG animation is impossible. Re-verify the matrix with
+`skill/scripts/verify_animation_matrix.py` before relying on a new engine
+combination.
+
+## Static Frame Contract
+
+Any animated asset's frozen frame must be explicitly designed, never an
+accidental intermediate:
+
+- Design the first settled frame before adding motion, and verify it in the
+  rendered output.
+- A discrete animation frozen before its first transition can land on a
+  `width="0"` empty bar; the frozen frame must read correctly on its own.
+- Reduced-motion users, static fallbacks, and failed renders see exactly the
+  frozen frame — never rely on motion to communicate the asset's meaning.
 
 ## Motion Spec
 
