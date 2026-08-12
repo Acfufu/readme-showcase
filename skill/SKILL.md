@@ -279,7 +279,7 @@ screenshots, outputs, logos, or deterministic SVG.
 
 - Keep exact copy, typography, labels, alignment, and composition in an editable SVG layout.
 - Keep the final subject PNG/WebP and generation prompt beside the layout.
-- Publish the verified composed PNG/WebP, not an SVG with unresolved raster references or a large base64 layer.
+- Publish the verified composed PNG/WebP beside the layout; reject base64 data-URI assets (GC4) and unresolved raster references in the SVG.
 - Preserve a project-owned static SVG fallback. If generation, transparency, composition, legibility, or size validation fails, leave the fallback and README unchanged.
 - Never invoke ImageGen automatically in benchmark, audit, or CI paths.
 

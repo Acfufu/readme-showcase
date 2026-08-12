@@ -5,8 +5,7 @@
 `lessons.md` is the human-confirmed incident ledger for the README Showcase
 skill. Automated evaluation runs never write here. They append candidate
 entries to `lessons-pending.json` in the same directory as the evaluation
-report — the `evaluate --output` directory or
-`stages/07-validation/attempts/<N>/` — and `check-publish-gate` records
+report (the `evaluate --output` directory), and `check-publish-gate` records
 identity overrides there as independent non-failure entries.
 
 Only a human reviewer moves a confirmed entry from `lessons-pending.json`
