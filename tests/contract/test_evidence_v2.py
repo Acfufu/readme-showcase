@@ -233,7 +233,7 @@ class EvidenceV2ContractTests(unittest.TestCase):
         invalid = json.loads((FIXTURES / "repository-evidence-v2.invalid.json").read_text(encoding="utf-8"))
         validator = self.schema_validator()
         self.assertEqual(list(validator.iter_errors(valid)), [])
-        structurally_invalid = {"mixed-locator", "source-hash", "bad-json-pointer"}
+        structurally_invalid = {"mixed-locator", "source-hash", "bad-json-pointer", "voice-sample-derived-without-derivation", "voice-sample-float-value"}
         for case in invalid["cases"]:
             with self.subTest(case=case["name"]):
                 has_errors = bool(list(validator.iter_errors(case["payload"])))

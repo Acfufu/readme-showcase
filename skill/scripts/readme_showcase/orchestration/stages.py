@@ -101,13 +101,37 @@ def _upstream(context: RunContext, index: int) -> str | None:
     return context.manifest["stages"][index]["output_sha256"]
 
 
-def _v3_evidence_graph(evidence: Mapping[str, Any]) -> dict[str, Any]:
+def _v3_evidence_graph(context: RunContext, evidence: Mapping[str, Any]) -> dict[str, Any]:
     version = evidence.get("schema_version")
     if type(version) is int and version == 1:
-        return adapt_v1_repository_evidence(evidence)
+        payload = adapt_v1_repository_evidence(evidence)
+        voice = _voice_facts(context)
+        if voice:
+            from ..evidence.graph import EvidenceGraph
+
+            payload = EvidenceGraph([*payload["facts"], *voice]).to_dict()
+        return payload
     if type(version) is int and version == 2:
         return dict(evidence)
     raise ContractError("E_SCHEMA_VERSION", "README Plan v3 inputs require repository evidence schema_version 1 or 2")
+
+
+def _voice_facts(context: RunContext) -> list[dict[str, Any]]:
+    """Voice-sample facts written by the scan stage, when present."""
+    path = context.attempt_file(0, "repository-voice.json")
+    try:
+        raw = read_regular_bytes(path, maximum=MAX_CANDIDATE_BYTES, path_code="E_RUN_INPUT", size_code="E_RUN_INPUT")
+    except ContractError as exc:
+        if exc.code == "E_INPUT_NOT_FOUND":
+            return []
+        raise
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractError("E_RUN_INPUT", f"scan voice facts must be canonical JSON: {exc}") from exc
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise ContractError("E_RUN_INPUT", "scan voice facts must be a bounded fact list")
+    return [dict(item) for item in value]
 
 
 def _validate_compiled_visual_spec(value: object, evidence_graph: object) -> None:
@@ -118,17 +142,28 @@ def _validate_compiled_visual_spec(value: object, evidence_graph: object) -> Non
 class ScanStage:
     name = "scan"
 
+    def _voice(self, context: RunContext) -> list[dict[str, Any]]:
+        if "scan-voice" not in context.cache:
+            from ..scanner.voice import extract_voice_samples
+
+            context.cache["scan-voice"] = extract_voice_samples(context.workspace.target_root)
+        return context.cache["scan-voice"]
+
     def _value(self, context: RunContext) -> dict[str, Any]:
         if self.name not in context.cache:
             context.cache[self.name] = scan_repository(context.workspace.target_root)
         return context.cache[self.name]
 
     def fingerprint(self, context: RunContext) -> str:
-        return canonical_sha256(self._value(context))
+        return canonical_sha256({"scan": self._value(context), "voice": self._voice(context)})
 
     def execute(self, context: RunContext) -> StageResult:
         value = self._value(context)
-        return StageResult("pass" if value["status"] == "complete" else "failed", {"repository-evidence.json": canonical_json_bytes(value)})
+        files: dict[str, bytes] = {"repository-evidence.json": canonical_json_bytes(value)}
+        voice = self._voice(context)
+        if voice:
+            files["repository-voice.json"] = canonical_json_bytes(voice)
+        return StageResult("pass" if value["status"] == "complete" else "failed", files)
 
 
 class RetrieveStage:
@@ -193,7 +228,7 @@ class GenerationRequestStage:
         evidence_for_request: Mapping[str, Any] = evidence
         retrieval_for_request: Mapping[str, Any] = retrieval
         if plan["schema_version"] == 3:
-            evidence_for_request = _v3_evidence_graph(evidence)
+            evidence_for_request = _v3_evidence_graph(context, evidence)
             if type(evidence.get("schema_version")) is int and evidence["schema_version"] == 1:
                 retrieval_for_request = copy.deepcopy(retrieval)
                 query = retrieval_for_request.get("query")
@@ -401,7 +436,7 @@ def candidate_files(context: RunContext) -> list[tuple[str, bytes]] | None:
             elif compiled and relative == "visual-spec.json":
                 raw, visual_spec = _canonical_object(path)
                 _, evidence = _canonical_object(context.attempt_file(0, "repository-evidence.json"))
-                evidence_graph = _v3_evidence_graph(evidence)
+                evidence_graph = _v3_evidence_graph(context, evidence)
                 _validate_compiled_visual_spec(visual_spec, evidence_graph)
             else:
                 raw = read_regular_bytes(path, maximum=MAX_CANDIDATE_BYTES)
@@ -510,7 +545,7 @@ class BundleAssembleStage:
 
         validate_readme_plan(plan, mode=context.manifest["configuration"]["mode"])
         _, evidence = _canonical_object(context.attempt_file(0, "repository-evidence.json"))
-        evidence_graph = _v3_evidence_graph(evidence)
+        evidence_graph = _v3_evidence_graph(context, evidence)
         retrieval_raw, _ = _canonical_object(context.attempt_file(1, "retrieval-packet.json"))
         claim_raw, _ = _canonical_object(context.workspace.root / "stages/05-candidate/claim-map.json")
         spec_raw, spec = _canonical_object(context.workspace.root / "stages/05-candidate/visual-spec.json")
@@ -738,7 +773,7 @@ def _materialize(context: RunContext, root: Path) -> dict[str, Any]:
         project_source("retrieval-packet.json", context.attempt_file(1, "retrieval-packet.json"), reference("retrieval", "retrieval-packet.json"))
 
         evidence_raw, evidence = _canonical_object(context.attempt_file(0, "repository-evidence.json"))
-        evidence_graph = _v3_evidence_graph(evidence)
+        evidence_graph = _v3_evidence_graph(context, evidence)
         canonical_evidence = evidence_raw if evidence.get("schema_version") == 2 else canonical_json_bytes(evidence_graph)
         project_bytes("repository-evidence.json", canonical_evidence, reference("evidence", "repository-evidence.json"))
 

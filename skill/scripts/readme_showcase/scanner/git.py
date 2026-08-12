@@ -108,6 +108,36 @@ def base_sha(root: Path) -> str | None:
     return None if git_directory(root) is None else _base_sha(root)
 
 
+def commit_subjects(root: Path, limit: int = 20) -> tuple[str, ...] | None:
+    """Return the most recent commit subjects (git log -N --format=%s).
+
+    Voice extraction uses the subjects as one terse prose corpus.  The raw
+    ``-N`` and ``--format=%s`` output is deterministic for a given HEAD, so a
+    later evaluate run can reproduce the same corpus from the stored fact.
+    """
+    if git_directory(root) is None:
+        return None
+    if type(limit) is not int or not 1 <= limit <= 100:
+        _fail("Git commit subject limit is invalid")
+    try:
+        output = _git_output(root, "log", f"-{limit}", "--format=%s")
+    except ContractError as exc:
+        if "does not have any commits" in str(exc):
+            return ()
+        raise
+    if not output.endswith(b"\n") and output:
+        _fail("Git commit subject output is not line terminated")
+    subjects: list[str] = []
+    for raw_line in output.splitlines():
+        try:
+            subject = raw_line.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ContractError("E_SCAN_IO", "Git commit subject must be UTF-8") from exc
+        if subject and "\x00" not in subject:
+            subjects.append(subject)
+    return tuple(subjects)
+
+
 def _paths(output: bytes) -> tuple[str, ...]:
     if output and not output.endswith(b"\0"):
         _fail("Git tracked-file output is not NUL terminated")

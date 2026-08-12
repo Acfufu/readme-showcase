@@ -28,10 +28,20 @@ EVIDENCE_KINDS = frozenset(
         "command-observation",
         "git-metadata",
         "documentation-statement",
+        "voice-sample",
     }
 )
 CONFIDENCE_LEVELS = frozenset({"observed", "derived", "documented"})
 MAX_FACTS = 10_000
+# Reserved source paths that name derived corpora instead of physical files in
+# the target repository (for example the commit-subject voice sample).  Delivery
+# bindings skip these paths because there is no checkout file to verify.
+VOICE_GIT_LOG_SOURCE = "git-log"
+SYNTHETIC_SOURCE_PATHS = frozenset({VOICE_GIT_LOG_SOURCE})
+
+
+def is_synthetic_source(path: str) -> bool:
+    return path in SYNTHETIC_SOURCE_PATHS
 _PREFIXES = {
     "file-presence": "file",
     "file-snippet": "snippet",
@@ -43,6 +53,7 @@ _PREFIXES = {
     "command-observation": "command",
     "git-metadata": "git",
     "documentation-statement": "documentation",
+    "voice-sample": "voice",
 }
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SYMBOL = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:(?:::|\.)[A-Za-z_][A-Za-z0-9_]*)*\Z")

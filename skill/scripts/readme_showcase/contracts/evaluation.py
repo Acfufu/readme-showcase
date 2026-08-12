@@ -36,8 +36,9 @@ _COMPILED_REPORT_FIELDS = {
 _REPORT_V3_FIELDS = {
     "schema_version", "status", "decision_basis", "bundle_sha256",
     "compiled_fingerprint", "hard_gate", "compiled", "advisory",
-    "behavior", "behavior_required",
+    "behavior", "behavior_required", "voice_match",
 }
+_VOICE_MATCH_FIELDS = {"pass", "score", "evidence"}
 
 
 def _reject_float(value: Any, path: str = "$") -> None:
@@ -193,6 +194,24 @@ def validate_evaluation_report_v2(payload: Any) -> dict[str, Any]:
     return result
 
 
+def validate_voice_match(payload: Any) -> dict[str, Any]:
+    value = _strict_object(payload, _VOICE_MATCH_FIELDS, "evaluation report.voice_match", "E_EVALUATION_REPORT")
+    if type(value["pass"]) is not bool:
+        raise ContractError("E_EVALUATION_REPORT", "voice_match pass must be boolean")
+    score = value["score"]
+    if type(score) is not int or not 0 <= score <= 10_000:
+        raise ContractError("E_EVALUATION_REPORT", "voice_match score must be a bounded 0..10000 basis-point integer")
+    evidence = value["evidence"]
+    if (
+        not isinstance(evidence, str)
+        or not evidence
+        or "\x00" in evidence
+        or len(evidence.encode("utf-8")) > 4096
+    ):
+        raise ContractError("E_EVALUATION_REPORT", "voice_match evidence is invalid")
+    return copy.deepcopy(value)
+
+
 def validate_evaluation_report_v3(payload: Any) -> dict[str, Any]:
     """Validate the closed Evaluation Report v3 projection.
 
@@ -243,6 +262,7 @@ def validate_evaluation_report_v3(payload: Any) -> dict[str, Any]:
 
     advisory = validate_advisory_metrics(value["advisory"])
     behavior = validate_behavior_result(value["behavior"])
+    voice_match = validate_voice_match(value["voice_match"])
     if type(value["behavior_required"]) is not bool:
         raise ContractError("E_EVALUATION_REPORT", "behavior_required must be boolean")
     compiled_pass = all(
@@ -253,6 +273,7 @@ def validate_evaluation_report_v3(payload: Any) -> dict[str, Any]:
         "pass"
         if hard_gate["status"] == "pass"
         and compiled_pass
+        and voice_match["pass"]
         and (not value["behavior_required"] or behavior["status"] == "pass")
         else "fail"
     )
@@ -263,4 +284,5 @@ def validate_evaluation_report_v3(payload: Any) -> dict[str, Any]:
     result["compiled"] = normalized_compiled
     result["advisory"] = advisory
     result["behavior"] = behavior
+    result["voice_match"] = voice_match
     return result

@@ -19,7 +19,8 @@
     "compiled",
     "advisory",
     "behavior",
-    "behavior_required"
+    "behavior_required",
+    "voice_match"
   ],
   "properties": {
     "schema_version": {"const": 3},
@@ -31,7 +32,8 @@
     "compiled": {"$ref": "#/$defs/compiled"},
     "advisory": {"$ref": "#/$defs/advisory"},
     "behavior": {"$ref": "#/$defs/behavior"},
-    "behavior_required": {"type": "boolean"}
+    "behavior_required": {"type": "boolean"},
+    "voice_match": {"$ref": "#/$defs/voiceMatch"}
   },
   "allOf": [
     {
@@ -52,6 +54,9 @@
               "resource_budgets": {"properties": {"basis_points": {"const": 10000}}},
               "variant_completeness": {"properties": {"basis_points": {"const": 10000}}}
             }
+          },
+          "voice_match": {
+            "properties": {"pass": {"const": true}}
           }
         },
         "allOf": [
@@ -106,6 +111,17 @@
           "then": {"properties": {"findings": {"minItems": 1}}}
         }
       ]
+    },
+    "voiceMatch": {
+      "$comment": "The scan-extracted two-sigma voice distance projected as a bounded 0..10000 basis-point similarity score; every report measure stays an integer under canonical JSON.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass", "score", "evidence"],
+      "properties": {
+        "pass": {"type": "boolean"},
+        "score": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "evidence": {"$ref": "#/$defs/nonEmptyText"}
+      }
     },
     "notApplicableMetric": {
       "type": "object",

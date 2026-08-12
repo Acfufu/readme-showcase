@@ -15,7 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Sequence
 
 from ...pipeline_contracts import ContractError, MAX_JSON_BYTES, canonical_sha256, read_regular_bytes
-from ..contracts.evidence import validate_evidence_graph
+from ..contracts.evidence import is_synthetic_source, validate_evidence_graph
 from ..validation.legacy import validate_generated_bundle
 from .bundle import build_delivery_result
 
@@ -419,6 +419,8 @@ def _validate_evidence_base(payload: dict[str, Any], artifact_root: Path, worktr
         source = fact["source"]
         source_path = _safe_path(source["path"], "evidence source path")
         normalized = source_path.as_posix()
+        if is_synthetic_source(normalized):
+            continue
         if normalized not in source_cache:
             try:
                 source_raw = read_regular_bytes(

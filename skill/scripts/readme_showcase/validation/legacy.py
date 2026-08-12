@@ -22,6 +22,7 @@ _RETRIEVAL_SERVICE = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.r
 _VALIDATION_BUNDLE = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.validation.bundle")
 _EVALUATION = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.evaluation")
 _BEHAVIOR = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.evaluation.behavior")
+_EVIDENCE = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.contracts.evidence")
 _EVALUATION_REPORT = importlib.import_module(f"{_DOMAIN_PREFIX}readme_showcase.evaluation.report")
 ContractError = _CONTRACTS.ContractError
 canonical_sha256 = _CONTRACTS.canonical_sha256
@@ -597,6 +598,8 @@ def _validate_evidence_checkout(
                 if previous != digest:
                     _fail("E_PR_EVIDENCE", "repository evidence source hashes conflict")
             for path, digest in sorted(source_hashes.items()):
+                if _EVIDENCE.is_synthetic_source(path):
+                    continue
                 current = read_regular_bytes(
                     target_root.joinpath(*PurePosixPath(path).parts),
                     maximum=MAX_FILE_BYTES,

@@ -11,6 +11,7 @@ from ..contracts.evaluation import validate_evaluation_report_v3
 from ..contracts.evidence import validate_evidence_graph
 from ..contracts.plan import validate_readme_plan
 from ..evaluation.contract import metric
+from ..evaluation.voice import collect_voice_samples, evaluate_voice_match
 from ..visual_kernel.gates import validate_visual_gate_report
 from ..visual_kernel.model import validate_visual_spec
 from ..visual_kernel.reader import load_compiled_visual
@@ -29,6 +30,7 @@ _fail = _BUNDLE._fail
 _object = _BUNDLE._object
 _reference = _BUNDLE._reference
 _artifact_json = _BUNDLE._artifact_json
+_artifact_bytes = _BUNDLE._artifact_bytes
 validate_generated_bundle = _BUNDLE.validate_generated_bundle
 
 
@@ -70,6 +72,43 @@ def _v3_empty_compiled_metrics(code: str) -> dict[str, dict[str, object]]:
     }
 
 
+def _v3_voice_match(
+    payload: Mapping[str, Any],
+    artifact_root: Path,
+    evidence: Mapping[str, Any],
+    plan: Mapping[str, Any],
+) -> dict[str, object]:
+    """Run the scan-extracted voice gate against the primary candidate README.
+
+    Voice features come only from repository-evidence facts; nothing here
+    touches the target repository.  The primary locale is plan.locales[0] and
+    its README is candidate.readmes[0] (the bundle assembler keeps the same
+    order).  Any failure that survives the non-native-locale advisory downgrade
+    is a hard gate failure.
+    """
+    fallback = {"pass": True, "score": 10000, "evidence": "voice match unavailable"}
+    readmes = payload.get("candidate", {}).get("readmes") if isinstance(payload.get("candidate"), Mapping) else None
+    if not isinstance(readmes, list) or not readmes:
+        return {"pass": True, "score": 10000, "evidence": "no candidate README to match"}
+    locales = plan.get("locales")
+    if not isinstance(locales, list) or not locales or not isinstance(locales[0], Mapping):
+        return fallback
+    primary = locales[0]
+    if not isinstance(primary.get("tag"), str) or not isinstance(readmes[0], Mapping):
+        return fallback
+    try:
+        raw = _artifact_bytes(artifact_root, readmes[0], "bundle candidate readmes[0]")
+        text = raw.decode("utf-8")
+    except ContractError as exc:
+        return {"pass": True, "score": 10000, "evidence": f"voice match unavailable: {exc}"}
+    match = evaluate_voice_match(text, collect_voice_samples(evidence), primary["tag"])
+    return {
+        "pass": bool(match["pass"]),
+        "score": min(max(int(round(float(match["score"]) * 10_000)), 0), 10_000),
+        "evidence": str(match["evidence"]),
+    }
+
+
 def _v3_report(
     *,
     payload: Any,
@@ -79,6 +118,7 @@ def _v3_report(
     advisory: Mapping[str, Any],
     behavior: Mapping[str, Any],
     behavior_required: bool,
+    voice_match: Mapping[str, object],
 ) -> dict[str, object]:
     ordered_findings = sorted(
         (dict(item) for item in findings),
@@ -89,7 +129,7 @@ def _v3_report(
         "schema_version": 3,
         "status": "pass" if hard_status == "pass" and all(
             value.get("basis_points") == 10_000 for value in compiled.values()
-        ) and (not behavior_required or behavior.get("status") == "pass") else "fail",
+        ) and (not behavior_required or behavior.get("status") == "pass") and voice_match.get("pass") else "fail",
         "decision_basis": _V3_DECISION_BASIS,
         "bundle_sha256": canonical_sha256(payload),
         "compiled_fingerprint": _v3_digest(compiled_fingerprint),
@@ -98,6 +138,7 @@ def _v3_report(
         "advisory": dict(advisory),
         "behavior": dict(behavior),
         "behavior_required": behavior_required,
+        "voice_match": dict(voice_match),
     }
     return validate_evaluation_report_v3(report)
 
@@ -298,6 +339,9 @@ def _evaluate_v3(
             claims,
             evidence,
         )
+        voice_match = _v3_voice_match(payload, artifact_root, evidence, plan)
+        if not voice_match["pass"]:
+            findings.append({"code": "E_VOICE_MATCH", "message": str(voice_match["evidence"])})
 
         advisory = _EVALUATION.compute_advisory_metrics(
             plan=plan,
@@ -331,6 +375,7 @@ def _evaluate_v3(
             advisory=advisory,
             behavior=behavior,
             behavior_required=behavior_required,
+            voice_match=voice_match,
         )
     except ContractError as exc:
         # Keep the evaluator's established fail-closed boundary: malformed or
@@ -346,6 +391,7 @@ def _evaluate_v3(
             advisory=_EVALUATION.empty_advisory_metrics(),
             behavior=behavior,
             behavior_required=behavior_required,
+            voice_match={"pass": True, "score": 10000, "evidence": "evaluation failed before voice match"},
         )
 
 

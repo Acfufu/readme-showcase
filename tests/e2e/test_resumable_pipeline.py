@@ -103,7 +103,14 @@ class ResumablePipelineTests(unittest.TestCase):
             if relative == "repository-evidence.json":
                 evidence = json.loads(path.read_text(encoding="utf-8"))
                 if evidence.get("schema_version") == 1:
-                    write_canonical_json_atomic(destination, adapt_v1_repository_evidence(evidence))
+                    graph = adapt_v1_repository_evidence(evidence)
+                    voice_path = workspace / "stages/01-scan/attempts/1/repository-voice.json"
+                    if voice_path.is_file():
+                        from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
+
+                        voice = json.loads(voice_path.read_text(encoding="utf-8"))
+                        graph = EvidenceGraph([*graph["facts"], *voice]).to_dict()
+                    write_canonical_json_atomic(destination, graph)
                     continue
             shutil.copyfile(path, destination)
         for relative in ("README.md", "README_zh.md"):
