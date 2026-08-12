@@ -31,11 +31,21 @@ class ResumablePipelineTests(unittest.TestCase):
         self.target = self.root / "target"
         self.workspace = self.root / "workspace"
         self.target.mkdir()
-        (self.target / "README.md").write_text("target repository evidence\n", encoding="utf-8")
+        # Four repository files keep the compiled diagram's claim count within
+        # the evidence inventory produced by the offline scan.
+        for relative, content in {
+            "README.md": "target repository evidence\n",
+            "docs/guide.md": "target guide evidence\n",
+            "src/main.py": "print('demo')\n",
+            "tests/test_main.py": "def test_demo():\n    pass\n",
+        }.items():
+            path = self.target / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
         self.git("init")
         self.git("config", "user.name", "Test")
         self.git("config", "user.email", "test@example.invalid")
-        self.git("add", "README.md")
+        self.git("add", ".")
         self.git("commit", "-m", "fixture")
 
     def git(self, *arguments: str) -> str:
@@ -384,8 +394,18 @@ class ResumablePipelineTests(unittest.TestCase):
         compiled_root = self.root / "compiled-target"
         compiled_root.mkdir()
         target, _ = helper.target(compiled_root)
-        (target / "README.md").write_text("# Demo\n", encoding="utf-8")
-        helper.git(target, "add", "README.md")
+        # Four repository files keep the compiled diagram's claim count within
+        # the evidence inventory produced by the offline scan.
+        for relative, content in {
+            "README.md": "# Demo\n",
+            "docs/guide.md": "# Guide\n",
+            "src/main.py": "print('demo')\n",
+            "tests/test_main.py": "def test_demo():\n    pass\n",
+        }.items():
+            path = target / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        helper.git(target, "add", ".")
         helper.git(target, "commit", "-m", "compiled demo")
         (target / "nested").mkdir()
 
@@ -491,8 +511,18 @@ class ResumablePipelineTests(unittest.TestCase):
         compiled_root = self.root / "compiled-failure-target"
         compiled_root.mkdir()
         target, _ = helper.target(compiled_root)
-        (target / "README.md").write_text("# Demo\n", encoding="utf-8")
-        helper.git(target, "add", "README.md")
+        # Four repository files keep the compiled diagram's claim count within
+        # the evidence inventory produced by the offline scan.
+        for relative, content in {
+            "README.md": "# Demo\n",
+            "docs/guide.md": "# Guide\n",
+            "src/main.py": "print('demo')\n",
+            "tests/test_main.py": "def test_demo():\n    pass\n",
+        }.items():
+            path = target / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        helper.git(target, "add", ".")
         helper.git(target, "commit", "-m", "compiled failure fixture")
         nested = target / "nested"
         nested.mkdir()

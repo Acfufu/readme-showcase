@@ -311,8 +311,19 @@ class CandidateFilesVersionTests(unittest.TestCase):
 
     @staticmethod
     def _v1_scan_evidence() -> dict[str, object]:
-        content = "# Demo\n"
-        digest = hashlib.sha256(content.encode()).hexdigest()
+        # Three repository files keep the compiled diagram's claim count
+        # within the evidence inventory; a smaller inventory would fail the
+        # count-consistency gate even though the claims are evidence-bound.
+        contents = {
+            "README.md": "# Demo\n",
+            "docs/guide.md": "# Guide\n",
+            "src/main.py": "print('demo')\n",
+            "tests/test_main.py": "def test_demo(): pass\n",
+        }
+
+        def digest(content: str) -> str:
+            return hashlib.sha256(content.encode()).hexdigest()
+
         return {
             "schema_version": 1,
             "status": "complete",
@@ -325,8 +336,14 @@ class CandidateFilesVersionTests(unittest.TestCase):
                 "max_seconds": 5,
                 "max_total_bytes": 4 * 1024 * 1024,
             },
-            "files": [{"path": "README.md", "bytes": len(content.encode()), "lines": 1, "sha256": digest, "content": content}],
-            "facts": [{"fact_id": "file:README.md", "kind": "repository-file", "path": "README.md", "evidence_sha256": digest}],
+            "files": [
+                {"path": path, "bytes": len(content.encode()), "lines": content.count("\n") + 1, "sha256": digest(content), "content": content}
+                for path, content in contents.items()
+            ],
+            "facts": [
+                {"fact_id": f"file:{path}", "kind": "repository-file", "path": path, "evidence_sha256": digest(content)}
+                for path, content in contents.items()
+            ],
             "warnings": [],
         }
 

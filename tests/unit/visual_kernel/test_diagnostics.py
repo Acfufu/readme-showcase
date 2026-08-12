@@ -15,7 +15,7 @@ from skill.scripts.readme_showcase.visual_kernel import (
 
 class VisualDiagnosticTests(unittest.TestCase):
     def test_registry_is_closed_and_report_is_canonical(self) -> None:
-        self.assertEqual(len(VISUAL_DIAGNOSTIC_CODES), 13)
+        self.assertEqual(len(VISUAL_DIAGNOSTIC_CODES), 14)
         first = VisualDiagnostic(
             "E_VISUAL_GEOMETRY",
             "error",

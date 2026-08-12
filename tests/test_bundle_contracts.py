@@ -43,7 +43,7 @@ from skill.scripts.readme_showcase.contracts.claims import (
 from skill.scripts.readme_showcase.contracts.plan import README_PLAN_V2_SCHEMA_VERSION
 from skill.scripts.readme_showcase.generation.assembler import GENERATED_BUNDLE_SCHEMA_VERSION
 from skill.scripts.readme_showcase.visual_kernel.artifacts import build_compiled_artifacts
-from skill.scripts.readme_showcase.visual_kernel.diagnostics import VisualGateReport
+from skill.scripts.readme_showcase.visual_kernel.diagnostics import CountConsistency, VisualGateReport
 from skill.scripts.readme_showcase.visual_kernel.interaction import derive_interaction
 from skill.scripts.readme_showcase.visual_kernel.model import validate_visual_spec
 from skill.scripts.readme_showcase.visual_kernel.normalize import normalize_visual_spec
@@ -108,6 +108,7 @@ class BundleContractTests(unittest.TestCase):
                     spec_sha256,
                     hashlib.sha256(scene.canonical_bytes()).hexdigest(),
                     hashlib.sha256(svg).hexdigest(),
+                    count_consistency=CountConsistency(True, 4, 4, 7, ()),
                 )
                 records.append(
                     {

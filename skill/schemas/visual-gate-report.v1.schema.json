@@ -22,7 +22,8 @@
     "spec_sha256",
     "scene_sha256",
     "svg_sha256",
-    "diagnostics"
+    "diagnostics",
+    "count_consistency"
   ],
   "properties": {
     "schema_version": {"const": 1},
@@ -33,7 +34,8 @@
     "diagnostics": {
       "type": "array",
       "items": {"$ref": "#/$defs/diagnostic"}
-    }
+    },
+    "count_consistency": {"$ref": "#/$defs/countConsistency"}
   },
   "allOf": [
     {
@@ -59,6 +61,48 @@
             "contains": {
               "required": ["severity"],
               "properties": {"severity": {"const": "error"}}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "count_consistency": {
+            "required": ["pass"],
+            "properties": {"pass": {"const": false}}
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "diagnostics": {
+            "contains": {
+              "required": ["code"],
+              "properties": {"code": {"const": "E_VISUAL_COUNT"}}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "count_consistency": {
+            "required": ["pass"],
+            "properties": {"pass": {"const": true}}
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "diagnostics": {
+            "not": {
+              "contains": {
+                "required": ["code"],
+                "properties": {"code": {"const": "E_VISUAL_COUNT"}}
+              }
             }
           }
         }
@@ -89,7 +133,8 @@
             "E_VISUAL_TEXT_FIT",
             "E_VISUAL_SVG_SECURITY",
             "E_VISUAL_DETERMINISM",
-            "E_VISUAL_FINGERPRINT"
+            "E_VISUAL_FINGERPRINT",
+            "E_VISUAL_COUNT"
           ]
         },
         "severity": {"enum": ["error", "warning", "info"]},
@@ -100,6 +145,23 @@
           "items": {"type": "string", "minLength": 1}
         },
         "message": {"type": "string"}
+      }
+    },
+    "countConsistency": {
+      "$comment": "Reverse inventory projection: rendered scene element counts must equal the claim-map diagram label count, and both must fit the evidence inventory. A mismatch that exceeds the inventory is a (sample) violation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass", "scene_count", "claim_count", "inventory_count", "mismatches"],
+      "properties": {
+        "pass": {"type": "boolean"},
+        "scene_count": {"type": "integer", "minimum": 0},
+        "claim_count": {"type": "integer", "minimum": 0},
+        "inventory_count": {"type": "integer", "minimum": 0},
+        "mismatches": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
       }
     }
   }

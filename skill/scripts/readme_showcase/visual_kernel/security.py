@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 from ...audit_readme import MAX_SVG_BYTES as _AUDIT_SVG_BYTES, audit_svg_bytes
 from ...pipeline_contracts import ContractError, canonical_json_bytes, read_regular_bytes
-from .diagnostics import VisualDiagnostic, VisualGateReport
+from .diagnostics import VisualDiagnostic, VisualGateReport, validate_count_consistency
 from .interaction import InteractionGraph
 from .model import validate_visual_spec
 from .scene import validate_visual_scene
@@ -49,7 +49,15 @@ _SCHEMA_FIELDS = {
         }
     ),
     "gate": frozenset(
-        {"schema_version", "status", "spec_sha256", "scene_sha256", "svg_sha256", "diagnostics"}
+        {
+            "schema_version",
+            "status",
+            "spec_sha256",
+            "scene_sha256",
+            "svg_sha256",
+            "diagnostics",
+            "count_consistency",
+        }
     ),
 }
 _SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
@@ -154,6 +162,7 @@ def _normalize_gate(value: Any) -> VisualGateReport:
             value.scene_sha256,
             value.svg_sha256,
             value.diagnostics,
+            value.count_consistency,
         )
     if not isinstance(value, Mapping):
         raise _fail("E_SCHEMA_TYPE", "gate must be a VisualGateReport or JSON object")
@@ -184,6 +193,7 @@ def _normalize_gate(value: Any) -> VisualGateReport:
         raw["scene_sha256"],
         raw["svg_sha256"],
         tuple(diagnostics),
+        validate_count_consistency(raw["count_consistency"]),
     )
 
 

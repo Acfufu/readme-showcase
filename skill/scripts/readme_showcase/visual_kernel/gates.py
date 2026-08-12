@@ -15,7 +15,13 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ...pipeline_contracts import ContractError
-from .diagnostics import VISUAL_DIAGNOSTIC_CODES, VisualDiagnostic, VisualGateReport
+from .diagnostics import (
+    VISUAL_DIAGNOSTIC_CODES,
+    CountConsistency,
+    VisualDiagnostic,
+    VisualGateReport,
+    validate_count_consistency,
+)
 from .geometry import validate_visual_geometry
 from .interaction import InteractionGraph
 from .model import VisualSpec, validate_visual_spec
@@ -29,9 +35,18 @@ from .timeline import Timeline
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SCENE_INTENT = "__scene_intent__"
 _REPORT_FIELDS = frozenset(
-    {"schema_version", "status", "spec_sha256", "scene_sha256", "svg_sha256", "diagnostics"}
+    {
+        "schema_version",
+        "status",
+        "spec_sha256",
+        "scene_sha256",
+        "svg_sha256",
+        "diagnostics",
+        "count_consistency",
+    }
 )
 _DIAGNOSTIC_FIELDS = frozenset({"code", "severity", "path", "element_ids", "message"})
+_SCENE_ELEMENT_KINDS = frozenset({"group", "rect", "line", "path"})
 
 
 def _fail(code: str, message: str) -> ContractError:
@@ -281,6 +296,51 @@ def _check_determinism(
     return None
 
 
+def count_consistency_gate(
+    scene_node_count: int,
+    claim_count: int,
+    evidence_inventory: int,
+) -> dict[str, object]:
+    """Reverse inventory gate: scene and claim counts must agree and both
+    must fit the evidence inventory.
+
+    Returns ``{"pass": bool, "mismatches": [...]}``.  A count that exceeds
+    the inventory is a ``(sample)`` violation: the rendered scene or the
+    claims describe more elements than the evidence can support.
+    """
+
+    for name, value in (
+        ("scene_node_count", scene_node_count),
+        ("claim_count", claim_count),
+        ("evidence_inventory", evidence_inventory),
+    ):
+        if type(value) is not int or value < 0:
+            raise _fail("E_SCHEMA_TYPE", f"{name} must be a non-negative integer")
+    mismatches: list[str] = []
+    if scene_node_count != claim_count:
+        mismatches.append(f"scene:{scene_node_count} != claim:{claim_count}")
+    for name, count in (("scene", scene_node_count), ("claim", claim_count)):
+        if count > evidence_inventory:
+            mismatches.append(f"{name}:{count} > inventory:{evidence_inventory} (sample)")
+    return {"pass": not mismatches, "mismatches": sorted(mismatches)}
+
+
+def _scene_element_count(scene: Scene) -> int:
+    return sum(
+        1
+        for item in scene.primitives
+        if item.kind in _SCENE_ELEMENT_KINDS and item.evidence_ids
+    )
+
+
+def _claim_element_count(spec: VisualSpec) -> int:
+    return sum(
+        1
+        for item in (*spec.groups, *spec.lanes, *spec.nodes, *spec.edges)
+        if item.label is not None
+    )
+
+
 def validate_visual_gate_report(value: Any) -> VisualGateReport:
     """Validate a closed Gate Report v1 value without silently reordering it."""
 
@@ -291,6 +351,7 @@ def validate_visual_gate_report(value: Any) -> VisualGateReport:
             value.scene_sha256,
             value.svg_sha256,
             value.diagnostics,
+            value.count_consistency,
         )
     else:
         raw = _strict_mapping(value, _REPORT_FIELDS, "visual gate report")
@@ -321,7 +382,14 @@ def validate_visual_gate_report(value: Any) -> VisualGateReport:
         ordered = tuple(sorted(diagnostics, key=VisualDiagnostic.sort_key))
         if tuple(diagnostics) != ordered:
             raise _fail("E_SCHEMA_VALUE", "visual gate report diagnostics must be canonically sorted")
-        report = VisualGateReport(raw["status"], raw["spec_sha256"], raw["scene_sha256"], raw["svg_sha256"], tuple(diagnostics))
+        report = VisualGateReport(
+            raw["status"],
+            raw["spec_sha256"],
+            raw["scene_sha256"],
+            raw["svg_sha256"],
+            tuple(diagnostics),
+            validate_count_consistency(raw["count_consistency"]),
+        )
     for name in ("spec_sha256", "scene_sha256", "svg_sha256"):
         _hash(getattr(report, name), f"visual gate report.{name}")
     return report
@@ -394,8 +462,37 @@ def run_visual_gates(
     if determinism_diagnostic is not None:
         diagnostics.append(determinism_diagnostic)
 
-    report = VisualGateReport.build(spec_sha256, scene_sha256, svg_sha256, diagnostics)
+    scene_node_count = _scene_element_count(normalized_scene)
+    claim_count = _claim_element_count(normalized_spec)
+    evidence_facts = evidence_graph.get("facts", ()) if isinstance(evidence_graph, Mapping) else ()
+    evidence_inventory = len(evidence_facts)
+    count_result = count_consistency_gate(scene_node_count, claim_count, evidence_inventory)
+    if not count_result["pass"]:
+        diagnostics.append(
+            VisualDiagnostic(
+                "E_VISUAL_COUNT",
+                "error",
+                "$.count_consistency",
+                (),
+                "; ".join(count_result["mismatches"]),
+            )
+        )
+    count_consistency = CountConsistency(
+        count_result["pass"],
+        scene_node_count,
+        claim_count,
+        evidence_inventory,
+        tuple(count_result["mismatches"]),
+    )
+
+    report = VisualGateReport.build(
+        spec_sha256,
+        scene_sha256,
+        svg_sha256,
+        diagnostics,
+        count_consistency=count_consistency,
+    )
     return validate_visual_gate_report(report)
 
 
-__all__ = ["run_visual_gates", "validate_visual_gate_report"]
+__all__ = ["count_consistency_gate", "run_visual_gates", "validate_visual_gate_report"]

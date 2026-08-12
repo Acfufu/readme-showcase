@@ -411,9 +411,19 @@ class OfflinePipelineE2ETests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             target, _ = self.target(base)
-            (target / "README.md").write_text("# Demo\n", encoding="utf-8")
+            # Four repository files keep the compiled diagram's claim count
+            # within the evidence inventory produced by the offline scan.
+            for relative, content in {
+                "README.md": "# Demo\n",
+                "docs/guide.md": "# Guide\n",
+                "src/main.py": "print('demo')\n",
+                "tests/test_main.py": "def test_demo():\n    pass\n",
+            }.items():
+                path = target / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
             git = pr_bundle.PrBundleTests(methodName="runTest")
-            git.git(target, "add", "README.md")
+            git.git(target, "add", ".")
             git.git(target, "commit", "-m", "compiled fixture")
             workspace = base / "workspace"
             plan, candidate, _, _ = pipeline_contracts.BundleAssembleStageTests._compiled_inputs_with_v1_evidence()

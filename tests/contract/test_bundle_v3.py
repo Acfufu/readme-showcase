@@ -17,7 +17,7 @@ from skill.scripts.readme_showcase.generation.assembler import (
     validate_generated_bundle_v3,
 )
 from skill.scripts.readme_showcase.visual_kernel.artifacts import build_compiled_artifacts
-from skill.scripts.readme_showcase.visual_kernel.diagnostics import VisualGateReport
+from skill.scripts.readme_showcase.visual_kernel.diagnostics import CountConsistency, VisualGateReport
 from skill.scripts.readme_showcase.visual_kernel.interaction import derive_interaction
 from skill.scripts.readme_showcase.visual_kernel.model import validate_visual_spec
 from skill.scripts.readme_showcase.visual_kernel.normalize import normalize_visual_spec
@@ -70,6 +70,7 @@ class BundleV3ContractTests(unittest.TestCase):
                     spec_hash,
                     hashlib.sha256(scene.canonical_bytes()).hexdigest(),
                     hashlib.sha256(svg).hexdigest(),
+                    count_consistency=CountConsistency(True, 4, 4, 7, ()),
                 )
                 records.append({
                     "locale": locale,

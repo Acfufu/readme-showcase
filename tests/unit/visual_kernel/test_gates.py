@@ -5,17 +5,25 @@ from dataclasses import replace
 import unittest
 
 from skill.scripts.pipeline_contracts import ContractError
-from skill.scripts.readme_showcase.visual_kernel.diagnostics import VisualDiagnostic, VisualGateReport
+from skill.scripts.readme_showcase.visual_kernel.diagnostics import (
+    VISUAL_DIAGNOSTIC_CODES,
+    CountConsistency,
+    VisualDiagnostic,
+    VisualGateReport,
+)
 from skill.scripts.readme_showcase.visual_kernel.gates import (
+    count_consistency_gate,
     run_visual_gates,
     validate_visual_gate_report,
 )
 from skill.scripts.readme_showcase.visual_kernel.interaction import derive_interaction
 from skill.scripts.readme_showcase.visual_kernel.normalize import normalize_visual_spec
+from skill.scripts.readme_showcase.visual_kernel import scene as scene_module
+from skill.scripts.readme_showcase.visual_kernel.scene import ScenePrimitive
 from skill.scripts.readme_showcase.visual_kernel.svg import serialize_svg
 from skill.scripts.readme_showcase.visual_kernel.theme import resolve_theme
 from skill.scripts.readme_showcase.visual_kernel.timeline import derive_timeline
-from tests.unit.visual_kernel.test_scene import EVIDENCE, _build, _spec
+from tests.unit.visual_kernel.test_scene import EVIDENCE, EVIDENCE_IDS, _build, _spec
 
 
 class VisualGateTests(unittest.TestCase):
@@ -122,6 +130,103 @@ class VisualGateTests(unittest.TestCase):
         with self.assertRaises(ContractError) as raised:
             validate_visual_gate_report(payload)
         self.assertEqual(raised.exception.code, "E_SCHEMA_VALUE")
+
+    def test_report_carries_count_consistency_projection(self) -> None:
+        spec, scene, theme, timeline, interaction, svg = self._inputs()
+        report = run_visual_gates(spec, scene, theme, timeline, interaction, svg, evidence_graph=EVIDENCE)
+        self.assertIsNotNone(report.count_consistency)
+        assert report.count_consistency is not None
+        self.assertIs(report.count_consistency.pass_, True)
+        self.assertEqual(report.count_consistency.scene_count, report.count_consistency.claim_count)
+        self.assertLessEqual(report.count_consistency.claim_count, report.count_consistency.inventory_count)
+        self.assertEqual(report.count_consistency.mismatches, ())
+        payload = report.as_dict()
+        self.assertEqual(validate_visual_gate_report(payload).canonical_bytes(), report.canonical_bytes())
+
+    def test_scene_claim_count_drift_fails_the_count_gate(self) -> None:
+        spec, scene, theme, timeline, interaction, svg = self._inputs()
+        phantom = ScenePrimitive(
+            "rect",
+            "z",
+            "z",
+            (EVIDENCE_IDS[0],),
+            "nodes",
+            2,
+            100,
+            300,
+            100,
+            50,
+        )
+        primitives = list(scene.primitives)
+        primitives.append(phantom)
+        primitives.sort(key=lambda item: (scene_module._LAYER_INDEX[item.layer], item.z, scene_module._id_key(item.id)))
+        scene_bad = replace(scene, primitives=tuple(primitives))
+        svg_bad = serialize_svg(scene_bad, theme)
+        report = run_visual_gates(
+            spec,
+            scene_bad,
+            theme,
+            timeline,
+            interaction,
+            svg_bad,
+            evidence_graph=EVIDENCE,
+        )
+        self.assertEqual(report.status, "fail")
+        self.assertIn("E_VISUAL_COUNT", {item.code for item in report.diagnostics})
+        assert report.count_consistency is not None
+        self.assertIs(report.count_consistency.pass_, False)
+        self.assertIn("scene:5 != claim:4", report.count_consistency.mismatches)
+
+    def test_count_gate_code_is_registered(self) -> None:
+        self.assertIn("E_VISUAL_COUNT", VISUAL_DIAGNOSTIC_CODES)
+
+    def test_count_consistency_projection_validates_as_closed_object(self) -> None:
+        spec, scene, theme, timeline, interaction, svg = self._inputs()
+        report = run_visual_gates(spec, scene, theme, timeline, interaction, svg, evidence_graph=EVIDENCE)
+        payload = report.as_dict()
+        payload["count_consistency"]["mystery"] = True
+        with self.assertRaises(ContractError) as raised:
+            validate_visual_gate_report(payload)
+        self.assertEqual(raised.exception.code, "E_SCHEMA_UNKNOWN_FIELD")
+        passing = CountConsistency(True, 4, 4, 7, ())
+        self.assertTrue(passing.as_dict()["pass"])
+        self.assertEqual(passing.as_dict()["mismatches"], [])
+
+
+class CountConsistencyGateTests(unittest.TestCase):
+    """Reverse inventory gate: rendered scene counts must equal claim counts
+    and both must fit the evidence inventory."""
+
+    def test_equal_counts_within_inventory_pass(self) -> None:
+        result = count_consistency_gate(8, 8, 20)
+        self.assertIs(result["pass"], True)
+        self.assertEqual(result["mismatches"], [])
+
+    def test_scene_claim_mismatch_fails(self) -> None:
+        result = count_consistency_gate(8, 20, 30)
+        self.assertIs(result["pass"], False)
+        self.assertIn("scene:8 != claim:20", result["mismatches"])
+
+    def test_claim_exceeding_inventory_marks_sample(self) -> None:
+        result = count_consistency_gate(8, 20, 12)
+        self.assertIs(result["pass"], False)
+        self.assertIn("claim:20 > inventory:12 (sample)", result["mismatches"])
+
+    def test_scene_exceeding_inventory_marks_sample(self) -> None:
+        result = count_consistency_gate(30, 20, 12)
+        self.assertIs(result["pass"], False)
+        self.assertIn("scene:30 > inventory:12 (sample)", result["mismatches"])
+        self.assertIn("claim:20 > inventory:12 (sample)", result["mismatches"])
+
+    def test_rejects_non_integer_counts(self) -> None:
+        with self.assertRaises(ContractError) as raised:
+            count_consistency_gate("8", 8, 20)
+        self.assertEqual(raised.exception.code, "E_SCHEMA_TYPE")
+
+    def test_rejects_negative_counts(self) -> None:
+        with self.assertRaises(ContractError) as raised:
+            count_consistency_gate(-1, 8, 20)
+        self.assertEqual(raised.exception.code, "E_SCHEMA_TYPE")
 
 
 if __name__ == "__main__":

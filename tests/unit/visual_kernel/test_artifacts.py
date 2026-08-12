@@ -17,7 +17,7 @@ from skill.scripts.readme_showcase.visual_kernel.artifacts import (
     build_compiled_artifacts,
     promote_compiled_artifacts,
 )
-from skill.scripts.readme_showcase.visual_kernel.diagnostics import VisualGateReport
+from skill.scripts.readme_showcase.visual_kernel.diagnostics import CountConsistency, VisualGateReport
 from skill.scripts.readme_showcase.visual_kernel.fingerprint import build_layered_fingerprint
 from skill.scripts.readme_showcase.visual_kernel.interaction import derive_interaction
 from skill.scripts.readme_showcase.visual_kernel.normalize import normalize_visual_spec
@@ -161,6 +161,7 @@ class CompiledArtifactTests(unittest.TestCase):
                     spec_sha256,
                     hashlib.sha256(scene.canonical_bytes()).hexdigest(),
                     hashlib.sha256(svg).hexdigest(),
+                    count_consistency=CountConsistency(True, 4, 4, 7, ()),
                 )
                 records.append(
                     {
