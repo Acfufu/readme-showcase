@@ -78,9 +78,18 @@ _LEAK_PATTERNS: Final = (
             r"|\$(?:HOME|\{HOME\})"
         ),
     ),
+    # Email / `user@host` identities: the host must have >=2 dotted labels and
+    # every label must contain a letter, so version/package syntax (`foo@beta`,
+    # `bar@v1`, `module@v1.2.3`, `target@x86_64`) no longer matches. Tokens that
+    # still look email-shaped (e.g. `python@2x.png`) are accepted residuals:
+    # this is a demo-content gate, not a security boundary, and a capture
+    # containing such a token can be edited and re-recorded.
     (
         "leak-identity",
-        re.compile(r"\b[\w.+-]+@(?:[\w-]*[A-Za-z][\w-]*)(?:\.[\w-]*[A-Za-z][\w-]*)*\b"),
+        re.compile(
+            r"\b[\w.+-]+@(?:[\w-]*[A-Za-z][\w-]*)"
+            r"(?:\.[\w-]*[A-Za-z][\w-]*){1,}\b"
+        ),
     ),
     (
         "leak-credential",
@@ -100,17 +109,25 @@ _LEAK_PATTERNS: Final = (
 # command-observation fact in the repository-evidence graph.
 _GENERIC_SHELL_COMMANDS: Final = frozenset(
     {
-        "awk", "bash", "cat", "cd", "chmod", "cp", "curl", "date", "docker",
-        "echo", "env", "export", "false", "find", "git", "go", "grep", "gzip",
-        "head", "jq", "ls", "make", "mkdir", "mv", "node", "npm", "npx",
-        "pip", "pip3", "poetry", "printf", "pwd", "python", "python3", "rm",
-        "ruby", "sed", "set", "sh", "sleep", "sort", "source", "tail", "tar",
-        "tee", "touch", "tree", "true", "uname", "uniq", "uv", "wc", "wget",
-        "which", "xargs", "yes", "zsh",
+        "apt", "apt-get", "awk", "bash", "brew", "bun", "cargo", "cat", "cd",
+        "chmod", "cp", "curl", "date", "deno", "docker", "docker-compose",
+        "echo", "env", "export", "false", "find", "gh", "git", "go", "grep",
+        "gzip", "head", "jq", "kubectl", "ls", "make", "mkdir", "mv", "node",
+        "npm", "npx", "pip", "pip3", "pnpm", "poetry", "printf", "pwd",
+        "python", "python3", "rm", "ruby", "sed", "set", "sh", "sleep", "sort",
+        "source", "sudo", "tail", "tar", "tee", "touch", "tree", "true",
+        "uname", "uniq", "unzip", "uv", "wc", "wget", "which", "xargs", "yarn",
+        "yes", "zip", "zsh",
     }
 )
 
 _PRINTABLE_RUN: Final = re.compile(rb"[\x20-\x7e]{8,}")
+
+# A `$ token` line is a claimed command only when the token looks like a
+# command: pure amounts (`$ 500`, `$ 1,299.50`) and currency-prefixed tokens
+# (`$ €100`) are money, not commands, and must not fabricate a finding.
+_AMOUNT_TOKEN: Final = re.compile(r"^\d+(?:[.,]\d+)*$")
+_CURRENCY_PREFIX: Final = re.compile(r"^[$€£¥₩₹¢]")
 
 
 class DemoRecordingError(Exception):
@@ -428,6 +445,8 @@ def _claimed_commands(cast_text: str) -> list[str]:
         if not match:
             continue
         command = match.group(1)
+        if _AMOUNT_TOKEN.match(command) or _CURRENCY_PREFIX.match(command):
+            continue
         if command not in seen:
             seen.add(command)
             claimed.append(command)

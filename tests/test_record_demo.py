@@ -484,6 +484,46 @@ class RecordDemoReviewGateTests(unittest.TestCase):
         self.assertFalse(result["pass"])
         self.assertIn("leak-identity", self._kinds(result))
 
+    def test_dotted_email_with_subdomains_still_leaks(self) -> None:
+        result = self._review(cast_with_output("owner name@sub.domain.io"))
+        self.assertFalse(result["pass"])
+        self.assertIn("leak-identity", self._kinds(result))
+
+    def test_single_label_at_syntax_does_not_leak(self) -> None:
+        for line in (
+            "npm install foo@beta",
+            "go get github.com/foo/bar@v1.2.3",
+            "docker pull image:tag target@x86_64",
+            "echo bar@v1",
+        ):
+            with self.subTest(line=line):
+                result = self._review(cast_with_output(line))
+                self.assertTrue(result["pass"], msg=f"false leak-identity for {line!r}")
+
+    def test_currency_line_does_not_fabricate_command(self) -> None:
+        evidence = evidence_with_cli_entrypoint("demo-tool")
+        result = self._review(
+            cast_with_output("$ 500\nprice was $ 1,299.50\n$ €100\n"),
+            evidence=evidence,
+        )
+        self.assertTrue(result["pass"])
+        self.assertEqual(result["findings"], [])
+
+    def test_extended_generic_shell_allowlist_commands_pass(self) -> None:
+        for line in (
+            "$ sudo apt-get install agg",
+            "$ brew install agg",
+            "$ cargo build --release",
+            "$ kubectl get pods",
+            "$ docker-compose up -d",
+            "$ pnpm install && yarn build && bun run dev",
+            "$ deno run main.ts && unzip dist.zip && zip -r bundle.zip dist",
+            "$ gh pr create --fill",
+        ):
+            with self.subTest(line=line):
+                result = self._review(cast_with_output(line))
+                self.assertTrue(result["pass"], msg=f"fabrication for {line!r}")
+
     def test_github_token_leaks_fail(self) -> None:
         token = "ghp_" + "a" * 40
         result = self._review(cast_with_output(f"git push {token}"))
