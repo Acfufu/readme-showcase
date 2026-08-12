@@ -53,7 +53,10 @@ _V3_ARTIFACT_PATHS = {
 }
 _V3_COMPILED_FIELDS = {"inventory", "fingerprint", "retention"}
 _V3_SVG_PATH = re.compile(
-    r"assets/readme-showcase/(?P<locale>[^/]+)/(?P<variant>desktop|mobile)\.svg\Z"
+    r"assets/readme-showcase/(?P<locale>[^/]+)/(?P<name>[^/]+)\.svg\Z"
+)
+_V3_COMPILED_SVG_PATH = re.compile(
+    r"assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\.svg\Z"
 )
 
 
@@ -414,7 +417,7 @@ def _v3_compiled(value: Any) -> dict[str, Any]:
     return {"inventory": inventory, "fingerprint": fingerprint, "retention": "manual"}
 
 
-def _v3_svg_reference(value: Any, context: str) -> tuple[dict[str, str], str, str]:
+def _v3_svg_reference(value: Any, context: str) -> tuple[dict[str, str], str]:
     # Use the v3 path adapter so unsafe paths are normalized to the v3
     # boundary's E_PATH code rather than leaking the legacy evidence code.
     reference = _v3_reference(value, context)
@@ -430,7 +433,7 @@ def _v3_svg_reference(value: Any, context: str) -> tuple[dict[str, str], str, st
         locale = parse_locale(match.group("locale"), f"{context}.locale")
     except ContractError as exc:
         raise ContractError("E_CLAIM_LANGUAGE", f"{context}.path has an unsupported locale") from exc
-    return reference, locale, match.group("variant")
+    return reference, locale
 
 
 def _v3_readmes(
@@ -484,7 +487,7 @@ def _v3_candidate(
     assets: list[dict[str, str]] = []
     seen: set[str] = set()
     for index, raw in enumerate(raw_assets):
-        reference, _, _ = _v3_svg_reference(raw, f"generated bundle.candidate.assets[{index}]")
+        reference, _ = _v3_svg_reference(raw, f"generated bundle.candidate.assets[{index}]")
         if reference["path"] in seen:
             raise ContractError("E_BUNDLE_ASSET", "generated bundle candidate SVG paths must be unique")
         seen.add(reference["path"])
@@ -514,12 +517,32 @@ def _validate_generated_bundle_v3(payload: Any, artifact_root: Path) -> dict[str
     """
 
     _validate_bundle_structure(payload)
-    bundle = _closed(payload, _BUNDLE_V3_FIELDS, "generated bundle")
-    if type(bundle["schema_version"]) is not int or bundle["schema_version"] != GENERATED_BUNDLE_V3_SCHEMA_VERSION:
+    if not isinstance(payload, dict):
+        raise ContractError("E_SCHEMA_TYPE", "generated bundle must be an object")
+    unknown = sorted(set(payload) - _BUNDLE_V3_FIELDS)
+    if unknown:
+        raise ContractError("E_SCHEMA_UNKNOWN_FIELD", f"generated bundle contains unknown field: {unknown[0]}")
+    missing = sorted({"schema_version", "mode", "target", "candidate", "artifacts"} - set(payload))
+    if missing:
+        raise ContractError("E_SCHEMA_MISSING_FIELD", f"generated bundle is missing required field: {missing[0]}")
+    if type(payload["schema_version"]) is not int or payload["schema_version"] != GENERATED_BUNDLE_V3_SCHEMA_VERSION:
         raise ContractError("E_SCHEMA_VERSION", "generated bundle requires schema_version 3")
-    mode = bundle["mode"]
+    mode = payload["mode"]
     if mode not in {"readme", "asset-only", "audit-only"}:
         raise ContractError("E_BUNDLE_MODE", "generated bundle mode is unsupported")
+    has_compiled = "compiled" in payload
+    raw_candidate = payload["candidate"]
+    raw_assets = raw_candidate.get("assets") if isinstance(raw_candidate, Mapping) else None
+    compiled_required = False
+    if isinstance(raw_assets, list):
+        for ref in raw_assets:
+            path_value = ref.get("path") if isinstance(ref, Mapping) else None
+            if isinstance(path_value, str) and _V3_COMPILED_SVG_PATH.fullmatch(path_value) is not None:
+                compiled_required = True
+                break
+    if compiled_required and not has_compiled:
+        raise ContractError("E_SCHEMA_MISSING_FIELD", "generated bundle is missing required field: compiled")
+    bundle = payload
     target = _closed(bundle["target"], _V3_TARGET_FIELDS, "generated bundle.target")
     repository = canonical_repository(target["repository"])
     if target["repository"] != repository:
@@ -546,8 +569,11 @@ def _validate_generated_bundle_v3(payload: Any, artifact_root: Path) -> dict[str
     )
     if plan["schema_version"] != 3:
         raise ContractError("E_SCHEMA_VERSION", "compiled bundle requires README Plan v3")
-    if plan["diagram_route"] != "compiled":
-        raise ContractError("E_BUNDLE_PLAN", "compiled bundle requires Plan v3 diagram_route compiled")
+    if has_compiled:
+        if plan["diagram_route"] != "compiled":
+            raise ContractError("E_BUNDLE_PLAN", "compiled bundle requires Plan v3 diagram_route compiled")
+    elif plan["diagram_route"] == "compiled":
+        raise ContractError("E_BUNDLE_PLAN", "bundle without a compiled projection cannot declare the compiled route")
     candidate, documents = _v3_candidate(bundle["candidate"], plan, artifact_root, mode)
 
     retrieval = _read_json(artifact_root, artifacts["retrieval"], "generated bundle.artifacts.retrieval")
@@ -588,7 +614,9 @@ def _validate_generated_bundle_v3(payload: Any, artifact_root: Path) -> dict[str
     if not claim_ids.issubset(set(plan["evidence_ids"])):
         raise ContractError("E_CLAIM_EVIDENCE", "claim map references evidence outside README plan")
 
-    compiled = _v3_compiled(bundle["compiled"])
+    compiled = None
+    if has_compiled:
+        compiled = _v3_compiled(bundle["compiled"])
     manifest_raw = _read_bytes(
         artifact_root,
         artifacts["asset_manifest"],
@@ -610,56 +638,58 @@ def _validate_generated_bundle_v3(payload: Any, artifact_root: Path) -> dict[str
     )
     if canonical_json_bytes(manifest) != manifest_raw:
         raise ContractError("E_BUNDLE_HASH", "generated bundle asset manifest is not canonical")
-    if not isinstance(manifest.get("compiled"), Mapping):
-        raise ContractError("E_VISUAL_FINGERPRINT", "generated bundle asset manifest lacks compiled projection")
-    manifest_compiled = manifest["compiled"]
-    manifest_spec = manifest_compiled["spec"]
-    if manifest_spec["sha256"] != hashlib.sha256(raw_spec).hexdigest():
-        raise ContractError("E_VISUAL_FINGERPRINT", "Asset Manifest compiled spec differs from stage-5 Visual Spec")
-    compiled_spec_path = artifact_root / "compiled" / "visual-spec.json"
-    try:
-        compiled_spec_raw = read_regular_bytes(compiled_spec_path, maximum=MAX_COMPILED_BYTES, path_code="E_PATH", size_code="E_INPUT_SIZE")
-    except ContractError as exc:
-        if exc.code == "E_INPUT_NOT_FOUND":
-            raise ContractError("E_VISUAL_PATH", "stage-6 compiled Visual Spec is unavailable") from exc
-        raise
-    if compiled_spec_raw != raw_spec:
-        raise ContractError("E_VISUAL_FINGERPRINT", "stage-6 compiled Visual Spec differs from stage-5 source")
-    if compiled["inventory"] != manifest_compiled["inventory"]:
-        raise ContractError("E_VISUAL_FINGERPRINT", "bundle compiled inventory differs from Asset Manifest")
-    inventory_raw = _read_bytes(
-        artifact_root,
-        compiled["inventory"],
-        "generated bundle.compiled.inventory",
-        maximum=MAX_COMPILED_BYTES,
-    )
-    try:
-        inventory = json.loads(inventory_raw)
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
-        raise ContractError("E_VISUAL_FINGERPRINT", "compiled inventory must be canonical JSON") from exc
-    if not isinstance(inventory, dict) or inventory.get("inventory_sha256") != compiled["fingerprint"]:
-        raise ContractError("E_VISUAL_FINGERPRINT", "bundle compiled fingerprint differs from inventory")
+    if has_compiled:
+        assert compiled is not None
+        if not isinstance(manifest.get("compiled"), Mapping):
+            raise ContractError("E_VISUAL_FINGERPRINT", "generated bundle asset manifest lacks compiled projection")
+        manifest_compiled = manifest["compiled"]
+        manifest_spec = manifest_compiled["spec"]
+        if manifest_spec["sha256"] != hashlib.sha256(raw_spec).hexdigest():
+            raise ContractError("E_VISUAL_FINGERPRINT", "Asset Manifest compiled spec differs from stage-5 Visual Spec")
+        compiled_spec_path = artifact_root / "compiled" / "visual-spec.json"
+        try:
+            compiled_spec_raw = read_regular_bytes(compiled_spec_path, maximum=MAX_COMPILED_BYTES, path_code="E_PATH", size_code="E_INPUT_SIZE")
+        except ContractError as exc:
+            if exc.code == "E_INPUT_NOT_FOUND":
+                raise ContractError("E_VISUAL_PATH", "stage-6 compiled Visual Spec is unavailable") from exc
+            raise
+        if compiled_spec_raw != raw_spec:
+            raise ContractError("E_VISUAL_FINGERPRINT", "stage-6 compiled Visual Spec differs from stage-5 source")
+        if compiled["inventory"] != manifest_compiled["inventory"]:
+            raise ContractError("E_VISUAL_FINGERPRINT", "bundle compiled inventory differs from Asset Manifest")
+        inventory_raw = _read_bytes(
+            artifact_root,
+            compiled["inventory"],
+            "generated bundle.compiled.inventory",
+            maximum=MAX_COMPILED_BYTES,
+        )
+        try:
+            inventory = json.loads(inventory_raw)
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+            raise ContractError("E_VISUAL_FINGERPRINT", "compiled inventory must be canonical JSON") from exc
+        if not isinstance(inventory, dict) or inventory.get("inventory_sha256") != compiled["fingerprint"]:
+            raise ContractError("E_VISUAL_FINGERPRINT", "bundle compiled fingerprint differs from inventory")
 
-    manifest_svg_refs = {
-        (asset["locale"], asset["variant"]): {
-            "path": asset["path"],
-            "sha256": asset["artifact_sha256"],
+        diagram_svg_refs = {
+            (asset["locale"], asset["variant"]): {
+                "path": asset["path"],
+                "sha256": asset["artifact_sha256"],
+            }
+            for asset in manifest["assets"]
+            if asset["role"] == "diagram"
         }
-        for asset in manifest["assets"]
+        expected_svg_keys = {
+            (spec.locale, variant)
+            for variant in spec.variants
+        }
+        if set(diagram_svg_refs) != expected_svg_keys:
+            raise ContractError("E_CLAIM_LANGUAGE", "Asset Manifest SVG variants must pair Visual Spec locale/variants")
+    candidate_svg_refs: dict[str, str] = {
+        ref["path"]: ref["sha256"] for ref in candidate["assets"]
     }
-    plan_locales = {entry["tag"] for entry in plan["locales"]}
-    expected_svg_keys = {
-        (spec.locale, variant)
-        for variant in spec.variants
+    manifest_svg_refs = {
+        asset["path"]: asset["artifact_sha256"] for asset in manifest["assets"]
     }
-    if spec.locale not in plan_locales:
-        raise ContractError("E_CLAIM_LANGUAGE", "Visual Spec locale is absent from README Plan v3")
-    if set(manifest_svg_refs) != expected_svg_keys:
-        raise ContractError("E_CLAIM_LANGUAGE", "Asset Manifest SVG variants must pair Visual Spec locale/variants")
-    candidate_svg_refs: dict[tuple[str, str], dict[str, str]] = {}
-    for index, ref in enumerate(candidate["assets"]):
-        normalized, locale, variant = _v3_svg_reference(ref, f"generated bundle.candidate.assets[{index}]")
-        candidate_svg_refs[(locale, variant)] = normalized
     if candidate_svg_refs != manifest_svg_refs and mode in {"readme", "asset-only"}:
         raise ContractError("E_BUNDLE_ASSET", "candidate SVGs must close over Asset Manifest v3 assets")
     if mode == "audit-only" and candidate_svg_refs:
@@ -668,20 +698,24 @@ def _validate_generated_bundle_v3(payload: Any, artifact_root: Path) -> dict[str
     if not asset_ids.issubset(set(plan["evidence_ids"])):
         raise ContractError("E_CLAIM_EVIDENCE", "asset manifest references evidence outside README plan")
 
-    # Reuse Task 36's trust boundary for complete inventory closure, no-follow
-    # ancestry, exact hashes, and rejection of extra/missing compiled or SVG
-    # files.  It intentionally receives the full bundle shape.
-    load_compiled_visual(artifact_root, bundle)
-    return {
+    if has_compiled:
+        # Reuse Task 36's trust boundary for complete inventory closure, no-follow
+        # ancestry, exact hashes, and rejection of extra/missing compiled or SVG
+        # files.  It intentionally receives the full bundle shape.
+        load_compiled_visual(artifact_root, bundle)
+    report: dict[str, object] = {
         "schema_version": 3,
         "status": "pass",
         "mode": mode,
         "bundle_sha256": canonical_sha256(bundle),
         "evidence_sha256": evidence["evidence_sha256"],
         "candidate_sha256": candidate["candidate_sha256"],
-        "inventory_sha256": compiled["fingerprint"],
         "candidate_count": len(candidate["readmes"]) + len(candidate["assets"]),
     }
+    if has_compiled:
+        assert compiled is not None
+        report["inventory_sha256"] = compiled["fingerprint"]
+    return report
 
 
 def validate_generated_bundle_v3(payload: Any, artifact_root: Path) -> dict[str, object]:

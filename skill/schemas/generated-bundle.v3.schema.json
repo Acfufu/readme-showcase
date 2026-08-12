@@ -9,7 +9,7 @@
   },
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "mode", "target", "candidate", "artifacts", "compiled"],
+  "required": ["schema_version", "mode", "target", "candidate", "artifacts"],
   "properties": {
     "schema_version": {"const": 3},
     "mode": {"enum": ["readme", "asset-only", "audit-only"]},
@@ -30,6 +30,23 @@
     {
       "if": {"properties": {"mode": {"const": "audit-only"}}},
       "then": {"properties": {"candidate": {"properties": {"readmes": {"maxItems": 0}, "assets": {"maxItems": 0}}}}}
+    },
+    {
+      "if": {
+        "properties": {
+          "candidate": {
+            "properties": {
+              "assets": {
+                "contains": {
+                  "properties": {"path": {"type": "string", "pattern": "(?:desktop|mobile)\\.svg$"}},
+                  "required": ["path"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {"required": ["compiled"]}
     }
   ],
   "$defs": {
@@ -52,7 +69,7 @@
       "additionalProperties": false,
       "required": ["path", "sha256"],
       "properties": {
-        "path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.svg$"},
+        "path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/[^/]+\\.svg$"},
         "sha256": {"$ref": "#/$defs/sha256"}
       }
     },

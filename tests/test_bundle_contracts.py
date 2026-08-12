@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from jsonschema import Draft202012Validator
+
 
 _CONTRACTS = importlib.import_module("skill.scripts.pipeline_contracts")
 _CORE = importlib.import_module("skill.scripts.pipeline_core")
@@ -779,7 +781,7 @@ class BundleContractTests(unittest.TestCase):
                 elif case == "candidate-drift":
                     candidate_assets[0]["sha256"] = "0" * 64
                 elif case == "wrong-role":
-                    candidate["assets"][0]["role"] = "hero"
+                    candidate["assets"][0]["role"] = "thumbnail"
                 with self.assertRaises(ContractError) as raised:
                     validate_asset_manifest(
                         candidate,
@@ -1030,6 +1032,302 @@ class BundleContractTests(unittest.TestCase):
                     if name.startswith("version-only"):
                         self.assertEqual(raised.exception.code, "E_SCHEMA_VERSION")
                     validate_v1.assert_not_called()
+
+    # --- Task 2.4: asset+bundle dual-form, dual top-level if/then ---
+
+    def _asset_manifest_v3_schema(self) -> dict[str, Any]:
+        return json.loads(
+            (REPO_ROOT / "skill/schemas/asset-manifest.v3.schema.json").read_text(
+                encoding="utf-8",
+            )
+        )
+
+    def _generated_bundle_v3_schema(self) -> dict[str, Any]:
+        return json.loads(
+            (REPO_ROOT / "skill/schemas/generated-bundle.v3.schema.json").read_text(
+                encoding="utf-8",
+            )
+        )
+
+    def make_motion_manifest(self, root: Path) -> dict[str, Any]:
+        """A v3 manifest whose assets are all motion-pipeline products.
+
+        Static frames use the hero role and ``*-static.svg`` paths; animated
+        outputs use the animation role and plain ``*.svg`` paths.  Neither
+        form carries a scene or gate hash, so no compiled projection exists.
+        """
+        hero = self.write_bytes(
+            root,
+            "assets/readme-showcase/en/hero-static.svg",
+            self.valid_svg("Hero static fallback"),
+        )
+        animation = self.write_bytes(
+            root,
+            "assets/readme-showcase/en/hero.svg",
+            self.valid_svg("Animated hero"),
+        )
+        fact_id = EVIDENCE["facts"][0]["fact_id"]
+        return {
+            "schema_version": 3,
+            "assets": [
+                {
+                    "asset_id": "hero-en",
+                    "path": hero["path"],
+                    "artifact_sha256": hero["sha256"],
+                    "evidence_ids": [fact_id],
+                    "role": "hero",
+                    "locale": "en",
+                    "variant": "desktop",
+                },
+                {
+                    "asset_id": "animation-en",
+                    "path": animation["path"],
+                    "artifact_sha256": animation["sha256"],
+                    "evidence_ids": [fact_id],
+                    "role": "animation",
+                    "locale": "en",
+                    "variant": "desktop",
+                },
+            ],
+        }
+
+    def make_motion_bundle(self, root: Path) -> dict[str, Any]:
+        """Materialize a complete motion-only v3 bundle with no compiled field."""
+        manifest = self.make_motion_manifest(root)
+        readme_raw = b"# Overview\n\nDetails\n"
+        self.write_bytes(root, "README.md", readme_raw)
+        plan = {
+            "schema_version": 3,
+            "mode": "readme",
+            "locales": [{"tag": "en", "readme_path": "README.md"}],
+            "sections": ["overview"],
+            "visual_intent": "project structure",
+            "diagram_route": "static",
+            "commands": [],
+            "evidence_ids": [fact["fact_id"] for fact in EVIDENCE["facts"]],
+        }
+        self.write_json(root, "readme-plan.json", plan)
+        self.write_json(
+            root,
+            "retrieval-packet.json",
+            {"schema_version": 1, "status": "unavailable", "records": []},
+        )
+        self.write_json(root, "repository-evidence.json", EVIDENCE)
+        spec_payload = _spec("flow")
+        spec = validate_visual_spec(spec_payload, evidence_graph=EVIDENCE)
+        self.write_json(root, "visual-spec.json", spec_payload)
+        blocks = _ASSEMBLER.canonical_markdown_blocks(readme_raw)
+        markdown_claims = [
+            {
+                "claim_id": f"markdown:en:{'overview' if ordinal == 0 else 'details'}",
+                "content_sha256": "0" * 64,
+                "claim_kind": "factual",
+                "evidence_ids": [EVIDENCE["facts"][0]["fact_id"]],
+                "language_pair_id": None,
+                "support_level": "direct",
+            }
+            for ordinal in range(len(blocks))
+        ]
+        markdown_claims.sort(key=lambda item: str(item["claim_id"]))
+        for claim, block in zip(markdown_claims, blocks, strict=True):
+            claim["content_sha256"] = hashlib.sha256(block).hexdigest()
+        labels = []
+        for collection in (spec.nodes, spec.edges, spec.groups, spec.lanes):
+            for element in collection:
+                if element.label is None:
+                    continue
+                labels.append(
+                    {
+                        "claim_id": f"diagram:{spec.locale}:{element.id}",
+                        "content_sha256": hashlib.sha256(
+                            element.label.encode("utf-8"),
+                        ).hexdigest(),
+                        "claim_kind": "factual",
+                        "evidence_ids": list(element.evidence_ids),
+                        "language_pair_id": None,
+                        "support_level": "direct",
+                        "element_id": element.id,
+                    }
+                )
+        self.write_json(
+            root,
+            "claim-map.json",
+            {
+                "schema_version": 3,
+                "markdown_blocks": sorted(markdown_claims, key=lambda item: str(item["claim_id"])),
+                "diagram_labels": sorted(labels, key=lambda item: str(item["claim_id"])),
+            },
+        )
+        self.write_json(root, "asset-manifest.json", manifest)
+        artifacts = {
+            name: {
+                "path": path,
+                "sha256": hashlib.sha256((root / path).read_bytes()).hexdigest(),
+            }
+            for name, path in {
+                "plan": "readme-plan.json",
+                "retrieval": "retrieval-packet.json",
+                "evidence": "repository-evidence.json",
+                "claim_map": "claim-map.json",
+                "visual_spec": "visual-spec.json",
+                "asset_manifest": "asset-manifest.json",
+            }.items()
+        }
+        candidate = {
+            "readmes": [
+                {"path": "README.md", "sha256": hashlib.sha256(readme_raw).hexdigest()},
+            ],
+            "assets": [
+                {"path": asset["path"], "sha256": asset["artifact_sha256"]}
+                for asset in manifest["assets"]
+            ],
+        }
+        candidate["candidate_sha256"] = canonical_sha256(
+            {"readmes": candidate["readmes"], "assets": candidate["assets"]}
+        )
+        return {
+            "schema_version": 3,
+            "mode": "readme",
+            "target": {"repository": "owner/repo", "base_sha": "a" * 40},
+            "candidate": candidate,
+            "artifacts": artifacts,
+        }
+
+    def test_asset_manifest_v3_motion_assets_pass_without_scene_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = self.make_motion_manifest(root)
+            normalized = validate_asset_manifest(
+                manifest,
+                evidence_graph=EVIDENCE,
+                artifact_root=root,
+            )
+            self.assertEqual(normalized, manifest)
+            self.assertEqual(
+                canonical_asset_manifest_bytes(
+                    manifest,
+                    evidence_graph=EVIDENCE,
+                    artifact_root=root,
+                ),
+                canonical_json_bytes(manifest),
+            )
+            self.assertEqual(
+                list(Draft202012Validator(self._asset_manifest_v3_schema()).iter_errors(manifest)),
+                [],
+            )
+
+    def test_asset_manifest_v3_motion_assets_reject_compiled_only_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = self.make_motion_manifest(root)
+            manifest["assets"][0]["scene_sha256"] = "0" * 64
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_SCHEMA_UNKNOWN_FIELD")
+            self.assertTrue(
+                Draft202012Validator(self._asset_manifest_v3_schema()).is_valid(manifest) is False
+            )
+
+            manifest = self.make_motion_manifest(root)
+            manifest["assets"][1]["path"] = "assets/readme-showcase/en/desktop.svg"
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_PATH")
+
+            manifest = self.make_motion_manifest(root)
+            manifest["assets"][0]["role"] = "thumbnail"
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_BUNDLE_ASSET")
+
+    def test_asset_manifest_v3_compiled_required_only_when_diagram_assets_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest, candidates, evidence = self.make_compiled_asset_manifest(root)
+            del manifest["compiled"]
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(
+                    manifest,
+                    evidence_graph=evidence,
+                    artifact_root=root,
+                    candidate_assets=candidates,
+                )
+            self.assertEqual(raised.exception.code, "E_SCHEMA_MISSING_FIELD")
+            self.assertTrue(
+                Draft202012Validator(self._asset_manifest_v3_schema()).is_valid(manifest) is False
+            )
+
+    def test_asset_manifest_v3_mixed_compiled_and_motion_assets_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest, candidates, evidence = self.make_compiled_asset_manifest(root)
+            motion = self.write_bytes(
+                root,
+                "assets/readme-showcase/en/hero-static.svg",
+                self.valid_svg("Hero static fallback"),
+            )
+            manifest["assets"].append(
+                {
+                    "asset_id": "hero-en",
+                    "path": motion["path"],
+                    "artifact_sha256": motion["sha256"],
+                    "evidence_ids": [evidence["facts"][0]["fact_id"]],
+                    "role": "hero",
+                    "locale": "en",
+                    "variant": "desktop",
+                }
+            )
+            manifest["assets"].sort(key=lambda item: item["path"])
+            normalized = validate_asset_manifest(
+                manifest,
+                evidence_graph=evidence,
+                artifact_root=root,
+                candidate_assets=candidates,
+            )
+            self.assertEqual(normalized, manifest)
+            self.assertEqual(
+                list(Draft202012Validator(self._asset_manifest_v3_schema()).iter_errors(manifest)),
+                [],
+            )
+
+    def test_generated_bundle_v3_motion_only_passes_without_compiled_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self.make_motion_bundle(root)
+            report = validate_generated_bundle(bundle, root)
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["candidate_count"], 3)
+            self.assertNotIn("inventory_sha256", report)
+            self.assertEqual(
+                list(Draft202012Validator(self._generated_bundle_v3_schema()).iter_errors(bundle)),
+                [],
+            )
+
+    def test_generated_bundle_v3_compiled_missing_with_diagram_candidates_fails(self) -> None:
+        from tests.contract.test_bundle_v3 import BundleV3ContractTests
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = BundleV3ContractTests().make_bundle(root)
+            del bundle["compiled"]
+            with self.assertRaises(ContractError) as raised:
+                validate_generated_bundle(bundle, root)
+            self.assertEqual(raised.exception.code, "E_SCHEMA_MISSING_FIELD")
+            self.assertTrue(
+                Draft202012Validator(self._generated_bundle_v3_schema()).is_valid(bundle) is False
+            )
+
+    def test_generated_bundle_v3_motion_candidates_with_compiled_route_plan_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self.make_motion_bundle(root)
+            plan = json.loads((root / "readme-plan.json").read_text(encoding="utf-8"))
+            plan["diagram_route"] = "compiled"
+            self.write_json(root, "readme-plan.json", plan)
+            bundle["artifacts"]["plan"]["sha256"] = hashlib.sha256(
+                (root / "readme-plan.json").read_bytes(),
+            ).hexdigest()
+            self.assert_code(root, bundle, "E_BUNDLE_PLAN")
 
 
 if __name__ == "__main__":

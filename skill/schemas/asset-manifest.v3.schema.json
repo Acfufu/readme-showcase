@@ -9,12 +9,24 @@
   },
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "assets", "compiled"],
+  "required": ["schema_version", "assets"],
   "properties": {
     "schema_version": {"const": 3},
     "assets": {"type": "array", "minItems": 1, "maxItems": 10000, "items": {"$ref": "#/$defs/asset"}},
     "compiled": {"$ref": "#/$defs/compiled"}
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "assets": {
+            "contains": {"properties": {"role": {"const": "diagram"}}, "required": ["role"]}
+          }
+        }
+      },
+      "then": {"required": ["compiled"]}
+    }
+  ],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "text": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "^[^\\u0000]+$"},
@@ -141,19 +153,48 @@
     "asset": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["asset_id", "path", "artifact_sha256", "evidence_ids", "role", "locale", "variant", "scene_sha256", "gate_sha256"],
+      "required": ["asset_id", "path", "artifact_sha256", "evidence_ids", "role", "locale", "variant"],
       "properties": {
         "asset_id": {"$ref": "#/$defs/text"},
-        "path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.svg$"},
+        "path": {"$ref": "#/$defs/path"},
         "artifact_sha256": {"$ref": "#/$defs/sha256"},
         "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 10000, "uniqueItems": true, "items": {"$ref": "#/$defs/evidenceId"}},
-        "role": {"const": "diagram"},
+        "role": {"enum": ["diagram", "hero", "animation"]},
         "locale": {"$ref": "#/$defs/locale"},
         "variant": {"$ref": "#/$defs/variant"},
         "scene_sha256": {"$ref": "#/$defs/sha256"},
         "gate_sha256": {"$ref": "#/$defs/sha256"},
         "provenance": {"$ref": "#/$defs/provenance"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"role": {"const": "diagram"}}, "required": ["role"]},
+          "then": {
+            "properties": {"path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.svg$"}},
+            "required": ["scene_sha256", "gate_sha256"]
+          }
+        },
+        {
+          "if": {"properties": {"role": {"const": "hero"}}, "required": ["role"]},
+          "then": {
+            "properties": {
+              "path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/[^/]+-static\\.svg$"},
+              "scene_sha256": false,
+              "gate_sha256": false
+            }
+          }
+        },
+        {
+          "if": {"properties": {"role": {"const": "animation"}}, "required": ["role"]},
+          "then": {
+            "properties": {
+              "path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/[^/]+\\.svg$"},
+              "scene_sha256": false,
+              "gate_sha256": false
+            }
+          }
+        }
+      ]
     }
   }
 }

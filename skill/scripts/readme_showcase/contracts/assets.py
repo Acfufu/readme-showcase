@@ -31,10 +31,21 @@ _V3_COMPILED_FIELDS = {
 _V3_REF_FIELDS = {"path", "sha256"}
 _V3_VARIANT_REF_FIELDS = {"locale", "variant", "path", "sha256"}
 _V3_ASSET_REQUIRED_FIELDS = {
-    "asset_id", "path", "artifact_sha256", "evidence_ids", "role", "locale", "variant", "scene_sha256", "gate_sha256",
+    "asset_id", "path", "artifact_sha256", "evidence_ids", "role", "locale", "variant",
 }
 _V3_ASSET_OPTIONAL_FIELDS = {"provenance"}
-_V3_ASSET_ROLES = frozenset({"diagram"})
+_V3_DIAGRAM_ONLY_FIELDS = {"scene_sha256", "gate_sha256"}
+_V3_ASSET_ROLES = frozenset({"diagram", "hero", "animation"})
+_V3_MOTION_ROLES = _V3_ASSET_ROLES - {"diagram"}
+_V3_COMPILED_ASSET_PATH = re.compile(
+    r"^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\.svg\Z"
+)
+_V3_HERO_ASSET_PATH = re.compile(
+    r"^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/[^/]+-static\.svg\Z"
+)
+_V3_ANIMATION_ASSET_PATH = re.compile(
+    r"^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/[^/]+\.svg\Z"
+)
 _V3_VARIANT_COLLECTIONS = {
     "scenes": "compiled/scenes/{locale}/{variant}.json",
     "gates": "compiled/gates/{locale}/{variant}.json",
@@ -334,70 +345,94 @@ def _validate_asset_manifest_v3(
     _reject_float(payload)
     if artifact_root is None:
         raise ContractError("E_INPUT_PATH", "asset manifest v3 requires an artifact root")
-    manifest = _closed(payload, {"schema_version", "assets", "compiled"}, "asset manifest")
-    if type(manifest["schema_version"]) is not int or manifest["schema_version"] != ASSET_MANIFEST_V3_SCHEMA_VERSION:
+    if not isinstance(payload, dict):
+        raise ContractError("E_SCHEMA_TYPE", "asset manifest must be an object")
+    unknown = sorted(set(payload) - {"schema_version", "assets", "compiled"})
+    if unknown:
+        raise ContractError("E_SCHEMA_UNKNOWN_FIELD", f"asset manifest contains unknown field: {unknown[0]}")
+    if type(payload["schema_version"]) is not int or payload["schema_version"] != ASSET_MANIFEST_V3_SCHEMA_VERSION:
         raise ContractError("E_SCHEMA_VERSION", "asset manifest requires schema_version 3")
-    compiled = _closed(manifest["compiled"], _V3_COMPILED_FIELDS, "asset manifest.compiled")
-    single_refs = {
-        name: _v3_ref(compiled[name], f"asset manifest.compiled.{name}", expected_path=path)
-        for name, path in _V3_SINGLE_REFS.items()
-    }
-    variant_refs = {
-        name: _v3_variant_refs(compiled[name], name)
-        for name in _V3_VARIANT_COLLECTIONS
-    }
-    identities = _v3_identity(compiled["identities"])
-    compiled_normalized = {**single_refs, **variant_refs, "identities": identities}
-    inventory, fingerprint = _v3_inventory(compiled_normalized, artifact_root=artifact_root)
-    layers = inventory["layers"]
-    _v3_compare_variant_refs("scenes", variant_refs["scenes"], layers[1]["records"])
-    _v3_compare_variant_refs("gates", variant_refs["gates"], layers[4]["records"])
-    _v3_compare_variant_refs("timelines", variant_refs["timelines"], layers[5]["records"])
-    _v3_compare_variant_refs("interactions", variant_refs["interactions"], layers[6]["records"])
-
-    inventory_artifacts = {
-        record["path"]: record["sha256"]
-        for record in layers[7]["records"]
-    }
-    referenced_artifacts = {
-        single_refs["spec"]["path"]: single_refs["spec"]["sha256"],
-        single_refs["theme"]["path"]: single_refs["theme"]["sha256"],
-        **{ref["path"]: ref["sha256"] for refs in variant_refs.values() for ref in refs},
-    }
-    if referenced_artifacts != inventory_artifacts:
-        raise ContractError("E_VISUAL_FINGERPRINT", "asset manifest compiled refs do not close over inventory artifacts")
-    compiled_files = {"compiled/inventory.json": canonical_json_bytes(inventory)}
-    for path, digest in referenced_artifacts.items():
-        raw = _v3_read(artifact_root, path, f"asset manifest compiled.{path}")
-        if hashlib.sha256(raw).hexdigest() != digest:
-            raise ContractError("E_BUNDLE_HASH", f"asset manifest compiled artifact bytes changed: {path}")
-        compiled_files[path] = raw
-    # Local import avoids coupling the v2 contract path to visual-kernel setup.
-    from ..visual_kernel.artifacts import _preflight_files
-
-    _preflight_files(compiled_files, require_inventory=True)
-
-    if evidence_graph is not None:
-        graph = validate_evidence_graph(dict(evidence_graph))
-        known_ids = {fact["fact_id"] for fact in graph["facts"]}
-    else:
-        known_ids = None
-    if candidate_assets is not None:
-        candidates: dict[str, str] = {}
-        for index, reference in enumerate(candidate_assets):
-            ref = _closed(reference, {"path", "sha256"}, f"candidate.assets[{index}]")
-            path = _path(ref["path"], f"candidate.assets[{index}].path")
-            if path in candidates:
-                raise ContractError("E_BUNDLE_ASSET", "candidate assets contain duplicate path")
-            candidates[path] = _sha(ref["sha256"], f"candidate.assets[{index}].sha256")
-        spec_hash = hashlib.sha256(_v3_read(artifact_root, single_refs["spec"]["path"], "asset manifest compiled.spec")).hexdigest()
-        if candidates.get("visual-spec.json") != spec_hash:
-            raise ContractError("E_BUNDLE_HASH", "candidate visual-spec.json does not bind compiled spec bytes")
-
-    raw_assets = manifest["assets"]
+    raw_assets = payload["assets"]
     if not isinstance(raw_assets, list) or len(raw_assets) > MAX_ASSETS:
         raise ContractError("E_SCHEMA_TYPE", f"asset manifest.assets must contain at most {MAX_ASSETS} entries")
-    svg_refs = {(ref["locale"], ref["variant"]): ref for ref in variant_refs["svgs"]}
+    has_compiled = "compiled" in payload
+    if not has_compiled and any(
+        isinstance(raw, dict) and raw.get("role") == "diagram" for raw in raw_assets
+    ):
+        raise ContractError("E_SCHEMA_MISSING_FIELD", "asset manifest is missing required field: compiled")
+
+    compiled: dict[str, Any] | None = None
+    compiled_normalized: dict[str, Any] | None = None
+    variant_refs: dict[str, list[dict[str, str]]] | None = None
+    if has_compiled:
+        compiled = _closed(payload["compiled"], _V3_COMPILED_FIELDS, "asset manifest.compiled")
+        single_refs = {
+            name: _v3_ref(compiled[name], f"asset manifest.compiled.{name}", expected_path=path)
+            for name, path in _V3_SINGLE_REFS.items()
+        }
+        variant_refs = {
+            name: _v3_variant_refs(compiled[name], name)
+            for name in _V3_VARIANT_COLLECTIONS
+        }
+        identities = _v3_identity(compiled["identities"])
+        compiled_normalized = {**single_refs, **variant_refs, "identities": identities}
+        inventory, _ = _v3_inventory(compiled_normalized, artifact_root=artifact_root)
+        layers = inventory["layers"]
+        _v3_compare_variant_refs("scenes", variant_refs["scenes"], layers[1]["records"])
+        _v3_compare_variant_refs("gates", variant_refs["gates"], layers[4]["records"])
+        _v3_compare_variant_refs("timelines", variant_refs["timelines"], layers[5]["records"])
+        _v3_compare_variant_refs("interactions", variant_refs["interactions"], layers[6]["records"])
+
+        inventory_artifacts = {
+            record["path"]: record["sha256"]
+            for record in layers[7]["records"]
+        }
+        referenced_artifacts = {
+            single_refs["spec"]["path"]: single_refs["spec"]["sha256"],
+            single_refs["theme"]["path"]: single_refs["theme"]["sha256"],
+            **{ref["path"]: ref["sha256"] for refs in variant_refs.values() for ref in refs},
+        }
+        if referenced_artifacts != inventory_artifacts:
+            raise ContractError("E_VISUAL_FINGERPRINT", "asset manifest compiled refs do not close over inventory artifacts")
+        compiled_files = {"compiled/inventory.json": canonical_json_bytes(inventory)}
+        for path, digest in referenced_artifacts.items():
+            raw = _v3_read(artifact_root, path, f"asset manifest compiled.{path}")
+            if hashlib.sha256(raw).hexdigest() != digest:
+                raise ContractError("E_BUNDLE_HASH", f"asset manifest compiled artifact bytes changed: {path}")
+            compiled_files[path] = raw
+        # Local import avoids coupling the v2 contract path to visual-kernel setup.
+        from ..visual_kernel.artifacts import _preflight_files
+
+        _preflight_files(compiled_files, require_inventory=True)
+
+        if evidence_graph is not None:
+            graph = validate_evidence_graph(dict(evidence_graph))
+            known_ids = {fact["fact_id"] for fact in graph["facts"]}
+        else:
+            known_ids = None
+        if candidate_assets is not None:
+            candidates: dict[str, str] = {}
+            for index, reference in enumerate(candidate_assets):
+                ref = _closed(reference, {"path", "sha256"}, f"candidate.assets[{index}]")
+                path = _path(ref["path"], f"candidate.assets[{index}].path")
+                if path in candidates:
+                    raise ContractError("E_BUNDLE_ASSET", "candidate assets contain duplicate path")
+                candidates[path] = _sha(ref["sha256"], f"candidate.assets[{index}].sha256")
+            spec_hash = hashlib.sha256(_v3_read(artifact_root, single_refs["spec"]["path"], "asset manifest compiled.spec")).hexdigest()
+            if candidates.get("visual-spec.json") != spec_hash:
+                raise ContractError("E_BUNDLE_HASH", "candidate visual-spec.json does not bind compiled spec bytes")
+    else:
+        if evidence_graph is not None:
+            graph = validate_evidence_graph(dict(evidence_graph))
+            known_ids = {fact["fact_id"] for fact in graph["facts"]}
+        else:
+            known_ids = None
+
+    svg_refs = (
+        {(ref["locale"], ref["variant"]): ref for ref in variant_refs["svgs"]}
+        if variant_refs is not None
+        else {}
+    )
     normalized_assets: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     seen_paths: set[str] = set()
@@ -405,6 +440,66 @@ def _validate_asset_manifest_v3(
         context = f"asset manifest.assets[{index}]"
         if not isinstance(raw, dict):
             raise ContractError("E_SCHEMA_TYPE", f"{context} must be an object")
+        role = raw.get("role")
+        if not isinstance(role, str) or role not in _V3_ASSET_ROLES:
+            raise ContractError("E_BUNDLE_ASSET", f"{context}.role is unsupported")
+        if role == "diagram":
+            assert variant_refs is not None
+            unknown = sorted(set(raw) - _V3_ASSET_REQUIRED_FIELDS - _V3_ASSET_OPTIONAL_FIELDS - _V3_DIAGRAM_ONLY_FIELDS)
+            missing = sorted((_V3_ASSET_REQUIRED_FIELDS | _V3_DIAGRAM_ONLY_FIELDS) - set(raw))
+            if unknown:
+                raise ContractError("E_SCHEMA_UNKNOWN_FIELD", f"{context} contains unknown field: {unknown[0]}")
+            if missing:
+                raise ContractError("E_SCHEMA_MISSING_FIELD", f"{context} is missing field: {missing[0]}")
+            asset_id = normalize_text(raw["asset_id"], f"{context}.asset_id", maximum=512)
+            path = _path(raw["path"], f"{context}.path")
+            locale = parse_locale(raw["locale"], f"{context}.locale")
+            variant = raw["variant"]
+            if not isinstance(variant, str) or variant not in {"desktop", "mobile"}:
+                raise ContractError("E_SCHEMA_VALUE", f"{context}.variant must be desktop or mobile")
+            key = (locale, variant)
+            svg = svg_refs.get(key)
+            if svg is None or svg["path"] != path:
+                raise ContractError("E_VISUAL_FINGERPRINT", f"{context} does not reference an inventory SVG")
+            if asset_id in seen_ids or path in seen_paths:
+                raise ContractError("E_BUNDLE_ASSET", f"{context} duplicates asset identity or path")
+            seen_ids.add(asset_id)
+            seen_paths.add(path)
+            artifact_hash = _sha(raw["artifact_sha256"], f"{context}.artifact_sha256")
+            scene_hash = _sha(raw["scene_sha256"], f"{context}.scene_sha256")
+            gate_hash = _sha(raw["gate_sha256"], f"{context}.gate_sha256")
+            if artifact_hash != svg["sha256"] or scene_hash != next(ref["sha256"] for ref in variant_refs["scenes"] if (ref["locale"], ref["variant"]) == key) or gate_hash != next(ref["sha256"] for ref in variant_refs["gates"] if (ref["locale"], ref["variant"]) == key):
+                raise ContractError("E_VISUAL_FINGERPRINT", f"{context} source hashes differ from compiled inventory")
+            identifiers = _ids(raw["evidence_ids"], f"{context}.evidence_ids")
+            if known_ids is not None and not set(identifiers).issubset(known_ids):
+                raise ContractError("E_CLAIM_EVIDENCE", f"{context} references missing evidence")
+            normalized_asset: dict[str, Any] = {
+                "asset_id": asset_id,
+                "path": path,
+                "artifact_sha256": artifact_hash,
+                "evidence_ids": identifiers,
+                "role": role,
+                "locale": locale,
+                "variant": variant,
+                "scene_sha256": scene_hash,
+                "gate_sha256": gate_hash,
+            }
+            if "provenance" in raw:
+                provenance = _closed(raw["provenance"], _PROVENANCE_FIELDS, f"{context}.provenance")
+                if provenance["kind"] != "generated":
+                    raise ContractError("E_BUNDLE_ASSET", f"{context}.provenance.kind must be generated")
+                source_path = _path(provenance["path"], f"{context}.provenance.path")
+                source_hash = _sha(provenance["sha256"], f"{context}.provenance.sha256")
+                expected_scene_path = next(ref["path"] for ref in variant_refs["scenes"] if (ref["locale"], ref["variant"]) == key)
+                if source_path != expected_scene_path or source_hash != scene_hash:
+                    raise ContractError("E_VISUAL_FINGERPRINT", f"{context}.provenance must bind its Scene source")
+                if hashlib.sha256(_v3_read(artifact_root, source_path, f"{context}.provenance")).hexdigest() != source_hash:
+                    raise ContractError("E_BUNDLE_HASH", f"{context}.provenance bytes changed")
+                normalized_asset["provenance"] = {"kind": "generated", "path": source_path, "sha256": source_hash}
+            if hashlib.sha256(_v3_read(artifact_root, path, context)).hexdigest() != artifact_hash:
+                raise ContractError("E_BUNDLE_HASH", f"{context} artifact bytes changed")
+            normalized_assets.append(normalized_asset)
+            continue
         unknown = sorted(set(raw) - _V3_ASSET_REQUIRED_FIELDS - _V3_ASSET_OPTIONAL_FIELDS)
         missing = sorted(_V3_ASSET_REQUIRED_FIELDS - set(raw))
         if unknown:
@@ -417,26 +512,18 @@ def _validate_asset_manifest_v3(
         variant = raw["variant"]
         if not isinstance(variant, str) or variant not in {"desktop", "mobile"}:
             raise ContractError("E_SCHEMA_VALUE", f"{context}.variant must be desktop or mobile")
-        key = (locale, variant)
-        svg = svg_refs.get(key)
-        if svg is None or svg["path"] != path:
-            raise ContractError("E_VISUAL_FINGERPRINT", f"{context} does not reference an inventory SVG")
+        expected_pattern = _V3_HERO_ASSET_PATH if role == "hero" else _V3_ANIMATION_ASSET_PATH
+        if expected_pattern.fullmatch(path) is None:
+            raise ContractError("E_PATH", f"{context}.path must be a motion SVG under assets/readme-showcase")
         if asset_id in seen_ids or path in seen_paths:
             raise ContractError("E_BUNDLE_ASSET", f"{context} duplicates asset identity or path")
         seen_ids.add(asset_id)
         seen_paths.add(path)
-        role = normalize_text(raw["role"], f"{context}.role", maximum=128)
-        if role not in _V3_ASSET_ROLES:
-            raise ContractError("E_BUNDLE_ASSET", f"{context}.role is unsupported")
         artifact_hash = _sha(raw["artifact_sha256"], f"{context}.artifact_sha256")
-        scene_hash = _sha(raw["scene_sha256"], f"{context}.scene_sha256")
-        gate_hash = _sha(raw["gate_sha256"], f"{context}.gate_sha256")
-        if artifact_hash != svg["sha256"] or scene_hash != next(ref["sha256"] for ref in variant_refs["scenes"] if (ref["locale"], ref["variant"]) == key) or gate_hash != next(ref["sha256"] for ref in variant_refs["gates"] if (ref["locale"], ref["variant"]) == key):
-            raise ContractError("E_VISUAL_FINGERPRINT", f"{context} source hashes differ from compiled inventory")
         identifiers = _ids(raw["evidence_ids"], f"{context}.evidence_ids")
         if known_ids is not None and not set(identifiers).issubset(known_ids):
             raise ContractError("E_CLAIM_EVIDENCE", f"{context} references missing evidence")
-        normalized_asset: dict[str, Any] = {
+        normalized_asset = {
             "asset_id": asset_id,
             "path": path,
             "artifact_sha256": artifact_hash,
@@ -444,8 +531,6 @@ def _validate_asset_manifest_v3(
             "role": role,
             "locale": locale,
             "variant": variant,
-            "scene_sha256": scene_hash,
-            "gate_sha256": gate_hash,
         }
         if "provenance" in raw:
             provenance = _closed(raw["provenance"], _PROVENANCE_FIELDS, f"{context}.provenance")
@@ -453,9 +538,6 @@ def _validate_asset_manifest_v3(
                 raise ContractError("E_BUNDLE_ASSET", f"{context}.provenance.kind must be generated")
             source_path = _path(provenance["path"], f"{context}.provenance.path")
             source_hash = _sha(provenance["sha256"], f"{context}.provenance.sha256")
-            expected_scene_path = next(ref["path"] for ref in variant_refs["scenes"] if (ref["locale"], ref["variant"]) == key)
-            if source_path != expected_scene_path or source_hash != scene_hash:
-                raise ContractError("E_VISUAL_FINGERPRINT", f"{context}.provenance must bind its Scene source")
             if hashlib.sha256(_v3_read(artifact_root, source_path, f"{context}.provenance")).hexdigest() != source_hash:
                 raise ContractError("E_BUNDLE_HASH", f"{context}.provenance bytes changed")
             normalized_asset["provenance"] = {"kind": "generated", "path": source_path, "sha256": source_hash}
@@ -464,9 +546,18 @@ def _validate_asset_manifest_v3(
         normalized_assets.append(normalized_asset)
     if [item["path"] for item in normalized_assets] != sorted(item["path"] for item in normalized_assets):
         raise ContractError("E_BUNDLE_ASSET", "asset manifest v3 must use path order")
-    if set(seen_paths) != {ref["path"] for ref in variant_refs["svgs"]}:
-        raise ContractError("E_VISUAL_FINGERPRINT", "asset manifest assets do not close over compiled SVG refs")
-    return copy.deepcopy({"schema_version": ASSET_MANIFEST_V3_SCHEMA_VERSION, "assets": normalized_assets, "compiled": compiled_normalized})
+    if compiled is not None:
+        assert variant_refs is not None and compiled_normalized is not None
+        diagram_paths = {item["path"] for item in normalized_assets if item["role"] == "diagram"}
+        if diagram_paths != {ref["path"] for ref in variant_refs["svgs"]}:
+            raise ContractError("E_VISUAL_FINGERPRINT", "asset manifest assets do not close over compiled SVG refs")
+    normalized: dict[str, Any] = {
+        "schema_version": ASSET_MANIFEST_V3_SCHEMA_VERSION,
+        "assets": normalized_assets,
+    }
+    if compiled is not None and compiled_normalized is not None:
+        normalized["compiled"] = compiled_normalized
+    return copy.deepcopy(normalized)
 
 
 def validate_asset_manifest(
