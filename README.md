@@ -202,6 +202,18 @@ Motion rendering additionally needs Pillow, `ffmpeg`, and `rsvg-convert` or
 macOS `sips`. ELK details live in
 [`elk-structure.md`](skill/references/elk-structure.md).
 
+Motion survives on the live GitHub render pipeline only while both engines
+play it. Replay the dual-engine contract (SMIL + CSS `@keyframes` in Chrome
+and Firefox, four frames per 500 ms against the public test repository) with
+the matrix verifier; `--dry-run` checks dependencies without launching a
+browser, and full capture needs Pillow, numpy, `node`, Chrome, Firefox, and
+`geckodriver`:
+
+```bash
+python3.11 skill/scripts/verify_animation_matrix.py --dry-run
+python3.11 skill/scripts/verify_animation_matrix.py --json
+```
+
 ## Feedback and incidents
 
 Report hard-gate failures, rule suggestions, or override decisions as GitHub
