@@ -400,6 +400,56 @@ class RecordDemoEnvelopeGateTests(unittest.TestCase):
         self.assertEqual(len(self.probe), 2)
         self.assertEqual(artifacts.gif_path, self.out_gif)
 
+    def test_sandbox_tier_spawns_recording_in_sandbox_cwd(self) -> None:
+        """sandbox 层级: asciinema 录制子进程以 sandbox_dir 相对 workspace 解析为 cwd."""
+        sandbox = self.root / "demo" / "sandbox"
+        sandbox.mkdir()
+        seen: list[tuple[list[str], dict[str, object]]] = []
+
+        def run(command: list[str], **kwargs: object) -> None:
+            seen.append((list(command), kwargs))
+            if command[1] == "rec":
+                Path(command[2]).write_bytes(fake_cast_bytes())
+            else:
+                Path(command[-1]).write_bytes(b"GIF-DEMO")
+
+        with mock.patch.object(rd.subprocess, "run", side_effect=run):
+            envelope = self._envelope("sandbox", sandbox_dir="demo/sandbox")
+            artifacts = rd.record_demo(
+                self.script,
+                self.out_cast,
+                self.out_gif,
+                demo_envelope=envelope,
+                permitted_commands=["echo"],
+                workspace=self.root,
+                tools=FAKE_TOOLS,
+            )
+
+        record_call, agg_call = seen
+        self.assertEqual(Path(record_call[0][0]).name, "asciinema")
+        self.assertEqual(record_call[1]["cwd"], sandbox.resolve())
+        self.assertNotIn("cwd", agg_call[1])
+        self.assertEqual(artifacts.gif_path, self.out_gif)
+
+    def test_sandbox_dir_escaping_workspace_raises_typed_error(self) -> None:
+        """运行时防御复检: sandbox_dir 经符号链接逃出 workspace → DemoApprovalError."""
+        escape_target = self.root.parent / "outside-sandbox-target"
+        escape_target.mkdir()
+        self.addCleanup(escape_target.rmdir)
+        (self.root / "demo" / "sandbox").symlink_to(escape_target, target_is_directory=True)
+        envelope = self._envelope("sandbox", sandbox_dir="demo/sandbox")
+        with self.assertRaises(rd.DemoApprovalError) as raised:
+            rd.record_demo(
+                self.script,
+                self.out_cast,
+                self.out_gif,
+                demo_envelope=envelope,
+                permitted_commands=["echo"],
+                workspace=self.root,
+                tools=FAKE_TOOLS,
+            )
+        self.assertIn("workspace", str(raised.exception))
+
     def test_envelope_sha256_drift_rejected(self) -> None:
         envelope = self._envelope("full", sha256="0" * 64)
         with self.assertRaises(rd.DemoApprovalError) as raised:

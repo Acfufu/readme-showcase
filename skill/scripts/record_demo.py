@@ -244,7 +244,10 @@ def _read_limited(
         raise error_type(str(exc)) from exc
 
 
-def _run_process(command: list[str], label: str) -> None:
+def _run_process(command: list[str], label: str, *, cwd: Path | None = None) -> None:
+    run_kwargs: dict[str, object] = {}
+    if cwd is not None:
+        run_kwargs["cwd"] = cwd
     try:
         subprocess.run(
             command,
@@ -253,6 +256,7 @@ def _run_process(command: list[str], label: str) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=MAX_DEMO_SUBPROCESS_SECONDS,
+            **run_kwargs,
         )
     except subprocess.TimeoutExpired:
         raise DemoExecutionError(
@@ -260,6 +264,10 @@ def _run_process(command: list[str], label: str) -> None:
         ) from None
     except subprocess.CalledProcessError:
         raise DemoExecutionError(f"{label} failed") from None
+    except FileNotFoundError:
+        raise DemoExecutionError(
+            f"{label} failed: executable or working directory not found"
+        ) from None
 
 
 def agg_command(agg_path: str, fps: int, theme: str, cast: Path, output: Path) -> list[str]:
@@ -364,6 +372,25 @@ def demo_approval_gate(
             )
 
     return check
+
+
+def _resolve_sandbox_cwd(sandbox_dir: str, workspace: Path) -> Path:
+    """Resolve a sandbox envelope's sandbox_dir against the workspace root.
+
+    The envelope validator already guarantees sandbox_dir is a safe relative
+    POSIX path (no absolute path, `~`, or `..` parts); this runtime re-check
+    defends the resolved boundary anyway: a workspace-relative path that
+    escapes the workspace root (for example through a symlink) raises a typed
+    DemoApprovalError instead of executing outside the sandbox.
+    """
+    root = workspace.expanduser().resolve()
+    candidate = (root / sandbox_dir).resolve()
+    if not candidate.is_relative_to(root):
+        raise DemoApprovalError(
+            "sandbox_dir must stay inside the workspace: "
+            f"{sandbox_dir} resolves to {candidate}, outside {root}"
+        )
+    return candidate
 
 
 def _decode_capture_bytes(raw: bytes) -> str:
@@ -522,6 +549,7 @@ def record_demo(
     tools: DemoTools | None = None,
     fps: int = DEFAULT_FPS,
     theme: str = DEFAULT_THEME,
+    workspace: Path | None = None,
 ) -> DemoArtifacts:
     """Record a demo script as a cast and render a deterministic GIF.
 
@@ -534,13 +562,17 @@ def record_demo(
     is provided, it replaces the raw callback with the envelope gate, whose
     tier is enforced against `permitted_commands` — commands the client
     permission system already allowed skip the envelope while the script is
-    still recorded and archived. After rendering, the Task 4.4 content review
-    gate (`review_demo_capture`) runs over the capture: the leakage check is
-    always enforced, and the no-fabrication capability check runs when
-    `evidence` (a repository-evidence graph) is provided; a failing review
-    raises DemoReviewError before any artifacts are returned. The returned
-    DemoArtifacts carries the exact SHA-256 values the producer must declare in
-    the asset manifest.
+    still recorded and archived. When the envelope granularity is `sandbox`,
+    the asciinema recording subprocess runs with cwd set to `sandbox_dir`
+    resolved against `workspace` (default: the current working directory); a
+    `sandbox_dir` that escapes the workspace at runtime raises
+    DemoApprovalError before any execution. After rendering, the Task 4.4
+    content review gate (`review_demo_capture`) runs over the capture: the
+    leakage check is always enforced, and the no-fabrication capability check
+    runs when `evidence` (a repository-evidence graph) is provided; a failing
+    review raises DemoReviewError before any artifacts are returned. The
+    returned DemoArtifacts carries the exact SHA-256 values the producer must
+    declare in the asset manifest.
     """
     script = demo_script.expanduser()
     _require_demo_script(script)
@@ -551,10 +583,20 @@ def record_demo(
     _require_output_path(cast_output, ".cast", "cast output")
     _require_output_path(gif_output, ".gif", "gif output")
     tools = tools or require_tools()
+    sandbox_cwd: Path | None = None
     if demo_envelope is not None:
         approval_check = demo_approval_gate(
             demo_envelope, permitted_commands=permitted_commands
         )
+        if demo_envelope.get("granularity") == "sandbox":
+            sandbox_dir = demo_envelope.get("sandbox_dir")
+            if not isinstance(sandbox_dir, str):
+                raise DemoApprovalError(
+                    "sandbox granularity requires sandbox_dir"
+                )
+            sandbox_cwd = _resolve_sandbox_cwd(
+                sandbox_dir, workspace if workspace is not None else Path.cwd()
+            )
 
     cast_bytes: bytes
     match script.suffix:
@@ -584,6 +626,7 @@ def record_demo(
                     f"bash {shlex.quote(str(script))}",
                 ],
                 "asciinema recording",
+                cwd=sandbox_cwd,
             )
             cast_bytes = _read_limited(
                 cast_output, MAX_DEMO_CAST_BYTES, DemoExecutionError
