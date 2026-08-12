@@ -4,9 +4,9 @@ The self-review is the evaluation-side critic: candidate claims are checked
 for a correspondence entry inside ``repository-evidence.json`` ``facts[]``,
 never against the candidate README itself.  Comparing the product against
 itself is a self-referential loop, and because critic and generator are the
-same model, more than one auto-revision invites sycophantic loops.  A failed
-self-review therefore allows exactly ``MAX_SELF_REVIEW_REVISIONS``
-auto-revisions before the final verdict stands.
+same model, automatic revisions invite sycophantic loops.  The evaluator
+performs no automatic revisions today; ``MAX_SELF_REVIEW_REVISIONS``
+documents the policy ceiling for any future revision loop.
 """
 
 from __future__ import annotations

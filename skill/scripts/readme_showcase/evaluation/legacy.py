@@ -12,7 +12,11 @@ from ..contracts.evidence import validate_evidence_graph
 from ..contracts.plan import validate_readme_plan
 from ..evaluation.contract import metric
 from ..evaluation.identity import collect_visual_tokens, evaluate_identity_gate
-from ..evaluation.self_review import collect_evidence_facts, self_review_check
+from ..evaluation.self_review import (
+    MAX_SELF_REVIEW_REVISIONS,
+    collect_evidence_facts,
+    self_review_check,
+)
 from ..evaluation.voice import collect_voice_samples, evaluate_voice_match
 from ..scanner.visual import svg_tokens
 from ..visual_kernel.gates import validate_visual_gate_report
@@ -35,6 +39,8 @@ _reference = _BUNDLE._reference
 _artifact_json = _BUNDLE._artifact_json
 _artifact_bytes = _BUNDLE._artifact_bytes
 validate_generated_bundle = _BUNDLE.validate_generated_bundle
+
+__all__ = ["collect_evidence_facts", "self_review_check", "MAX_SELF_REVIEW_REVISIONS"]
 
 
 _V3_METRIC_NAMES = (
@@ -175,8 +181,9 @@ def _v3_self_review(
     candidate README itself: every non-decorative claim must reference at
     least one evidence fact that exists in ``repository-evidence.json``.
     Nothing here touches the target repository.  The reviewer is the same
-    model that generated the candidate, so a failed review may auto-revise at
-    most once (``MAX_SELF_REVIEW_REVISIONS``) before the verdict stands.
+    model that generated the candidate, so a failed review rejects the
+    candidate without auto-revision; ``MAX_SELF_REVIEW_REVISIONS`` is the
+    documented revision ceiling for any future evaluator loop.
     """
     return self_review_check(claims, collect_evidence_facts(evidence))
 
