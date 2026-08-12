@@ -56,7 +56,7 @@ for (let i = 0; i < 60; i++) {
     script: `return Array.from(document.querySelectorAll('article img')).filter(x => x.naturalWidth > 0).length;`,
     args: [],
   });
-  if (r.value >= 4) { ok = true; break; }
+  if (r.value >= 5) { ok = true; break; }
   await sleep(500);
 }
 if (!ok) { console.error('WARN: imgs not ready'); process.exit(2); }

@@ -23,7 +23,7 @@ SCRIPT_DIR = REPO_ROOT / "skill/scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 import verify_animation_matrix as vam  # noqa: E402
 
-ANIMATED = ("smil_bar", "smil_text", "css_bar", "hybrid_bar", "hybrid_text")
+ANIMATED = ("smil_bar", "smil_text", "css_bar", "hybrid_bar", "hybrid_text", "smil_linear_bar")
 ALL_ASSETS = (*ANIMATED, "static_bar")
 
 
@@ -201,10 +201,67 @@ class MatrixVerifierAssertionTableTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(any("static_bar" in f for f in failures))
 
+    def test_smil_linear_bar_static_fails(self):
+        """smil-linear 断言固化: 紫条 (calcMode=linear) 必须播; 静态序列 → FAIL.
+
+        若断言表丢掉 smil_linear_bar (矩阵回归到 4 资产), 本测试必须失败.
+        """
+        chrome = make_results()
+        chrome["smil_linear_bar"] = {"series": [5000, 5000, 5000, 5000], "varies": False, "max": 5000}
+        ok, failures = vam.assert_matrix(chrome, make_results())
+        self.assertFalse(ok)
+        self.assertTrue(any("CHROME smil_linear_bar" in f for f in failures))
+
+    def test_dual_engine_smil_linear_motion_passes(self):
+        """双引擎 (含 smil-linear) 全动 + static 恒 → PASS."""
+        ok, failures = vam.assert_matrix(make_results(), make_results())
+        self.assertTrue(ok, f"expected PASS, got: {failures}")
+
     def test_render_table_marks_animation_state(self):
         table = vam.render_table(make_results(), make_results())
         self.assertIn("ANIMATES", table)
         self.assertIn("static_bar", table)
+        self.assertIn("smil_linear_bar", table)
+
+
+class MatrixVerifierLocateRegionTests(unittest.TestCase):
+    """locate_regions 布局契约: 仓库 README 顺序 smil → css → hybrid → smil-linear → static.
+
+    合成一张 5-img 布局截图 (static 绿块在底, smil-linear 紫块在其上 1 格),
+    验证区域定位只依赖 green 锚点 + IMG_INTERVAL, 不依赖浏览器.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="anim-matrix-loc-")
+        self.addCleanup(lambda: shutil.rmtree(self._tmp, ignore_errors=True))
+
+    def _synthesize(self):
+        import numpy as np
+        from PIL import Image
+        W, INTERVAL = 1000, vam.IMG_INTERVAL
+        static_top = 4 * INTERVAL  # smil img 顶 = 0
+        h = static_top + 200
+        a = np.zeros((h, W, 3), dtype=np.uint8)
+        # 绿块 (static, 定位锚点): img 内 x 10-110, y 30-150
+        a[static_top + 30:static_top + 150, 10:110] = vam.BRAND["green"]
+        # 紫块 (smil-linear, static 上方 1 格)
+        a[static_top - INTERVAL + 30:static_top - INTERVAL + 150, 10:110] = vam.BRAND["purple"]
+        p = os.path.join(self._tmp, "synthetic.png")
+        Image.fromarray(a).save(p)
+        return p
+
+    def test_locate_regions_smil_linear_slot(self):
+        regions = vam.locate_regions([self._synthesize()])
+        self.assertIsNotNone(regions)
+        self.assertEqual(regions["bar"]["static"], (10, 4 * vam.IMG_INTERVAL + 30,
+                                                    110, 4 * vam.IMG_INTERVAL + 150))
+        self.assertEqual(regions["bar"]["smil_linear"], (10, 3 * vam.IMG_INTERVAL + 30,
+                                                         110, 3 * vam.IMG_INTERVAL + 150))
+        self.assertEqual(regions["bar"]["smil"], (10, 30, 110, 150))
+        self.assertEqual(regions["bar"]["hybrid"], (10, 2 * vam.IMG_INTERVAL + 30,
+                                                    110, 2 * vam.IMG_INTERVAL + 150))
+        self.assertEqual(regions["bar"]["css"], (10, vam.IMG_INTERVAL + 30,
+                                                 110, vam.IMG_INTERVAL + 150))
 
 
 if __name__ == "__main__":

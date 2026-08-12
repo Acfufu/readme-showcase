@@ -3,10 +3,17 @@
 verify_animation_matrix.py — 双引擎 SVG 动画存活矩阵断言 (D3b 验证管线)
 
 断言 (基于 2026-08-12 实测修正版, GitHub 真实渲染管线, Chrome 151 / Firefox 153,
-      WebDriver 等 img ready 后 4 连拍 500ms; 早期 CLI 截图结论已作废 — 见 d1e/CONCLUSION.md):
-    Chrome:  SMIL <animate> 播放, CSS @keyframes 播放, hybrid 双技术播放
-    Firefox: SMIL <animate> 播放, CSS @keyframes 播放, hybrid 双技术播放
+      WebDriver 等 img ready 后 4 连拍 500ms):
+    Chrome:  SMIL <animate> 播放, CSS @keyframes 播放, hybrid 双技术播放,
+             smil-linear (calcMode=linear) 播放
+    Firefox: SMIL <animate> 播放, CSS @keyframes 播放, hybrid 双技术播放,
+             smil-linear (calcMode=linear) 播放
     Both:    static 对照恒定
+
+教训 1 (CLI 时机假象): 早期 CLI 截图管线在 img 未加载时抓拍, 造成时间偏移假象,
+    曾误判 Firefox 不播 SMIL; 修正版必须等 img ready 才连拍 — 结论见 d1e/CONCLUSION.md.
+教训 2 (discrete-vs-linear 观感差异): pure-smil (discrete 阶跃) 与 smil-linear
+    (linear 平滑) 观感明显不同, 但断言只锁定"播放" (series 有变化), 不区分两种形态.
 
 依赖: Python 3.11+ + Pillow + numpy + node + 系统 Chrome + 系统 Firefox
       (node/Chrome/Firefox/geckodriver 缺失 → exit 2)
@@ -18,7 +25,8 @@ verify_animation_matrix.py — 双引擎 SVG 动画存活矩阵断言 (D3b 验�
 退出码: 0 = 矩阵符合预期 (或 dry-run 依赖齐全) · 1 = 断言失败 · 2 = 环境/依赖错误
 
 测试仓库: https://github.com/Acfufu/readme-svg-anim-test-20260812
-    (4 个 SVG: pure-smil / pure-css / hybrid / static, README 相对 <img> 引用)
+    (5 个 SVG: pure-smil / pure-css / hybrid / smil-linear / static,
+     README 相对 <img> 引用, 顺序 smil → css → hybrid → smil-linear → static)
 """
 
 import argparse
@@ -45,6 +53,7 @@ BRAND = {
     "red":    (211, 51, 51),    # SMIL 红条
     "blue":   (0, 136, 238),    # CSS 蓝条
     "orange": (238, 136, 0),    # hybrid 橙条 (CSS 驱动)
+    "purple": (200, 0, 200),    # smil-linear 紫条 (#c800c8, calcMode=linear)
     "green":  (0, 170, 0),      # static 绿块 (恒在, 定位锚点)
 }
 TOL = 60
@@ -145,10 +154,11 @@ def locate_regions(frames):
         img_top_static = green_top - 30
         img_x = xr[0] - 10
         tops = {
-            "smil":   img_top_static - 3 * IMG_INTERVAL,
-            "css":    img_top_static - 2 * IMG_INTERVAL,
-            "hybrid": img_top_static - 1 * IMG_INTERVAL,
-            "static": img_top_static,
+            "smil":        img_top_static - 4 * IMG_INTERVAL,
+            "css":         img_top_static - 3 * IMG_INTERVAL,
+            "hybrid":      img_top_static - 2 * IMG_INTERVAL,
+            "smil_linear": img_top_static - 1 * IMG_INTERVAL,
+            "static":      img_top_static,
         }
         return {
             "img_x": img_x,
@@ -193,6 +203,7 @@ def analyze(frames, regions):
         "css_bar":   ("bar", "css", brand_pred(BRAND["blue"])),
         "hybrid_bar":("bar", "hybrid", brand_pred(BRAND["orange"])),
         "hybrid_text":("text", "hybrid", dark),
+        "smil_linear_bar":("bar", "smil_linear", brand_pred(BRAND["purple"])),
         "static_bar":("bar", "static", brand_pred(BRAND["green"])),
     }
     for name, (kind, asset, pred) in checks.items():
@@ -210,11 +221,14 @@ def analyze(frames, regions):
 # ---------------------------------------------------------------------------
 
 def assert_matrix(chrome, firefox):
-    """双引擎一致断言: SMIL + CSS + hybrid 全动, static 恒.
-    注: 早期 CLI 截图 (img 未等加载) 曾误判 FF 不播 SMIL; WebDriver 等 img ready 后实测双引擎均播."""
+    """双引擎一致断言: SMIL + CSS + hybrid + smil-linear 全动, static 恒.
+    注: 早期 CLI 截图 (img 未等加载) 曾误判 FF 不播 SMIL — CLI 时机假象;
+        WebDriver 等 img ready 后实测双引擎均播. discrete (smil) 与 linear
+        (smil-linear) 观感不同, 但断言只锁定"播放"."""
     failures = []
     for browser, res in (("CHROME", chrome), ("FIREFOX", firefox)):
-        for name in ("smil_bar", "smil_text", "css_bar", "hybrid_bar", "hybrid_text"):
+        for name in ("smil_bar", "smil_text", "css_bar", "hybrid_bar", "hybrid_text",
+                     "smil_linear_bar"):
             if not res[name]["varies"]:
                 failures.append(f"{browser} {name}: expected ANIMATES, got static (series={res[name]['series']})")
         if res["static_bar"]["varies"]:
@@ -224,7 +238,8 @@ def assert_matrix(chrome, firefox):
 
 def render_table(chrome, firefox):
     rows = []
-    for name in ("smil_bar", "smil_text", "css_bar", "hybrid_bar", "hybrid_text", "static_bar"):
+    for name in ("smil_bar", "smil_text", "css_bar", "hybrid_bar", "hybrid_text",
+                 "smil_linear_bar", "static_bar"):
         c = "ANIMATES" if chrome[name]["varies"] else "static"
         f = "ANIMATES" if firefox[name]["varies"] else "static"
         rows.append((name, c, f, f"chrome={chrome[name]['series']}", f"ff={firefox[name]['series']}"))
