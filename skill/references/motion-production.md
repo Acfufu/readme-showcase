@@ -31,7 +31,7 @@ Do not replace a README image reference without separate approval.
 - Keep settled layers pixel-still; avoid idle bobbing, pulsing, floating, or rotation.
 - Make the last frame return cleanly to the first.
 - Start at `30 FPS`, `4–6` seconds, and the SVG's native width.
-- Aim for about `2 MB`; treat `5 MB` as a practical ceiling.
+- Aim for at most `2 MB`; the renderer enforces the same `max_size_mb: 2.0` budget.
 - Avoid flashes, rapid pulses, and motion that competes with reading.
 
 ## GitHub Playback Matrix
@@ -101,6 +101,43 @@ Create a JSON file next to the SVG:
 
 Offsets use source-SVG units and scale with output width. Use `clip_to_base_alpha: true` when moving layers must stay inside a rounded opaque frame.
 
+## Motion Spec v2
+
+Motion Spec v2 (`schema_version: 2`) replaces `reveals`/`layers` with a scene contract plus a typewriter reveal. Project Timeline v1 or v2 with `project_motion_spec_v2()`, or author the JSON directly:
+
+```json
+{
+  "schema_version": 2,
+  "width": 1200,
+  "fps": 30,
+  "duration": 8.0,
+  "colors": 192,
+  "dither": "none",
+  "max_size_mb": 2.0,
+  "scenes": [
+    {
+      "id": "project-card",
+      "interpolation": "linear",
+      "enter": {"start": 0.2, "end": 0.9},
+      "hold": {"start": 0.9, "end": 6.9},
+      "exit": {"start": 6.9, "end": 7.6}
+    }
+  ],
+  "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+  "reduced_motion": {"mode": "static", "visible": ["project-card"]}
+}
+```
+
+- At most `3` scenes; each scene id is the animated SVG element id and each interval stays inside the duration.
+- Default duration `8 s`, hard cap `12 s`; the size budget is `2 MB` (`max_size_mb: 2.0`).
+- **Interpolation contract**: smooth scene motion must use `linear` interpolation (CSS default / SMIL `calcMode="linear"`). `discrete` stepping is allowed only for the typewriter reveal.
+- **Typewriter contract**: the locale decides the writing system. Latin locales (`en`, `fr`, `de`) reveal per character at `0.6 × font-size` per glyph; CJK locales (`zh-Hans`, `zh-Hant`, `ja`, `ko`) reveal per word or per line at `1.0 × font-size`. `char_width_factor` must match the locale table.
+- The static reduced-motion state exposes every scene id, byte-sorted.
+
+### Budget degradation and fallback
+
+When an 8-second default would exceed the `2 MB` budget, the renderer automatically re-renders at a reduced duration (stepping down to a `5 s` floor) and then reduced FPS (down to `15`), rescaling scene intervals with the duration. The final effective `duration`/`fps` are written back to the motion JSON (`--motion-json`) so the recorded parameters match the derived GIF. If the budget floor is still exceeded, the renderer falls back to a single static frame, which is always acceptable.
+
 ## Render
 
 The bundled renderer requires Python with Pillow, `ffmpeg`, and either `rsvg-convert` or macOS `sips`:
@@ -111,6 +148,8 @@ python3 scripts/render_motion_gif.py \
   assets/readme/hero.gif \
   --spec assets/readme/hero-motion.json
 ```
+
+Both `--spec` and `--timeline` accept v1 and v2 inputs. Pass `--motion-json PATH` to write the final effective spec (including any budget-degraded `duration`/`fps`) next to the GIF.
 
 Use `--keep-frames /tmp/readme-motion-frames` only for frame debugging.
 

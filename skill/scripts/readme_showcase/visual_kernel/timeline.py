@@ -17,12 +17,20 @@ from .normalize import Plan
 
 _TimelineKind = Literal["reveal", "emphasis"]
 _SCHEMA_VERSION = 1
+_SCHEMA_VERSION_2 = 2
 _MAX_DURATION_MS = 30_000
+_MAX_DURATION_MS_V2 = 12_000
 _MAX_TIMELINE_BYTES = 512 * 1024
 _REVEAL_MS = 180
 _EMPHASIS_MS = 120
 _GAP_MS = 40
 _KINDS = frozenset({"reveal", "emphasis"})
+_MAX_SCENES = 3
+_TYPEWRITER_MODES = frozenset({"per-char", "per-word", "per-line"})
+_LATIN_LOCALES = frozenset({"en", "fr", "de"})
+_CJK_LOCALES = frozenset({"zh-Hans", "zh-Hant", "ja", "ko"})
+_LOCALES = _LATIN_LOCALES | _CJK_LOCALES
+_SMOOTH_INTERPOLATIONS = frozenset({"linear"})
 
 
 def _fail(code: str, message: str) -> ContractError:
@@ -198,6 +206,225 @@ class Timeline:
         return canonical_sha256(self.as_dict())
 
 
+def typewriter_char_width_factor(mode: str, locale: str) -> float:
+    """Typewriter char-width factor: 0.6 for latin per-char, 1.0 for CJK per-word/per-line.
+
+    The writing system decides both the allowed mode and the advance width.
+    Latin text reveals character by character at roughly 0.6 em per glyph;
+    CJK text reveals word or line at the full em width.
+    """
+    if type(mode) is not str or mode not in _TYPEWRITER_MODES:
+        raise _fail("E_SCHEMA_VALUE", "typewriter mode is unsupported")
+    if type(locale) is not str or locale not in _LOCALES:
+        raise _fail("E_SCHEMA_VALUE", "typewriter locale is unsupported")
+    if mode == "per-char":
+        if locale not in _LATIN_LOCALES:
+            raise _fail("E_SCHEMA_VALUE", "per-char typewriter requires a latin locale")
+        return 0.6
+    if locale not in _CJK_LOCALES:
+        raise _fail("E_SCHEMA_VALUE", "per-word/per-line typewriter requires a CJK locale")
+    return 1.0
+
+
+@dataclass(frozen=True, slots=True)
+class _Interval:
+    start_ms: int
+    end_ms: int
+
+
+def _interval(value: Any, path: str) -> _Interval:
+    if isinstance(value, _Interval):
+        raw: Mapping[str, Any] = {"start_ms": value.start_ms, "end_ms": value.end_ms}
+    elif isinstance(value, Mapping):
+        raw = value
+    else:
+        raise _fail("E_SCHEMA_TYPE", f"{path} must be an object")
+    allowed = {"start_ms", "end_ms"}
+    unknown = sorted(set(raw) - allowed)
+    if unknown:
+        raise _fail("E_SCHEMA_UNKNOWN_FIELD", f"{path} contains unknown field: {unknown[0]}")
+    missing = sorted(allowed - set(raw))
+    if missing:
+        raise _fail("E_SCHEMA_MISSING_FIELD", f"{path} is missing field: {missing[0]}")
+    start = _checked_int(raw["start_ms"], f"{path}.start_ms")
+    end = _checked_int(raw["end_ms"], f"{path}.end_ms", minimum=1)
+    if end <= start:
+        raise _fail("E_VISUAL_DETERMINISM", f"{path} must have a positive interval")
+    return _Interval(start, end)
+
+
+@dataclass(frozen=True, slots=True)
+class _Scene:
+    id: str
+    interpolation: str
+    enter: _Interval
+    hold: _Interval | None
+    exit: _Interval | None
+
+    def as_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "id": self.id,
+            "interpolation": self.interpolation,
+            "enter": {"start_ms": self.enter.start_ms, "end_ms": self.enter.end_ms},
+        }
+        if self.hold is not None:
+            result["hold"] = {"start_ms": self.hold.start_ms, "end_ms": self.hold.end_ms}
+        if self.exit is not None:
+            result["exit"] = {"start_ms": self.exit.start_ms, "end_ms": self.exit.end_ms}
+        return result
+
+
+def _scene(value: Any, index: int) -> _Scene:
+    path = f"timeline.scenes[{index}]"
+    if isinstance(value, _Scene):
+        raw: Mapping[str, Any] = value.as_dict()
+    elif isinstance(value, Mapping):
+        raw = value
+    else:
+        raise _fail("E_SCHEMA_TYPE", f"{path} must be an object")
+    allowed = {"id", "interpolation", "enter", "hold", "exit"}
+    unknown = sorted(set(raw) - allowed)
+    if unknown:
+        raise _fail("E_SCHEMA_UNKNOWN_FIELD", f"{path} contains unknown field: {unknown[0]}")
+    missing = sorted({"id", "interpolation", "enter"} - set(raw))
+    if missing:
+        raise _fail("E_SCHEMA_MISSING_FIELD", f"{path} is missing field: {missing[0]}")
+    identifier = _checked_id(raw["id"], f"{path}.id")
+    interpolation = raw["interpolation"]
+    if type(interpolation) is not str:
+        raise _fail("E_SCHEMA_TYPE", f"{path}.interpolation must be a string")
+    if interpolation not in _SMOOTH_INTERPOLATIONS:
+        raise _fail("E_SCHEMA_VALUE", f"{path}.interpolation must be linear for smooth motion")
+    enter = _interval(raw["enter"], f"{path}.enter")
+    hold = _interval(raw["hold"], f"{path}.hold") if "hold" in raw else None
+    exit = _interval(raw["exit"], f"{path}.exit") if "exit" in raw else None
+    if hold is not None and hold.start_ms != enter.end_ms:
+        raise _fail("E_VISUAL_DETERMINISM", f"{path}.hold must start where enter ends")
+    if exit is not None:
+        previous = hold or enter
+        if exit.start_ms != previous.end_ms:
+            raise _fail("E_VISUAL_DETERMINISM", f"{path}.exit must start where hold ends")
+    return _Scene(identifier, interpolation, enter, hold, exit)
+
+
+@dataclass(frozen=True, slots=True)
+class _Typewriter:
+    mode: str
+    locale: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {"mode": self.mode, "locale": self.locale}
+
+
+def _typewriter(value: Any) -> _Typewriter:
+    path = "timeline.typewriter"
+    if isinstance(value, _Typewriter):
+        raw: Mapping[str, Any] = {"mode": value.mode, "locale": value.locale}
+    elif isinstance(value, Mapping):
+        raw = value
+    else:
+        raise _fail("E_SCHEMA_TYPE", f"{path} must be an object")
+    allowed = {"mode", "locale"}
+    unknown = sorted(set(raw) - allowed)
+    if unknown:
+        raise _fail("E_SCHEMA_UNKNOWN_FIELD", f"{path} contains unknown field: {unknown[0]}")
+    missing = sorted(allowed - set(raw))
+    if missing:
+        raise _fail("E_SCHEMA_MISSING_FIELD", f"{path} is missing field: {missing[0]}")
+    mode = raw["mode"]
+    locale = raw["locale"]
+    if type(mode) is not str or mode not in _TYPEWRITER_MODES:
+        raise _fail("E_SCHEMA_VALUE", f"{path}.mode is unsupported")
+    if type(locale) is not str or locale not in _LOCALES:
+        raise _fail("E_SCHEMA_VALUE", f"{path}.locale is unsupported")
+    typewriter_char_width_factor(mode, locale)
+    return _Typewriter(mode, locale)
+
+
+@dataclass(frozen=True, slots=True)
+class TimelineV2:
+    """Immutable motion Timeline v2: at most three sequential scenes and a typewriter contract.
+
+    Smooth scene motion is locked to linear interpolation; discrete stepping is
+    reserved for the typewriter reveal.  Duration is capped at 12 seconds and the
+    reduced-motion static state must expose every declared target.
+    """
+
+    targets: tuple[str, ...]
+    duration_ms: int
+    scenes: tuple[_Scene, ...]
+    typewriter: _Typewriter
+    reduced_motion: tuple[str, ...]
+
+    schema_version: ClassVar[int] = _SCHEMA_VERSION_2
+
+    def __post_init__(self) -> None:
+        targets = _targets(self.targets)
+        duration = _checked_int(self.duration_ms, "timeline.duration_ms")
+        if duration > _MAX_DURATION_MS_V2:
+            raise _fail("E_VISUAL_DETERMINISM", f"timeline duration exceeds {_MAX_DURATION_MS_V2}ms")
+
+        raw_scenes = self.scenes
+        if not isinstance(raw_scenes, Sequence) or isinstance(raw_scenes, (str, bytes)):
+            raise _fail("E_SCHEMA_TYPE", "timeline.scenes must be an array")
+        scenes = tuple(_scene(item, index) for index, item in enumerate(raw_scenes))
+        if not scenes:
+            raise _fail("E_VISUAL_DETERMINISM", "timeline.scenes must not be empty")
+        if len(scenes) > _MAX_SCENES:
+            raise _fail("E_VISUAL_DETERMINISM", f"timeline.scenes must be at most {_MAX_SCENES}")
+
+        scene_ids: set[str] = set()
+        target_set = set(targets)
+        scene_targets: set[str] = set()
+        for item in scenes:
+            if item.id in scene_ids:
+                raise _fail("E_VISUAL_SPEC_ID", f"duplicate timeline scene ID: {item.id}")
+            scene_ids.add(item.id)
+            if item.id not in target_set:
+                raise _fail("E_VISUAL_SPEC_EDGE", f"timeline scene targets undeclared ID: {item.id}")
+            scene_targets.add(item.id)
+            last = item.exit or item.hold or item.enter
+            if last.end_ms > duration:
+                raise _fail("E_VISUAL_DETERMINISM", f"timeline scene exceeds duration: {item.id}")
+        if scene_targets != target_set:
+            missing = sorted(target_set - scene_targets, key=_id_key)
+            raise _fail("E_VISUAL_DETERMINISM", f"timeline is missing scene target: {missing[0]}")
+
+        ordered = tuple(sorted(scenes, key=lambda item: (item.enter.start_ms, _id_key(item.id))))
+        previous_end = 0
+        for item in ordered:
+            if item.enter.start_ms < previous_end:
+                raise _fail("E_VISUAL_DETERMINISM", f"timeline scenes overlap at {item.id}")
+            last = item.exit or item.hold or item.enter
+            previous_end = last.end_ms
+
+        typewriter = _typewriter(self.typewriter)
+        reduced = _reduced_motion(self.reduced_motion, targets)
+        object.__setattr__(self, "targets", targets)
+        object.__setattr__(self, "duration_ms", duration)
+        object.__setattr__(self, "scenes", ordered)
+        object.__setattr__(self, "typewriter", typewriter)
+        object.__setattr__(self, "reduced_motion", reduced)
+        if len(self.canonical_bytes()) > _MAX_TIMELINE_BYTES:
+            raise _fail("E_VISUAL_SPEC_SIZE", f"timeline exceeds {_MAX_TIMELINE_BYTES} canonical bytes")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "targets": list(self.targets),
+            "duration_ms": self.duration_ms,
+            "scenes": [item.as_dict() for item in self.scenes],
+            "typewriter": self.typewriter.as_dict(),
+            "reduced_motion": {"mode": "static", "visible": list(self.reduced_motion)},
+        }
+
+    def canonical_bytes(self) -> bytes:
+        return canonical_json_bytes(self.as_dict())
+
+    def sha256(self) -> str:
+        return canonical_sha256(self.as_dict())
+
+
 def _validate_plan(plan: Plan) -> tuple[tuple[str, ...], dict[str, int], tuple[Any, ...]]:
     if not isinstance(plan, Plan):
         raise _fail("E_SCHEMA_TYPE", "timeline derivation requires a normalized Plan")
@@ -354,4 +581,4 @@ def derive_timeline(plan: Plan) -> Timeline:
     return Timeline(targets, duration, operations, targets)
 
 
-__all__ = ["Timeline", "derive_timeline"]
+__all__ = ["Timeline", "TimelineV2", "derive_timeline", "typewriter_char_width_factor"]

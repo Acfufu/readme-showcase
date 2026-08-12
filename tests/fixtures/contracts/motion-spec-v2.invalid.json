@@ -1,0 +1,272 @@
+{
+  "cases": [
+    {
+      "code": "E_SCHEMA_UNKNOWN_FIELD",
+      "name": "unknown-field",
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "max_size_mb": 2.0,
+        "mystery": true,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.2, "end": 0.9},
+            "hold": {"start": 0.9, "end": 7.2}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["card"]}
+      }
+    },
+    {
+      "code": "E_SCHEMA_MISSING_FIELD",
+      "name": "missing-scenes",
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": []}
+      }
+    },
+    {
+      "code": "E_SCHEMA_VERSION",
+      "name": "schema-version",
+      "payload": {
+        "schema_version": 1,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.2, "end": 0.9}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["card"]}
+      }
+    },
+    {
+      "code": "E_VISUAL_DETERMINISM",
+      "name": "too-many-scenes",
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "scene-a",
+            "interpolation": "linear",
+            "enter": {"start": 0.0, "end": 1.0}
+          },
+          {
+            "id": "scene-b",
+            "interpolation": "linear",
+            "enter": {"start": 1.0, "end": 2.0}
+          },
+          {
+            "id": "scene-c",
+            "interpolation": "linear",
+            "enter": {"start": 2.0, "end": 3.0}
+          },
+          {
+            "id": "scene-d",
+            "interpolation": "linear",
+            "enter": {"start": 3.0, "end": 4.0}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["scene-a", "scene-b", "scene-c", "scene-d"]}
+      }
+    },
+    {
+      "code": "E_VISUAL_DETERMINISM",
+      "name": "duration-over-cap",
+      "payload": {
+        "schema_version": 2,
+        "duration": 13.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.2, "end": 0.9}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["card"]}
+      }
+    },
+    {
+      "code": "E_SCHEMA_VALUE",
+      "name": "discrete-scene",
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "discrete",
+            "enter": {"start": 0.2, "end": 0.9}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["card"]}
+      }
+    },
+    {
+      "code": "E_SCHEMA_VALUE",
+      "name": "mode-locale-mismatch",
+      "semantic": true,
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.2, "end": 0.9}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "zh-Hans", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["card"]}
+      }
+    },
+    {
+      "code": "E_SCHEMA_VALUE",
+      "name": "factor-mismatch",
+      "semantic": true,
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.2, "end": 0.9}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 1.0},
+        "reduced_motion": {"mode": "static", "visible": ["card"]}
+      }
+    },
+    {
+      "code": "E_VISUAL_DETERMINISM",
+      "name": "overlapping-scenes",
+      "semantic": true,
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.2, "end": 0.9},
+            "hold": {"start": 0.9, "end": 7.2}
+          },
+          {
+            "id": "title",
+            "interpolation": "linear",
+            "enter": {"start": 0.9, "end": 1.7}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["card", "title"]}
+      }
+    },
+    {
+      "code": "E_VISUAL_SPEC_ID",
+      "name": "duplicate-scene-id",
+      "semantic": true,
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.2, "end": 0.9}
+          },
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.9, "end": 1.7}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["card"]}
+      }
+    },
+    {
+      "code": "E_VISUAL_DETERMINISM",
+      "name": "visible-mismatch",
+      "semantic": true,
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.2, "end": 0.9}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["title"]}
+      }
+    },
+    {
+      "code": "E_VISUAL_DETERMINISM",
+      "name": "zero-length-interval",
+      "semantic": true,
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 1.0, "end": 1.0}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["card"]}
+      }
+    },
+    {
+      "code": "E_VISUAL_DETERMINISM",
+      "name": "scene-out-of-duration",
+      "semantic": true,
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.2, "end": 0.9},
+            "exit": {"start": 0.9, "end": 9.0}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["card"]}
+      }
+    },
+    {
+      "code": "E_SCHEMA_VALUE",
+      "name": "bad-locale",
+      "payload": {
+        "schema_version": 2,
+        "duration": 8.0,
+        "scenes": [
+          {
+            "id": "card",
+            "interpolation": "linear",
+            "enter": {"start": 0.2, "end": 0.9}
+          }
+        ],
+        "typewriter": {"mode": "per-char", "locale": "xx", "char_width_factor": 0.6},
+        "reduced_motion": {"mode": "static", "visible": ["card"]}
+      }
+    }
+  ]
+}

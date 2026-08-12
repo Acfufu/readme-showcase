@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "width": 1200,
+  "fps": 30,
+  "duration": 8.0,
+  "colors": 192,
+  "dither": "none",
+  "transparent_color": "#ff00ff",
+  "alpha_threshold": 128,
+  "clip_to_base_alpha": false,
+  "max_size_mb": 2.0,
+  "scenes": [
+    {
+      "id": "card",
+      "interpolation": "linear",
+      "enter": {"start": 0.2, "end": 0.9},
+      "hold": {"start": 0.9, "end": 3.9},
+      "exit": {"start": 3.9, "end": 4.6}
+    },
+    {
+      "id": "title",
+      "interpolation": "linear",
+      "enter": {"start": 4.6, "end": 5.6}
+    }
+  ],
+  "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+  "reduced_motion": {"mode": "static", "visible": ["card", "title"]}
+}

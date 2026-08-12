@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import json
 import math
 import re
 import shutil
@@ -24,8 +25,16 @@ if __package__ and __package__.startswith("skill."):
         read_regular_bytes,
         write_bytes_atomic,
     )
-    from skill.scripts.readme_showcase.visual_kernel.motion import project_motion_spec
-    from skill.scripts.readme_showcase.visual_kernel.timeline import Timeline
+    from skill.scripts.readme_showcase.visual_kernel.motion import (
+        project_motion_spec,
+        project_motion_spec_v2,
+        validate_motion_spec_v2,
+    )
+    from skill.scripts.readme_showcase.visual_kernel.timeline import (
+        Timeline,
+        TimelineV2,
+        typewriter_char_width_factor,
+    )
 else:  # The installed Skill runs this file directly from its scripts directory.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from scripts.audit_readme import MAX_SVG_DEPTH, MAX_SVG_ELEMENTS
@@ -35,8 +44,16 @@ else:  # The installed Skill runs this file directly from its scripts directory.
         read_regular_bytes,
         write_bytes_atomic,
     )
-    from scripts.readme_showcase.visual_kernel.motion import project_motion_spec
-    from scripts.readme_showcase.visual_kernel.timeline import Timeline
+    from scripts.readme_showcase.visual_kernel.motion import (
+        project_motion_spec,
+        project_motion_spec_v2,
+        validate_motion_spec_v2,
+    )
+    from scripts.readme_showcase.visual_kernel.timeline import (
+        Timeline,
+        TimelineV2,
+        typewriter_char_width_factor,
+    )
 
 try:
     from PIL import Image, ImageChops
@@ -62,27 +79,50 @@ MAX_MOTION_OUTPUT_BYTES = 64 * 1024 * 1024
 MAX_MOTION_SUBPROCESS_SECONDS = 60
 MAX_MOTION_ELEMENTS = 64
 MAX_MOTION_COMPOSITES = 10_000
+MIN_MOTION_DURATION_SECONDS = 5.0
+MIN_MOTION_FPS = 15
+DEGRADE_DURATION_STEP_SECONDS = 1.0
+DEGRADE_FPS_STEP = 5
+_TYPEWRITER_STEP_CHARS = {"per-char": 1, "per-word": 4, "per-line": 8}
+_DEFAULT_FONT_SIZE = 16.0
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Animate named SVG layers from a JSON motion spec or Timeline v1 and encode a GIF."
+        description="Animate named SVG layers from a JSON motion spec or Timeline v1/v2 and encode a GIF."
     )
     parser.add_argument("input_svg", type=Path)
     parser.add_argument("output_gif", type=Path)
     source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--spec", type=Path, help="JSON motion spec")
-    source.add_argument("--timeline", type=Path, help="Timeline v1 JSON")
+    source.add_argument("--spec", type=Path, help="JSON motion spec (v1 reveals/layers or v2 scenes/typewriter)")
+    source.add_argument("--timeline", type=Path, help="Timeline v1 or v2 JSON")
     parser.add_argument(
         "--keep-frames",
         type=Path,
         help="Keep rendered layers and PNG frames in this new or empty directory",
+    )
+    parser.add_argument(
+        "--motion-json",
+        type=Path,
+        help="Write the final effective motion spec (canonical JSON) after rendering",
     )
     return parser.parse_args()
 
 
 def fail(message: str) -> None:
     raise SystemExit(f"ERROR: {message}")
+
+
+def motion_json_bytes(value: dict) -> bytes:
+    """Canonical JSON for motion artifacts, which carry float seconds."""
+    text = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return f"{text}\n".encode("utf-8")
 
 
 def _read_input(path: Path, maximum: int) -> bytes:
@@ -98,25 +138,38 @@ def load_spec(path: Path) -> dict:
     except ContractError as exc:
         fail(f"{exc.code}: {exc}")
 
-    defaults = {
-        "width": 1200,
-        "fps": 30,
-        "duration": 5.0,
-        "colors": 192,
-        "dither": "none",
-        "transparent_color": "#ff00ff",
-        "alpha_threshold": 128,
-        "clip_to_base_alpha": False,
-        "max_size_mb": 2.0,
-        "reveals": [],
-        "layers": [],
-    }
+    if spec.get("schema_version") == 2:
+        defaults = {
+            "width": 1200,
+            "fps": 30,
+            "duration": 8.0,
+            "colors": 192,
+            "dither": "none",
+            "transparent_color": "#ff00ff",
+            "alpha_threshold": 128,
+            "clip_to_base_alpha": False,
+            "max_size_mb": 2.0,
+        }
+    else:
+        defaults = {
+            "width": 1200,
+            "fps": 30,
+            "duration": 5.0,
+            "colors": 192,
+            "dither": "none",
+            "transparent_color": "#ff00ff",
+            "alpha_threshold": 128,
+            "clip_to_base_alpha": False,
+            "max_size_mb": 2.0,
+            "reveals": [],
+            "layers": [],
+        }
     defaults.update(spec)
     return defaults
 
 
 def load_timeline(path: Path) -> dict:
-    """Validate Timeline v1, then project it through the legacy motion adapter."""
+    """Validate Timeline v1/v2, then project it through the motion adapter."""
     try:
         _, timeline_payload = read_json_object_bytes(
             path,
@@ -124,6 +177,28 @@ def load_timeline(path: Path) -> dict:
         )
     except ContractError as exc:
         fail(f"{exc.code}: {exc}")
+
+    version = timeline_payload.get("schema_version")
+    if version == TimelineV2.schema_version:
+        required = {"schema_version", "targets", "duration_ms", "scenes", "typewriter", "reduced_motion"}
+        unknown = sorted(set(timeline_payload) - required)
+        if unknown:
+            fail(f"Timeline v2 contains unknown field: {unknown[0]}")
+        missing = sorted(required - set(timeline_payload))
+        if missing:
+            fail(f"Timeline v2 is missing field: {missing[0]}")
+        try:
+            timeline = TimelineV2(
+                timeline_payload["targets"],
+                timeline_payload["duration_ms"],
+                timeline_payload["scenes"],
+                timeline_payload["typewriter"],
+                timeline_payload["reduced_motion"],
+            )
+            return dict(project_motion_spec_v2(timeline))
+        except ContractError as exc:
+            fail(f"{exc.code}: {exc}")
+
     required = {"schema_version", "targets", "duration_ms", "operations", "reduced_motion"}
     unknown = sorted(set(timeline_payload) - required)
     if unknown:
@@ -184,43 +259,49 @@ def motion_frame_count(spec: dict) -> int:
 
 
 def validate_spec(spec: dict) -> None:
-    fps = _integer(spec["fps"], "fps")
-    if not 1 <= fps <= 60:
-        fail("fps must be between 1 and 60")
-    duration = _finite_number(spec["duration"], "duration")
-    if duration <= 0:
-        fail("duration must be positive")
-    if duration > MAX_MOTION_DURATION_SECONDS:
-        fail(f"duration must be at most {MAX_MOTION_DURATION_SECONDS:g} seconds")
-    width = _integer(spec["width"], "width")
-    if width <= 0:
-        fail("width must be positive")
-    if width > MAX_MOTION_DIMENSION:
-        fail(f"width must be at most {MAX_MOTION_DIMENSION} pixels")
-    motion_frame_count(spec)
-    colors = _integer(spec["colors"], "colors")
-    if not 2 <= colors <= 256:
-        fail("colors must be between 2 and 256")
-    alpha_threshold = _integer(spec["alpha_threshold"], "alpha_threshold")
-    if not 0 <= alpha_threshold <= 255:
-        fail("alpha_threshold must be between 0 and 255")
-    parse_hex_color(spec["transparent_color"])
-    if not isinstance(spec["clip_to_base_alpha"], bool):
-        fail("clip_to_base_alpha must be true or false")
-    allowed_dither = {
-        "none",
-        "bayer",
-        "heckbert",
-        "floyd_steinberg",
-        "sierra2",
-        "sierra2_4a",
-    }
-    if spec["dither"] not in allowed_dither:
-        fail(f"unsupported dither mode: {spec['dither']}")
-
-    if not isinstance(spec["reveals"], list) or not isinstance(spec["layers"], list):
-        fail("reveals and layers must be arrays")
-    elements = [*spec["reveals"], *spec["layers"]]
+    if spec.get("schema_version") == 2:
+        try:
+            validate_motion_spec_v2(spec)
+        except ContractError as exc:
+            fail(f"{exc.code}: {exc}")
+    else:
+        fps = _integer(spec["fps"], "fps")
+        if not 1 <= fps <= 60:
+            fail("fps must be between 1 and 60")
+        duration = _finite_number(spec["duration"], "duration")
+        if duration <= 0:
+            fail("duration must be positive")
+        if duration > MAX_MOTION_DURATION_SECONDS:
+            fail(f"duration must be at most {MAX_MOTION_DURATION_SECONDS:g} seconds")
+        width = _integer(spec["width"], "width")
+        if width <= 0:
+            fail("width must be positive")
+        if width > MAX_MOTION_DIMENSION:
+            fail(f"width must be at most {MAX_MOTION_DIMENSION} pixels")
+        colors = _integer(spec["colors"], "colors")
+        if not 2 <= colors <= 256:
+            fail("colors must be between 2 and 256")
+        alpha_threshold = _integer(spec["alpha_threshold"], "alpha_threshold")
+        if not 0 <= alpha_threshold <= 255:
+            fail("alpha_threshold must be between 0 and 255")
+        parse_hex_color(spec["transparent_color"])
+        if not isinstance(spec["clip_to_base_alpha"], bool):
+            fail("clip_to_base_alpha must be true or false")
+        allowed_dither = {
+            "none",
+            "bayer",
+            "heckbert",
+            "floyd_steinberg",
+            "sierra2",
+            "sierra2_4a",
+        }
+        if spec["dither"] not in allowed_dither:
+            fail(f"unsupported dither mode: {spec['dither']}")
+        if not isinstance(spec["reveals"], list) or not isinstance(spec["layers"], list):
+            fail("reveals and layers must be arrays")
+        elements = [*spec["reveals"], *spec["layers"]]
+    if spec.get("schema_version") == 2:
+        elements = [*spec["scenes"]]
     if len(elements) > MAX_MOTION_ELEMENTS:
         fail(f"motion elements must be at most {MAX_MOTION_ELEMENTS}")
     if len(elements) * motion_frame_count(spec) > MAX_MOTION_COMPOSITES:
@@ -479,6 +560,8 @@ def build_frames(
     validate_svg_structure(root)
     frame_count = motion_frame_count(spec)
     validate_frame_budget(spec, _svg_dimensions(root), frame_count=frame_count)
+    if spec.get("schema_version") == 2:
+        return _build_frames_v2(root, spec, renderer, workspace, frame_count)
     moving_ids = {
         item["id"] for item in [*spec["reveals"], *spec["layers"]]
     }
@@ -571,6 +654,151 @@ def build_frames(
             dy = start_y * scale * (1 - entered) + end_y * scale * exit_state
             layer = opacity_layer(rendered[item["id"]], opacity)
             canvas.alpha_composite(layer, (round(dx), round(dy)))
+
+        if spec["clip_to_base_alpha"]:
+            canvas.putalpha(base.getchannel("A"))
+
+        alpha_mask = canvas.getchannel("A").point(
+            lambda alpha: 255 if alpha >= alpha_threshold else 0
+        )
+        signature = hashlib.sha256(alpha_mask.tobytes()).digest()
+        if alpha_signature is None:
+            alpha_signature = signature
+        elif signature != alpha_signature:
+            fail(
+                "GIF transparency silhouette changes across frames; place motion "
+                "inside a stable background or enable clip_to_base_alpha"
+            )
+        has_transparency |= alpha_mask.getextrema()[0] == 0
+
+        frame_image = flatten_to_chroma(
+            canvas, transparent_color, alpha_threshold
+        )
+        frame_image.save(frames_dir / f"frame-{frame:04d}.png")
+
+    return frames_dir, frame_count, output_width, output_height, has_transparency
+
+
+def text_font_size(element: ET.Element) -> float:
+    raw = element.get("font-size", "").strip()
+    match = re.match(r"^(\d+(?:\.\d*)?)", raw)
+    return float(match.group(1)) if match else _DEFAULT_FONT_SIZE
+
+
+def typewriter_steps(typewriter: dict, layer: Image.Image, font_size: float) -> int:
+    """Discrete reveal steps for a typewriter scene: the only sanctioned discreteness.
+
+    The char width comes from the locale char-width table (0.6 em latin
+    per-char, 1.0 em CJK) times the text font size; the mode decides how many
+    characters each step advances.
+    """
+    factor = float(typewriter["char_width_factor"])
+    step_chars = _TYPEWRITER_STEP_CHARS.get(typewriter["mode"], 1)
+    bbox = layer.getbbox()
+    if not bbox:
+        return 1
+    width = bbox[2] - bbox[0]
+    step = max(1.0, factor * font_size * step_chars)
+    return max(1, round(width / step))
+
+
+def _build_frames_v2(
+    root: ET.Element,
+    spec: dict,
+    renderer: tuple[str, str],
+    workspace: Path,
+    frame_count: int,
+) -> tuple[Path, int, int, int, bool]:
+    moving_ids = {item["id"] for item in spec["scenes"]}
+
+    base_root = copy.deepcopy(root)
+    remove_ids(base_root, moving_ids)
+    base_svg = workspace / "base.svg"
+    base_png = workspace / "base.png"
+    write_svg(base_root, base_svg)
+    render_svg(renderer, base_svg, base_png)
+
+    rendered: dict[str, Image.Image] = {}
+    for element_id in moving_ids:
+        svg_path = workspace / f"layer-{element_id}.svg"
+        png_path = workspace / f"layer-{element_id}.png"
+        write_svg(extracted_layer(root, element_id), svg_path)
+        render_svg(renderer, svg_path, png_path)
+        rendered[element_id] = Image.open(png_path).convert("RGBA")
+
+    base_source = Image.open(base_png).convert("RGBA")
+    source_width, source_height = base_source.size
+    output_width, output_height = validate_frame_budget(
+        spec,
+        (source_width, source_height),
+        frame_count=frame_count,
+    )
+    scale = output_width / source_width
+    size = (output_width, output_height)
+
+    base = base_source.resize(size, Image.Resampling.LANCZOS)
+    rendered = {
+        key: image.resize(size, Image.Resampling.LANCZOS)
+        for key, image in rendered.items()
+    }
+
+    fps = int(spec["fps"])
+    frames_dir = workspace / "frames"
+    frames_dir.mkdir()
+    transparent_color = parse_hex_color(spec["transparent_color"])
+    alpha_threshold = int(spec["alpha_threshold"])
+    for label, image in [("base", base), *sorted(rendered.items())]:
+        if uses_visible_color(image, transparent_color, alpha_threshold):
+            fail(
+                f"{label} visibly uses transparent_color "
+                f"{spec['transparent_color']}; choose an unused key color"
+            )
+    alpha_signature: bytes | None = None
+    has_transparency = False
+
+    typewriter = spec.get("typewriter") or {}
+    text_elements = {
+        element_id
+        for element_id in moving_ids
+        if find_path(root, element_id)[-1].tag.rsplit("}", 1)[-1] == "text"
+    }
+    font_sizes = {
+        element_id: text_font_size(find_path(root, element_id)[-1])
+        for element_id in moving_ids
+    }
+
+    for frame in range(frame_count):
+        time = frame / fps
+        canvas = base.copy()
+
+        for scene in spec["scenes"]:
+            element_id = scene["id"]
+            # Smooth scene motion is strictly linear: raw progress, no easing.
+            entered = progress(time, float(scene["enter"]["start"]), float(scene["enter"]["end"]))
+            exit_state = (
+                progress(time, float(scene["exit"]["start"]), float(scene["exit"]["end"]))
+                if "exit" in scene
+                else 0.0
+            )
+            state = entered * (1 - exit_state)
+            if state <= 0:
+                continue
+
+            layer = rendered[element_id]
+            if typewriter and element_id in text_elements:
+                # Discrete per-step reveal, allowed only for the typewriter.
+                steps = typewriter_steps(typewriter, layer, font_sizes[element_id])
+                fraction = math.floor(state * steps) / steps
+                if fraction <= 0:
+                    continue
+                bbox = layer.getbbox()
+                if not bbox:
+                    fail(f"rendered typewriter scene is empty: {element_id}")
+                edge = round(bbox[0] + (bbox[2] - bbox[0]) * fraction)
+                visible = layer.crop((0, 0, edge, output_height))
+                canvas.alpha_composite(visible, (0, 0))
+            else:
+                canvas.alpha_composite(opacity_layer(layer, state), (0, 0))
 
         if spec["clip_to_base_alpha"]:
             canvas.putalpha(base.getchannel("A"))
@@ -808,6 +1036,89 @@ def encode_gif(
         encoded.unlink(missing_ok=True)
 
 
+def at_render_floor(spec: dict) -> bool:
+    return float(spec["duration"]) <= MIN_MOTION_DURATION_SECONDS and int(spec["fps"]) <= MIN_MOTION_FPS
+
+
+def degrade_spec(spec: dict) -> bool:
+    """Step duration down to its floor, then fps, rescaling scene intervals with duration."""
+    duration = float(spec["duration"])
+    if duration - DEGRADE_DURATION_STEP_SECONDS >= MIN_MOTION_DURATION_SECONDS:
+        new_duration = round(duration - DEGRADE_DURATION_STEP_SECONDS, 2)
+        ratio = new_duration / duration
+        for scene in spec.get("scenes", []):
+            for name in ("enter", "hold", "exit"):
+                interval = scene.get(name)
+                if interval is not None:
+                    interval["start"] = round(interval["start"] * ratio, 2)
+                    interval["end"] = round(interval["end"] * ratio, 2)
+        spec["duration"] = new_duration
+        return True
+    fps = int(spec["fps"])
+    if fps - DEGRADE_FPS_STEP >= MIN_MOTION_FPS:
+        spec["fps"] = fps - DEGRADE_FPS_STEP
+        return True
+    return False
+
+
+def render_once(
+    root: ET.Element,
+    spec: dict,
+    renderer: tuple[str, str],
+    workspace: Path,
+    output_gif: Path,
+    ffmpeg: str,
+) -> tuple[int, int, int, int]:
+    frames_dir, frame_count, width, height, has_transparency = build_frames(
+        root, spec, renderer, workspace
+    )
+    output_bytes = encode_gif(
+        frames_dir,
+        output_gif,
+        spec,
+        ffmpeg,
+        frame_count,
+        has_transparency,
+    )
+    return output_bytes, frame_count, width, height
+
+
+def write_static_fallback(
+    input_svg: Path,
+    output_gif: Path,
+    renderer: tuple[str, str],
+    workspace: Path,
+) -> tuple[int, int, int]:
+    """Fall back to a single settled frame when the motion budget floor is exceeded."""
+    png_path = workspace / "static-frame.png"
+    render_svg(renderer, input_svg, png_path)
+    with Image.open(png_path) as image:
+        width, height = image.size
+    with tempfile.NamedTemporaryFile(
+        prefix=".readme-static-",
+        suffix=".gif",
+        dir=workspace,
+        delete=False,
+    ) as stream:
+        encoded = Path(stream.name)
+    try:
+        with Image.open(png_path) as image:
+            image.save(encoded, format="GIF")
+        try:
+            raw = read_regular_bytes(
+                encoded,
+                maximum=MAX_MOTION_OUTPUT_BYTES,
+                path_code="E_OUTPUT_PATH",
+                size_code="E_OUTPUT_SIZE",
+            )
+            write_bytes_atomic(output_gif, raw)
+        except ContractError as exc:
+            fail(f"{exc.code}: {exc}")
+        return len(raw), width, height
+    finally:
+        encoded.unlink(missing_ok=True)
+
+
 def run(args: argparse.Namespace) -> None:
     input_svg = args.input_svg.expanduser()
     output_gif = args.output_gif.expanduser()
@@ -835,23 +1146,45 @@ def run(args: argparse.Namespace) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="readme-motion-")
         workspace = Path(temporary.name)
 
+    motion_json = getattr(args, "motion_json", None)
+    motion_json = motion_json.expanduser() if motion_json is not None else None
+    budget = float(spec.get("max_size_mb", 2.0)) * (1024 * 1024)
+    fallback = False
+
     try:
-        frames_dir, frame_count, width, height, has_transparency = build_frames(
-            root, spec, renderer, workspace
+        attempt_workspace = workspace
+        output_bytes, frame_count, width, height = render_once(
+            root, spec, renderer, attempt_workspace, output_gif, ffmpeg
         )
-        output_bytes = encode_gif(
-            frames_dir,
-            output_gif,
-            spec,
-            ffmpeg,
-            frame_count,
-            has_transparency,
-        )
+        if spec.get("schema_version") == 2:
+            attempt = 0
+            while output_bytes > budget and not at_render_floor(spec) and degrade_spec(spec):
+                attempt += 1
+                attempt_workspace = workspace / f"attempt-{attempt}"
+                attempt_workspace.mkdir()
+                output_bytes, frame_count, width, height = render_once(
+                    root, spec, renderer, attempt_workspace, output_gif, ffmpeg
+                )
+            if output_bytes > budget:
+                output_bytes, width, height = write_static_fallback(
+                    input_svg, output_gif, renderer, workspace
+                )
+                frame_count = 1
+                fallback = True
+        if motion_json is not None and not fallback:
+            write_bytes_atomic(motion_json, motion_json_bytes(spec))
     finally:
         if temporary:
             temporary.cleanup()
 
     size_mb = output_bytes / (1024 * 1024)
+    if fallback:
+        print(f"STATIC: {output_gif}")
+        print(
+            f"Output: {width}x{height}, 1 frame, static frame fallback "
+            f"(motion budget floor exceeded), {size_mb:.2f} MB"
+        )
+        return
     print(f"GIF: {output_gif}")
     print(
         f"Output: {width}x{height}, {frame_count} frames, "

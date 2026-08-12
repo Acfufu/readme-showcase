@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import shutil
@@ -115,6 +116,225 @@ class MotionRendererTests(unittest.TestCase):
         payload.update(updates)
         path.write_text(json.dumps(payload), encoding="utf-8")
         return path
+
+    def _write_v2_spec(self, **updates: object) -> Path:
+        path = self.root / "motion-v2.json"
+        payload: dict[str, object] = {
+            "schema_version": 2,
+            "width": 1200,
+            "fps": 30,
+            "duration": 8.0,
+            "colors": 192,
+            "dither": "none",
+            "transparent_color": "#ff00ff",
+            "alpha_threshold": 128,
+            "clip_to_base_alpha": False,
+            "max_size_mb": 2.0,
+            "scenes": [
+                {
+                    "id": "moving",
+                    "interpolation": "linear",
+                    "enter": {"start": 0.2, "end": 0.9},
+                    "hold": {"start": 0.9, "end": 7.2},
+                }
+            ],
+            "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+            "reduced_motion": {"mode": "static", "visible": ["moving"]},
+        }
+        payload.update(updates)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def _write_timeline_v2(self) -> Path:
+        path = self.root / "timeline-v2.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "targets": ["moving"],
+                    "duration_ms": 1_200,
+                    "scenes": [
+                        {
+                            "id": "moving",
+                            "interpolation": "linear",
+                            "enter": {"start_ms": 0, "end_ms": 600},
+                            "hold": {"start_ms": 600, "end_ms": 1_200},
+                        }
+                    ],
+                    "typewriter": {"mode": "per-char", "locale": "en"},
+                    "reduced_motion": {"mode": "static", "visible": ["moving"]},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def test_v2_spec_loads_validates_and_renders(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        spec_path = self._write_v2_spec()
+        spec = render_motion_gif.load_spec(spec_path)
+        render_motion_gif.validate_spec(copy.deepcopy(spec))
+        self.assertEqual(spec["schema_version"], 2)
+        self.assertEqual(spec["duration"], 8.0)
+        self.assertEqual(len(spec["scenes"]), 1)
+        self.assertEqual(spec["typewriter"]["char_width_factor"], 0.6)
+
+        self._require_external_renderer()
+        svg = self._write_svg()
+        output = self.root / "v2.gif"
+        result = self._run(str(svg), str(output), "--spec", str(spec_path))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with Image.open(output) as image:
+            self.assertEqual(image.format, "GIF")
+            self.assertGreaterEqual(getattr(image, "n_frames", 1), 1)
+
+    def test_v2_timeline_projects_and_renders(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        timeline = self._write_timeline_v2()
+        projection = render_motion_gif.load_timeline(timeline)
+        self.assertEqual(projection["schema_version"], 2)
+        self.assertEqual([scene["id"] for scene in projection["scenes"]], ["moving"])
+        self.assertEqual(projection["duration"], 1.2)
+        self.assertEqual(projection["typewriter"], {"mode": "per-char", "locale": "en", "char_width_factor": 0.6})
+
+        self._require_external_renderer()
+        svg = self._write_svg()
+        output = self.root / "timeline-v2.gif"
+        result = self._run(str(svg), str(output), "--timeline", str(timeline))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with Image.open(output) as image:
+            self.assertEqual(image.format, "GIF")
+            self.assertGreaterEqual(getattr(image, "n_frames", 1), 1)
+
+    def test_v2_spec_contract_rejections_are_bounded(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        four_scenes = [
+            {
+                "id": f"scene-{index}",
+                "interpolation": "linear",
+                "enter": {"start": index * 2.0, "end": index * 2.0 + 1.0},
+            }
+            for index in range(4)
+        ]
+        cases = (
+            ("too-many-scenes", {"scenes": four_scenes}, "scenes must be at most 3"),
+            ("duration-over-cap", {"duration": 13.0}, "duration must be at most 12 seconds"),
+            (
+                "discrete-scene",
+                {
+                    "scenes": [
+                        {
+                            "id": "moving",
+                            "interpolation": "discrete",
+                            "enter": {"start": 0.2, "end": 0.9},
+                        }
+                    ]
+                },
+                "must be linear",
+            ),
+            (
+                "factor-mismatch",
+                {"typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 1.0}},
+                "char_width_factor must match",
+            ),
+        )
+        for name, updates, message in cases:
+            with self.subTest(name=name):
+                spec = render_motion_gif.load_spec(self._write_v2_spec(**updates))
+                with self.assertRaises(SystemExit) as raised:
+                    render_motion_gif.validate_spec(spec)
+                self.assertIn(message, str(raised.exception))
+
+    def test_locale_char_width_table_is_exposed_and_matches_the_kernel(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        self.assertEqual(render_motion_gif.typewriter_char_width_factor("per-char", "en"), 0.6)
+        self.assertEqual(render_motion_gif.typewriter_char_width_factor("per-line", "zh-Hans"), 1.0)
+        self.assertEqual(render_motion_gif.typewriter_char_width_factor("per-word", "ja"), 1.0)
+        from skill.scripts.pipeline_contracts import ContractError
+
+        with self.assertRaises(ContractError):
+            render_motion_gif.typewriter_char_width_factor("per-char", "zh-Hans")
+
+    def test_v2_degradation_reduces_params_and_writes_back_motion_json(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        spec_path = self._write_v2_spec()
+        svg = self._write_svg()
+        output = self.root / "degraded.gif"
+        motion_json = self.root / "degraded-motion.json"
+        frames_work = self.root / "frames-work"
+        args = Namespace(
+            input_svg=svg,
+            output_gif=output,
+            spec=spec_path,
+            timeline=None,
+            keep_frames=None,
+            motion_json=motion_json,
+        )
+        with (
+            mock.patch.object(render_motion_gif, "command_path", return_value="ffmpeg"),
+            mock.patch.object(render_motion_gif, "choose_renderer", return_value=("rsvg-convert", "renderer")),
+            mock.patch.object(
+                render_motion_gif,
+                "build_frames",
+                return_value=(frames_work, 240, 1200, 600, False),
+            ) as build,
+            mock.patch.object(render_motion_gif, "encode_gif", side_effect=[3 * 1024 * 1024, 1024 * 1024]) as encode,
+        ):
+            render_motion_gif.run(args)
+
+        self.assertEqual(build.call_count, 2)
+        self.assertEqual(encode.call_count, 2)
+        written = json.loads(motion_json.read_text(encoding="utf-8"))
+        self.assertEqual(written["duration"], 7.0)
+        self.assertEqual(written["fps"], 30)
+        for scene in written["scenes"]:
+            for name in ("enter", "hold", "exit"):
+                interval = scene.get(name)
+                if interval is not None:
+                    self.assertLessEqual(interval["end"], 7.0)
+
+    def test_v2_degradation_floor_falls_back_to_static_frame(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        spec_path = self._write_v2_spec()
+        svg = self._write_svg()
+        output = self.root / "fallback.gif"
+        motion_json = self.root / "fallback-motion.json"
+        motion_json.write_text("previous", encoding="utf-8")
+        frames_work = self.root / "frames-work"
+
+        def oversized(*_args, **_kwargs) -> int:
+            return 3 * 1024 * 1024
+
+        def fake_render(_renderer: tuple[str, str], _svg_path: Path, png_path: Path) -> None:
+            Image.new("RGBA", (160, 80), (255, 255, 255, 255)).save(png_path)
+
+        args = Namespace(
+            input_svg=svg,
+            output_gif=output,
+            spec=spec_path,
+            timeline=None,
+            keep_frames=None,
+            motion_json=motion_json,
+        )
+        with (
+            mock.patch.object(render_motion_gif, "command_path", return_value="ffmpeg"),
+            mock.patch.object(render_motion_gif, "choose_renderer", return_value=("rsvg-convert", "renderer")),
+            mock.patch.object(
+                render_motion_gif,
+                "build_frames",
+                return_value=(frames_work, 240, 1200, 600, False),
+            ) as build,
+            mock.patch.object(render_motion_gif, "encode_gif", side_effect=oversized) as encode,
+            mock.patch.object(render_motion_gif, "render_svg", side_effect=fake_render),
+        ):
+            render_motion_gif.run(args)
+
+        self.assertGreaterEqual(build.call_count, 2)
+        self.assertGreaterEqual(encode.call_count, 2)
+        with Image.open(output) as image:
+            self.assertEqual(image.format, "GIF")
+            self.assertEqual(getattr(image, "n_frames", 1), 1)
+        self.assertEqual(motion_json.read_text(encoding="utf-8"), "previous")
 
     def test_explicit_timeline_renders_and_preserves_reduced_motion_projection(self) -> None:
         self._require_external_renderer()

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/motion-spec.v2.schema.json",
+  "title": "Motion Spec v2",
+  "$comment": "Draft 2020-12 validates the closed scene/typewriter shape, enums, durations, and the 2 MB budget. Python validation additionally enforces the interpolation contract (smooth scene motion is linear; discrete stepping is reserved for the typewriter), the locale writing-system branch (latin per-char at 0.6 em, CJK per-word/per-line at 1.0 em), sequential non-overlapping scenes, byte-sorted reduced-motion state, and interval/duration consistency.",
+  "x-python-semantic-validation": {
+    "validator": "skill.scripts.readme_showcase.visual_kernel.motion.validate_motion_spec_v2",
+    "codes": [
+      "E_SCHEMA_VERSION",
+      "E_SCHEMA_TYPE",
+      "E_SCHEMA_UNKNOWN_FIELD",
+      "E_SCHEMA_MISSING_FIELD",
+      "E_SCHEMA_VALUE",
+      "E_VISUAL_SPEC_ID",
+      "E_VISUAL_DETERMINISM"
+    ]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenes",
+    "typewriter",
+    "reduced_motion"
+  ],
+  "properties": {
+    "schema_version": {"const": 2},
+    "width": {"type": "integer", "default": 1200, "minimum": 1},
+    "fps": {"type": "integer", "default": 30, "minimum": 1, "maximum": 60},
+    "duration": {"type": "number", "default": 8.0, "exclusiveMinimum": 0, "maximum": 12.0},
+    "colors": {"type": "integer", "default": 192, "minimum": 2, "maximum": 256},
+    "dither": {"enum": ["none", "bayer", "heckbert", "floyd_steinberg", "sierra2", "sierra2_4a"], "default": "none"},
+    "transparent_color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#ff00ff"},
+    "alpha_threshold": {"type": "integer", "default": 128, "minimum": 0, "maximum": 255},
+    "clip_to_base_alpha": {"type": "boolean", "default": false},
+    "max_size_mb": {"const": 2.0},
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {"$ref": "#/$defs/scene"}
+    },
+    "typewriter": {"$ref": "#/$defs/typewriter"},
+    "reduced_motion": {"$ref": "#/$defs/reducedMotion"}
+  },
+  "$defs": {
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "interpolation", "enter"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "interpolation": {"const": "linear"},
+        "enter": {"$ref": "#/$defs/interval"},
+        "hold": {"$ref": "#/$defs/interval"},
+        "exit": {"$ref": "#/$defs/interval"}
+      }
+    },
+    "interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": {"type": "number", "minimum": 0},
+        "end": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "typewriter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "locale", "char_width_factor"],
+      "properties": {
+        "mode": {"enum": ["per-char", "per-word", "per-line"]},
+        "locale": {"enum": ["en", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de"]},
+        "char_width_factor": {"enum": [0.6, 1.0]}
+      }
+    },
+    "reducedMotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "visible"],
+      "properties": {
+        "mode": {"const": "static"},
+        "visible": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 4096}}
+      }
+    }
+  }
+}
