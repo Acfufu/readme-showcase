@@ -162,6 +162,20 @@ class SkillWorkflowTests(unittest.TestCase):
         for operational in ("status", "resume", "preview"):
             self.assertIn(f"`{operational} [target]` calls the existing pipeline", commands)
 
+    def test_visualize_creativity_contract_applies_to_hand_author_only(self) -> None:
+        text = SKILL.read_text(encoding="utf-8")
+        commands = (REPO_ROOT / "skill/references/commands.md").read_text(encoding="utf-8")
+        for haystack in (text, commands):
+            flat = " ".join(haystack.split())
+            self.assertIn("--creativity", flat)
+            self.assertIn("low|medium|high", flat)
+            self.assertIn("hand-authored", flat)
+            self.assertIn("`static`", flat)
+            self.assertIn("`elk`", flat)
+            self.assertIn("compiled", flat)
+            self.assertIn("does not accept", flat)
+            self.assertIn("does not promise wow", flat)
+
     def test_compiled_reference_documents_opt_in_outputs_limits_and_local_boundary(self) -> None:
         _assert_compiled_documentation_contract(REPO_ROOT)
         reference = VISUAL_COMPILER.read_text(encoding="utf-8")

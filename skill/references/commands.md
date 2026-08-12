@@ -78,6 +78,10 @@ Use for one README-only visual or a coordinated asset set.
   motion only after explicit opt-in and retain the required editable sources
   and fallback.
 - Validate wide and narrow GitHub presentation.
+- `--creativity low|medium|high` applies to hand-authored routes (`static`,
+  `elk`) only. The `compiled` route does not accept it: its projections stay
+  deterministic. `low` does not promise wow — it targets a clear, sober,
+  evidence-first graphic.
 - Leave every README byte-for-byte unchanged until embedding is separately
   approved.
 

@@ -35,6 +35,11 @@ Use one Skill entry with an optional command and free-form target:
 pipeline commands. They are not authoring modes and do not broaden write or
 publication authority.
 
+`visualize` accepts `--creativity low|medium|high` for hand-authored routes
+(`static`, `elk`) only. The `compiled` route does not accept it — compiled
+projections stay deterministic. `low` does not promise wow; it targets a
+clear, sober, evidence-first graphic.
+
 Read [references/commands.md](references/commands.md) for command contracts and
 routing. A bare invocation inspects the current README, dirty tree, and latest
 run. If the request shows novice signals — no command vocabulary, a
