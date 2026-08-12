@@ -1228,6 +1228,10 @@ class BundleContractTests(unittest.TestCase):
                 Draft202012Validator(self._asset_manifest_v3_schema()).is_valid(manifest) is False
             )
 
+            # A motion asset may be named desktop.svg (the plan contract is
+            # ``*.svg`` for animation), so the E_PATH below fires because the
+            # file is ABSENT on disk (_safe_read maps E_INPUT_NOT_FOUND ->
+            # E_PATH), not because the name is forbidden.
             manifest = self.make_motion_manifest(root)
             manifest["assets"][1]["path"] = "assets/readme-showcase/en/desktop.svg"
             with self.assertRaises(ContractError) as raised:
@@ -1239,6 +1243,66 @@ class BundleContractTests(unittest.TestCase):
             with self.assertRaises(ContractError) as raised:
                 validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
             self.assertEqual(raised.exception.code, "E_BUNDLE_ASSET")
+
+    def test_asset_manifest_v3_motion_assets_may_be_named_desktop_svg(self) -> None:
+        # Task 2.4 interface: motion asset naming allows ``*.svg`` (animation
+        # role path pattern ``[^/]+\.svg``), so a desktop.svg name is legal as
+        # long as the file exists on disk.  No scene/gate and no manifest-level
+        # compiled requirement apply to motion assets.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            hero = self.write_bytes(
+                root,
+                "assets/readme-showcase/en/hero-static.svg",
+                self.valid_svg("Hero static fallback"),
+            )
+            animation = self.write_bytes(
+                root,
+                "assets/readme-showcase/en/desktop.svg",
+                self.valid_svg("Animated hero"),
+            )
+            fact_id = EVIDENCE["facts"][0]["fact_id"]
+            manifest = {
+                "schema_version": 3,
+                "assets": [
+                    {
+                        "asset_id": "animation-en",
+                        "path": animation["path"],
+                        "artifact_sha256": animation["sha256"],
+                        "evidence_ids": [fact_id],
+                        "role": "animation",
+                        "locale": "en",
+                        "variant": "desktop",
+                    },
+                    {
+                        "asset_id": "hero-en",
+                        "path": hero["path"],
+                        "artifact_sha256": hero["sha256"],
+                        "evidence_ids": [fact_id],
+                        "role": "hero",
+                        "locale": "en",
+                        "variant": "desktop",
+                    },
+                ],
+            }
+            normalized = validate_asset_manifest(
+                manifest,
+                evidence_graph=EVIDENCE,
+                artifact_root=root,
+            )
+            self.assertEqual(normalized, manifest)
+            self.assertEqual(
+                canonical_asset_manifest_bytes(
+                    manifest,
+                    evidence_graph=EVIDENCE,
+                    artifact_root=root,
+                ),
+                canonical_json_bytes(manifest),
+            )
+            self.assertEqual(
+                list(Draft202012Validator(self._asset_manifest_v3_schema()).iter_errors(manifest)),
+                [],
+            )
 
     def test_asset_manifest_v3_compiled_required_only_when_diagram_assets_exist(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

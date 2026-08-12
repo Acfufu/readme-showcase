@@ -235,6 +235,7 @@ class SchemaParityTests(unittest.TestCase):
             "unknown-field": ("E_SCHEMA_UNKNOWN_FIELD", False),
             "v3-shaped-labeled-v2": ("E_SCHEMA_VERSION", False),
             "motion-candidates-without-compiled": ("E_BUNDLE_PLAN", True),
+            "desktop-suffix-not-compiled": ("E_BUNDLE_PLAN", True),
         }
         self.assertEqual({case["name"] for case in fixture["cases"]}, set(expected))
         with tempfile.TemporaryDirectory() as temporary:

@@ -38,7 +38,7 @@
             "properties": {
               "assets": {
                 "contains": {
-                  "properties": {"path": {"type": "string", "pattern": "(?:desktop|mobile)\\.svg$"}},
+                  "properties": {"path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\\.svg$"}},
                   "required": ["path"]
                 }
               }
