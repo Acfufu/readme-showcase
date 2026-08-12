@@ -88,10 +88,18 @@ A conflict is reported with the product values versus the chosen value, for
 example "candidate color `#4fd1c5` is not part of the repository identity
 palette (product palette: `#0a1f44`, `#22c55e`)".
 
-When the repository has no visual materials, the gate passes with an
-explanatory note: identity cannot be judged from empty evidence. When the
-candidate genuinely must deviate — a deliberate rebrand with a written reason —
-an approved override (`--identity-override-reason` and
+The gate covers every candidate SVG asset — hand-authored assets and
+compiled-route diagram projections alike. Compiled outputs are renderer
+outputs of the resolved Theme, so their palette must still match the
+repository identity (or stay neutral/system); there is no compiled-route
+exemption.
+
+When the repository has no visual materials, the gate fails closed: with an
+empty product token set, every non-neutral, non-system candidate token
+conflicts, so the evaluation fails and requires human attention. Candidates
+restricted to neutral grayscale colors and system font families still pass.
+When the candidate genuinely must deviate — a deliberate rebrand with a
+written reason — an approved override (`--identity-override-reason` and
 `--identity-override-approved-by` on `evaluate`) converts the conflict into a
 pass and records `identity_override` (reason and approver) on the evaluation
 report. Publishing-side validation of that override belongs to the publish
