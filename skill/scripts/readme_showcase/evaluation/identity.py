@@ -140,20 +140,15 @@ def evaluate_identity_gate(
 ) -> dict[str, object]:
     """Apply the explainable identity hard gate with written-reason override.
 
-    Without product tokens the gate cannot judge identity and passes with an
-    explanatory evidence string (evidence-driven fail-open, like the voice
-    gate).  A written override (reason and approved_by) converts conflicts
-    into a pass and records the override for the report; an override that is
-    never needed because there were no conflicts is not recorded.
+    Conflicts are judged even when the repository carries no visual facts: with
+    an empty product token set every non-neutral, non-system candidate token
+    conflicts, so the gate fails closed instead of approving arbitrary brand
+    tokens without human attention.  Candidates restricted to neutral
+    grayscale colors and system font families still pass.  A written override
+    (reason and approved_by) converts conflicts into a pass and records the
+    override for the report; an override that is never needed because there
+    were no conflicts is not recorded.
     """
-    if not product_tokens:
-        return {
-            "pass": True,
-            "conflicts": [],
-            "override": False,
-            "identity_override": None,
-            "evidence": "no visual identity facts in repository evidence",
-        }
     conflicts = _conflicts(asset_tokens, product_tokens)
     if not conflicts:
         return {

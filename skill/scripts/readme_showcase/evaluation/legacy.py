@@ -123,10 +123,23 @@ def _v3_identity(
 
     Product tokens come only from repository-evidence ``visual`` facts;
     candidate tokens come only from the bundle's declared SVG assets.  Nothing
-    here touches the target repository.  A written override (reason and
-    approved_by) turns conflicts into a pass and is recorded on the report.
+    here touches the target repository.  Compiled-route projections (assets
+    declared with role ``diagram`` in the v3 asset manifest) are excluded:
+    they are renderer outputs already bound by their own gate reports and
+    visual-spec validation, not authored identity tokens.  A written override
+    (reason and approved_by) turns conflicts into a pass and is recorded on
+    the report.
     """
     product_tokens = collect_visual_tokens(evidence)
+    compiled_paths: set[str] = set()
+    manifest_value = payload.get("artifacts", {}).get("asset_manifest")
+    if isinstance(manifest_value, Mapping):
+        manifest, _ = _artifact_json(artifact_root, manifest_value, "bundle artifacts.asset_manifest")
+        compiled_paths = {
+            str(asset["path"])
+            for asset in manifest.get("assets", ())
+            if isinstance(asset, Mapping) and asset.get("role") == "diagram" and isinstance(asset.get("path"), str)
+        }
     candidate = payload.get("candidate", {}).get("assets") if isinstance(payload.get("candidate"), Mapping) else None
     asset_tokens: dict[str, list[str]] = {"palette": [], "typography": []}
     if isinstance(candidate, list):
@@ -134,7 +147,7 @@ def _v3_identity(
             if not isinstance(item, Mapping):
                 continue
             path = item.get("path")
-            if not isinstance(path, str) or not path.endswith(".svg"):
+            if not isinstance(path, str) or not path.endswith(".svg") or path in compiled_paths:
                 continue
             try:
                 raw = _artifact_bytes(artifact_root, _reference(item, "bundle candidate assets"), "bundle candidate assets")

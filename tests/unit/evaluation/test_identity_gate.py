@@ -91,15 +91,26 @@ class IdentityGateTests(unittest.TestCase):
         self.assertEqual(conflict["chosen"], "Comic Sans MS")
         self.assertEqual(conflict["product"], PRODUCT_TOKENS["typography"])
 
-    def test_missing_product_tokens_passes_open_with_explanation(self) -> None:
+    def test_missing_product_tokens_fails_closed_on_non_system_tokens(self) -> None:
         result = evaluate_identity_gate(
             {"palette": ["#ff0000"], "typography": ["system-ui"]},
             {},
         )
-        self.assertTrue(result["pass"])
+        self.assertFalse(result["pass"])
         self.assertFalse(result["override"])
         self.assertIsNone(result["identity_override"])
-        self.assertIn("no visual identity", result["evidence"])
+        self.assertEqual(len(result["conflicts"]), 1)
+        self.assertEqual(result["conflicts"][0]["token"], "palette")
+        self.assertIn("identity conflicts", result["evidence"])
+
+    def test_missing_product_tokens_passes_neutral_and_system_only(self) -> None:
+        result = evaluate_identity_gate(
+            {"palette": ["#ffffff", "#000000"], "typography": ["system-ui", "sans-serif"]},
+            {},
+        )
+        self.assertTrue(result["pass"])
+        self.assertFalse(result["override"])
+        self.assertEqual(result["conflicts"], [])
 
     def test_conflict_without_override_fails_closed(self) -> None:
         result = evaluate_identity_gate(
@@ -256,29 +267,36 @@ class IdentityBundleEvaluationTests(unittest.TestCase):
         bundle["artifacts"]["evidence"]["sha256"] = hashlib.sha256(raw).hexdigest()  # type: ignore[index]
         return bundle
 
-    def test_conflicting_candidate_identity_fails_evaluation_with_finding(self) -> None:
+    def test_compiled_diagram_assets_are_identity_exempt(self) -> None:
+        """Compiled projections are renderer outputs; the identity gate judges no tokens."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             bundle = self._bundle_with_visual_facts(root)
             report = evaluate_generated_bundle(bundle, root)
-            self.assertEqual(report["status"], "fail")
-            self.assertIsNone(report["identity_override"])
+            self.assertEqual(report["status"], "pass")
             codes = [finding["code"] for finding in report["hard_gate"]["findings"]]
-            self.assertIn("E_IDENTITY_MATCH", codes)
-            message = next(
-                finding["message"]
-                for finding in report["hard_gate"]["findings"]
-                if finding["code"] == "E_IDENTITY_MATCH"
-            )
-            self.assertIn("#123456", message)
+            self.assertNotIn("E_IDENTITY_MATCH", codes)
 
-    def test_written_override_passes_and_records_identity_override(self) -> None:
+    def test_compiled_bundle_without_visual_facts_passes_identity(self) -> None:
+        """No repository visual facts and no authored candidate tokens pass the gate."""
+        from tests.contract.test_bundle_v3 import BundleV3ContractTests
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = BundleV3ContractTests().make_bundle(root)
+            bundle["target"] = {"repository": "owner/target", "base_sha": "0" * 40}
+            report = evaluate_generated_bundle(bundle, root)
+            self.assertEqual(report["status"], "pass")
+            codes = [finding["code"] for finding in report["hard_gate"]["findings"]]
+            self.assertNotIn("E_IDENTITY_MATCH", codes)
+
+    def test_compiled_bundle_identity_override_not_recorded_without_conflicts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             bundle = self._bundle_with_visual_facts(root)
             report = evaluate_generated_bundle(bundle, root, identity_override=OVERRIDE)
             self.assertEqual(report["status"], "pass")
-            self.assertEqual(report["identity_override"], OVERRIDE)
+            self.assertIsNone(report["identity_override"])
 
     def test_collected_visual_tokens_merge_facts_from_evidence_graph(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
