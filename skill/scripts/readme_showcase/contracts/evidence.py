@@ -29,6 +29,7 @@ EVIDENCE_KINDS = frozenset(
         "git-metadata",
         "documentation-statement",
         "voice-sample",
+        "visual",
     }
 )
 CONFIDENCE_LEVELS = frozenset({"observed", "derived", "documented"})
@@ -54,6 +55,7 @@ _PREFIXES = {
     "git-metadata": "git",
     "documentation-statement": "documentation",
     "voice-sample": "voice",
+    "visual": "visual",
 }
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _SYMBOL = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:(?:::|\.)[A-Za-z_][A-Za-z0-9_]*)*\Z")

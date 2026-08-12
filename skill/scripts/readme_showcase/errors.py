@@ -62,6 +62,7 @@ FAIL_FAST_CODES = frozenset(
         "E_ELK_SEMANTIC",
         "E_ENGINE_METADATA",
         "E_EVALUATION_DRIFT",
+        "E_EVALUATION_REPORT",
         "E_INPUT_ENCODING",
         "E_INPUT_JSON",
         "E_INPUT_NOT_FOUND",

@@ -106,10 +106,11 @@ def _v3_evidence_graph(context: RunContext, evidence: Mapping[str, Any]) -> dict
     if type(version) is int and version == 1:
         payload = adapt_v1_repository_evidence(evidence)
         voice = _voice_facts(context)
-        if voice:
+        visual = _visual_facts(context)
+        if voice or visual:
             from ..evidence.graph import EvidenceGraph
 
-            payload = EvidenceGraph([*payload["facts"], *voice]).to_dict()
+            payload = EvidenceGraph([*payload["facts"], *voice, *visual]).to_dict()
         return payload
     if type(version) is int and version == 2:
         return dict(evidence)
@@ -134,6 +135,24 @@ def _voice_facts(context: RunContext) -> list[dict[str, Any]]:
     return [dict(item) for item in value]
 
 
+def _visual_facts(context: RunContext) -> list[dict[str, Any]]:
+    """Visual identity facts written by the scan stage, when present."""
+    path = context.attempt_file(0, "repository-visual.json")
+    try:
+        raw = read_regular_bytes(path, maximum=MAX_CANDIDATE_BYTES, path_code="E_RUN_INPUT", size_code="E_RUN_INPUT")
+    except ContractError as exc:
+        if exc.code == "E_INPUT_NOT_FOUND":
+            return []
+        raise
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ContractError("E_RUN_INPUT", f"scan visual facts must be canonical JSON: {exc}") from exc
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise ContractError("E_RUN_INPUT", "scan visual facts must be a bounded fact list")
+    return [dict(item) for item in value]
+
+
 def _validate_compiled_visual_spec(value: object, evidence_graph: object) -> None:
     validator = importlib.import_module(f"{__package__.rsplit('.', 1)[0]}.visual_kernel.model").validate_visual_spec
     validator(value, evidence_graph=evidence_graph)
@@ -149,13 +168,24 @@ class ScanStage:
             context.cache["scan-voice"] = extract_voice_samples(context.workspace.target_root)
         return context.cache["scan-voice"]
 
+    def _visual(self, context: RunContext) -> list[dict[str, Any]]:
+        if "scan-visual" not in context.cache:
+            from ..scanner.visual import extract_visual_tokens
+
+            context.cache["scan-visual"] = extract_visual_tokens(context.workspace.target_root)
+        return context.cache["scan-visual"]
+
     def _value(self, context: RunContext) -> dict[str, Any]:
         if self.name not in context.cache:
             context.cache[self.name] = scan_repository(context.workspace.target_root)
         return context.cache[self.name]
 
     def fingerprint(self, context: RunContext) -> str:
-        return canonical_sha256({"scan": self._value(context), "voice": self._voice(context)})
+        return canonical_sha256({
+            "scan": self._value(context),
+            "voice": self._voice(context),
+            "visual": self._visual(context),
+        })
 
     def execute(self, context: RunContext) -> StageResult:
         value = self._value(context)
@@ -163,6 +193,9 @@ class ScanStage:
         voice = self._voice(context)
         if voice:
             files["repository-voice.json"] = canonical_json_bytes(voice)
+        visual = self._visual(context)
+        if visual:
+            files["repository-visual.json"] = canonical_json_bytes(visual)
         return StageResult("pass" if value["status"] == "complete" else "failed", files)
 
 

@@ -36,9 +36,10 @@ _COMPILED_REPORT_FIELDS = {
 _REPORT_V3_FIELDS = {
     "schema_version", "status", "decision_basis", "bundle_sha256",
     "compiled_fingerprint", "hard_gate", "compiled", "advisory",
-    "behavior", "behavior_required", "voice_match",
+    "behavior", "behavior_required", "voice_match", "identity_override",
 }
 _VOICE_MATCH_FIELDS = {"pass", "score", "evidence"}
+_IDENTITY_OVERRIDE_FIELDS = {"reason", "approved_by"}
 
 
 def _reject_float(value: Any, path: str = "$") -> None:
@@ -212,6 +213,30 @@ def validate_voice_match(payload: Any) -> dict[str, Any]:
     return copy.deepcopy(value)
 
 
+def validate_identity_override(payload: Any) -> dict[str, str] | None:
+    """Validate the evaluation report identity_override projection.
+
+    ``None`` means no written override was applied (either the candidate
+    matched the repository identity or the gate failed); an object carries
+    the written reason and approver that turned a conflict into a pass.
+    """
+    if payload is None:
+        return None
+    value = _strict_object(payload, _IDENTITY_OVERRIDE_FIELDS, "evaluation report.identity_override", "E_EVALUATION_REPORT")
+    normalized: dict[str, str] = {}
+    for field in ("reason", "approved_by"):
+        text = value[field]
+        if (
+            not isinstance(text, str)
+            or not text
+            or "\x00" in text
+            or len(text.encode("utf-8")) > 4096
+        ):
+            raise ContractError("E_EVALUATION_REPORT", f"identity_override {field} is invalid")
+        normalized[field] = text
+    return normalized
+
+
 def validate_evaluation_report_v3(payload: Any) -> dict[str, Any]:
     """Validate the closed Evaluation Report v3 projection.
 
@@ -263,6 +288,7 @@ def validate_evaluation_report_v3(payload: Any) -> dict[str, Any]:
     advisory = validate_advisory_metrics(value["advisory"])
     behavior = validate_behavior_result(value["behavior"])
     voice_match = validate_voice_match(value["voice_match"])
+    identity_override = validate_identity_override(value["identity_override"])
     if type(value["behavior_required"]) is not bool:
         raise ContractError("E_EVALUATION_REPORT", "behavior_required must be boolean")
     compiled_pass = all(
@@ -285,4 +311,5 @@ def validate_evaluation_report_v3(payload: Any) -> dict[str, Any]:
     result["advisory"] = advisory
     result["behavior"] = behavior
     result["voice_match"] = voice_match
+    result["identity_override"] = identity_override
     return result

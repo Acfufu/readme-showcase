@@ -130,11 +130,23 @@ def _evaluate(arguments: argparse.Namespace) -> dict[str, object]:
             trusted = frozenset({arguments.trusted_observation_sha256})
     elif arguments.trusted_observation_sha256 is not None:
         raise ContractError("E_OBSERVATION_BINDING", "trusted observation receipt requires --observation")
+    identity_override = None
+    if arguments.identity_override_reason is not None or arguments.identity_override_approved_by is not None:
+        if arguments.identity_override_reason is None or arguments.identity_override_approved_by is None:
+            raise ContractError(
+                "E_EVALUATION_REPORT",
+                "identity override requires both --identity-override-reason and --identity-override-approved-by",
+            )
+        identity_override = {
+            "reason": arguments.identity_override_reason,
+            "approved_by": arguments.identity_override_approved_by,
+        }
     report = evaluate_generated_bundle(
         read_json_object(arguments.bundle),
         arguments.bundle.parent.resolve(),
         observation=observation,
         trusted_observation_sha256s=trusted,
+        identity_override=identity_override,
     )
     write_canonical_json_atomic(arguments.output, report)
     return report
@@ -356,6 +368,8 @@ def build_parser() -> argparse.ArgumentParser:
     _path_argument(evaluate, "--output")
     _path_argument(evaluate, "--observation", required=False)
     evaluate.add_argument("--trusted-observation-sha256")
+    evaluate.add_argument("--identity-override-reason")
+    evaluate.add_argument("--identity-override-approved-by")
     evaluate.set_defaults(handler=_evaluate)
 
     import_benchmark = subcommands.add_parser("import-benchmark")

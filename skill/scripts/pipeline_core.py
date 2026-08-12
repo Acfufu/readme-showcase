@@ -170,6 +170,7 @@ def evaluate_generated_bundle(
     *,
     observation: dict[str, object] | None = None,
     trusted_observation_sha256s: frozenset[str] = frozenset(),
+    identity_override: dict[str, str] | None = None,
 ) -> dict[str, object]:
     _BUNDLE.MAX_ARTIFACT_BYTES = MAX_ARTIFACT_BYTES
     return cast(dict[str, object], _EVALUATION.evaluate_generated_bundle(
@@ -177,6 +178,7 @@ def evaluate_generated_bundle(
         artifact_root,
         observation=observation,
         trusted_observation_sha256s=trusted_observation_sha256s,
+        identity_override=identity_override,
     ))
 
 

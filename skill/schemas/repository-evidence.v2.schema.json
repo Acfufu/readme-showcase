@@ -96,7 +96,7 @@
       "properties": {
         "fact_id": {"type": "string", "pattern": "^[a-z]+:[0-9a-f]{64}$"},
         "kind": {
-          "enum": ["file-presence", "file-snippet", "config-value", "package-metadata", "code-symbol", "cli-entrypoint", "test-observation", "command-observation", "git-metadata", "documentation-statement", "voice-sample"]
+          "enum": ["file-presence", "file-snippet", "config-value", "package-metadata", "code-symbol", "cli-entrypoint", "test-observation", "command-observation", "git-metadata", "documentation-statement", "voice-sample", "visual"]
         },
         "source": {"$ref": "#/$defs/source"},
         "semantic_key": {"type": "string", "minLength": 1, "maxLength": 512},

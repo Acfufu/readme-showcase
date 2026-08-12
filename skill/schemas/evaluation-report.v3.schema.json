@@ -20,7 +20,8 @@
     "advisory",
     "behavior",
     "behavior_required",
-    "voice_match"
+    "voice_match",
+    "identity_override"
   ],
   "properties": {
     "schema_version": {"const": 3},
@@ -33,7 +34,8 @@
     "advisory": {"$ref": "#/$defs/advisory"},
     "behavior": {"$ref": "#/$defs/behavior"},
     "behavior_required": {"type": "boolean"},
-    "voice_match": {"$ref": "#/$defs/voiceMatch"}
+    "voice_match": {"$ref": "#/$defs/voiceMatch"},
+    "identity_override": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/identityOverride"}]}
   },
   "allOf": [
     {
@@ -121,6 +123,16 @@
         "pass": {"type": "boolean"},
         "score": {"type": "integer", "minimum": 0, "maximum": 10000},
         "evidence": {"$ref": "#/$defs/nonEmptyText"}
+      }
+    },
+    "identityOverride": {
+      "$comment": "The written reason and approver that converted an explainable identity conflict into a pass; null means no override was applied. Publishing-side recording of the reason belongs to the publish gate, not this report.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "approved_by"],
+      "properties": {
+        "reason": {"$ref": "#/$defs/nonEmptyText"},
+        "approved_by": {"$ref": "#/$defs/nonEmptyText"}
       }
     },
     "notApplicableMetric": {

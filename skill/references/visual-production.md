@@ -6,11 +6,12 @@ Read this reference before creating or revising README assets. Visuals must comm
 
 1. [Derive the visual system](#derive-the-visual-system)
 2. [Find the logo, do not invent it](#find-the-logo-do-not-invent-it)
-3. [Choose the opening](#choose-the-opening)
-4. [Use GitHub-safe assets](#use-github-safe-assets)
-5. [Choose a structure implementation](#choose-a-structure-implementation)
-6. [Produce SVG](#produce-svg)
-7. [Preview and validate](#preview-and-validate)
+3. [Explainable identity gate](#explainable-identity-gate)
+4. [Choose the opening](#choose-the-opening)
+5. [Use GitHub-safe assets](#use-github-safe-assets)
+6. [Choose a structure implementation](#choose-a-structure-implementation)
+7. [Produce SVG](#produce-svg)
+8. [Preview and validate](#preview-and-validate)
 
 ## Derive the Visual System
 
@@ -66,6 +67,34 @@ from memory. When the search genuinely finds no official logo, do not invent
 one: use a typographic treatment of the project name built from the derived
 visual system instead. Record where each logo search step was checked so the
 absence is an audited fact, not an omission.
+
+## Explainable Identity Gate
+
+The scan stage derives the repository's visual identity tokens from its own
+materials — SVG assets (logos, favicons, diagrams) and design-token files
+(`theme.json`, `tokens.json`, `variables.css`, and similar) — and stores them
+as `visual` evidence facts (`palette` and `typography` token lists). The
+evaluation stage then compares the candidate's SVG tokens against those
+product tokens and fails the hard gate on any conflict:
+
+- **Palette**: every non-grayscale candidate color must already exist in the
+  repository palette. Black, white, and pure grays are scaffolding and never
+  conflict.
+- **Typography**: every candidate font family must already exist in the
+  repository typography or be a system font stack the contract already allows.
+
+A conflict is reported with the product values versus the chosen value, for
+example "candidate color `#4fd1c5` is not part of the repository identity
+palette (product palette: `#0a1f44`, `#22c55e`)".
+
+When the repository has no visual materials, the gate passes with an
+explanatory note: identity cannot be judged from empty evidence. When the
+candidate genuinely must deviate — a deliberate rebrand with a written reason —
+an approved override (`--identity-override-reason` and
+`--identity-override-approved-by` on `evaluate`) converts the conflict into a
+pass and records `identity_override` (reason and approver) on the evaluation
+report. Publishing-side validation of that override belongs to the publish
+gate, not to this reference.
 
 ## Choose the Opening
 

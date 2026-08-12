@@ -11,7 +11,9 @@ from ..contracts.evaluation import validate_evaluation_report_v3
 from ..contracts.evidence import validate_evidence_graph
 from ..contracts.plan import validate_readme_plan
 from ..evaluation.contract import metric
+from ..evaluation.identity import collect_visual_tokens, evaluate_identity_gate
 from ..evaluation.voice import collect_voice_samples, evaluate_voice_match
+from ..scanner.visual import svg_tokens
 from ..visual_kernel.gates import validate_visual_gate_report
 from ..visual_kernel.model import validate_visual_spec
 from ..visual_kernel.reader import load_compiled_visual
@@ -109,6 +111,56 @@ def _v3_voice_match(
     }
 
 
+def _v3_identity(
+    payload: Mapping[str, Any],
+    artifact_root: Path,
+    evidence: Mapping[str, Any],
+    *,
+    identity_override: Mapping[str, str] | None,
+) -> dict[str, object]:
+    """Run the scan-extracted explainable identity gate over candidate assets.
+
+    Product tokens come only from repository-evidence ``visual`` facts;
+    candidate tokens come only from the bundle's declared SVG assets.  Nothing
+    here touches the target repository.  A written override (reason and
+    approved_by) turns conflicts into a pass and is recorded on the report.
+    """
+    product_tokens = collect_visual_tokens(evidence)
+    candidate = payload.get("candidate", {}).get("assets") if isinstance(payload.get("candidate"), Mapping) else None
+    asset_tokens: dict[str, list[str]] = {"palette": [], "typography": []}
+    if isinstance(candidate, list):
+        for item in candidate:
+            if not isinstance(item, Mapping):
+                continue
+            path = item.get("path")
+            if not isinstance(path, str) or not path.endswith(".svg"):
+                continue
+            try:
+                raw = _artifact_bytes(artifact_root, _reference(item, "bundle candidate assets"), "bundle candidate assets")
+            except ContractError:
+                continue
+            try:
+                tokens = svg_tokens(raw.decode("utf-8"))
+            except UnicodeDecodeError:
+                continue
+            for name in ("palette", "typography"):
+                for token in tokens[name]:
+                    if token not in asset_tokens[name]:
+                        asset_tokens[name].append(token)
+        for name in ("palette", "typography"):
+            asset_tokens[name] = sorted(asset_tokens[name])
+    match = evaluate_identity_gate(asset_tokens, product_tokens, override=identity_override)
+    conflicts = match.get("conflicts")
+    override_value = match.get("identity_override")
+    return {
+        "pass": bool(match.get("pass")),
+        "conflicts": [dict(conflict) for conflict in conflicts if isinstance(conflict, Mapping)] if isinstance(conflicts, list) else [],
+        "override": bool(match.get("override")),
+        "identity_override": dict(override_value) if isinstance(override_value, Mapping) else None,
+        "evidence": str(match.get("evidence")),
+    }
+
+
 def _v3_report(
     *,
     payload: Any,
@@ -119,6 +171,7 @@ def _v3_report(
     behavior: Mapping[str, Any],
     behavior_required: bool,
     voice_match: Mapping[str, object],
+    identity_override: Mapping[str, str] | None,
 ) -> dict[str, object]:
     ordered_findings = sorted(
         (dict(item) for item in findings),
@@ -139,6 +192,7 @@ def _v3_report(
         "behavior": dict(behavior),
         "behavior_required": behavior_required,
         "voice_match": dict(voice_match),
+        "identity_override": dict(identity_override) if identity_override is not None else None,
     }
     return validate_evaluation_report_v3(report)
 
@@ -302,6 +356,7 @@ def _evaluate_v3(
     *,
     observation: Mapping[str, object] | None = None,
     trusted_observation_sha256s: frozenset[str] = frozenset(),
+    identity_override: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     """Evaluate one Generated Bundle v3 through the compiled reader boundary."""
 
@@ -342,6 +397,9 @@ def _evaluate_v3(
         voice_match = _v3_voice_match(payload, artifact_root, evidence, plan)
         if not voice_match["pass"]:
             findings.append({"code": "E_VOICE_MATCH", "message": str(voice_match["evidence"])})
+        identity = _v3_identity(payload, artifact_root, evidence, identity_override=identity_override)
+        if not identity["pass"]:
+            findings.append({"code": "E_IDENTITY_MATCH", "message": str(identity["evidence"])})
 
         advisory = _EVALUATION.compute_advisory_metrics(
             plan=plan,
@@ -376,6 +434,7 @@ def _evaluate_v3(
             behavior=behavior,
             behavior_required=behavior_required,
             voice_match=voice_match,
+            identity_override=cast(dict[str, str] | None, identity["identity_override"]),
         )
     except ContractError as exc:
         # Keep the evaluator's established fail-closed boundary: malformed or
@@ -392,6 +451,7 @@ def _evaluate_v3(
             behavior=behavior,
             behavior_required=behavior_required,
             voice_match={"pass": True, "score": 10000, "evidence": "evaluation failed before voice match"},
+            identity_override=None,
         )
 
 
@@ -401,6 +461,7 @@ def evaluate_generated_bundle(
     *,
     observation: dict[str, object] | None = None,
     trusted_observation_sha256s: frozenset[str] = frozenset(),
+    identity_override: dict[str, str] | None = None,
 ) -> dict[str, object]:
     if isinstance(payload, dict) and payload.get("schema_version") == 3:
         return _evaluate_v3(
@@ -408,6 +469,7 @@ def evaluate_generated_bundle(
             artifact_root,
             observation=observation,
             trusted_observation_sha256s=trusted_observation_sha256s,
+            identity_override=identity_override,
         )
     if observation is not None:
         if not isinstance(payload, dict) or payload.get("schema_version") != 2:
