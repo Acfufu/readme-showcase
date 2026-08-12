@@ -73,6 +73,15 @@
         "sha256": {"$ref": "#/$defs/sha256"}
       }
     },
+    "demoReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/[^/]+\\.(?:gif|cast)$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
     "target": {
       "type": "object",
       "additionalProperties": false,
@@ -88,7 +97,7 @@
       "required": ["readmes", "assets", "candidate_sha256"],
       "properties": {
         "readmes": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/reference"}},
-        "assets": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/svgReference"}},
+        "assets": {"type": "array", "maxItems": 10000, "items": {"anyOf": [{"$ref": "#/$defs/svgReference"}, {"$ref": "#/$defs/demoReference"}]}},
         "candidate_sha256": {"$ref": "#/$defs/sha256"}
       }
     },

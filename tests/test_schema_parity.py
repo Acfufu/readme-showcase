@@ -96,6 +96,43 @@ class SchemaParityTests(unittest.TestCase):
                 destination = root / path
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(raw)
+            demo_files = {
+                "assets/readme-showcase/en/overview-demo.gif": b"GIF89a-captured\n",
+                "assets/readme-showcase/en/session-demo.cast": b'{"version":2,"records":[]}\n',
+                "assets/readme-showcase/en/hero-demo.svg": (
+                    b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" '
+                    b'viewBox="0 0 10 10" role="img"><title>Demo hero</title></svg>\n'
+                ),
+                "demo/overview-demo.cast": b"# asciinema demo session\n",
+            }
+            for path, raw in demo_files.items():
+                destination = root / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(raw)
+            script = {
+                "path": "demo/overview-demo.cast",
+                "sha256": hashlib.sha256(demo_files["demo/overview-demo.cast"]).hexdigest(),
+            }
+            for name, path in (
+                ("hero", "assets/readme-showcase/en/hero-demo.svg"),
+                ("overview", "assets/readme-showcase/en/overview-demo.gif"),
+                ("session", "assets/readme-showcase/en/session-demo.cast"),
+            ):
+                raw = demo_files[path]
+                manifest["assets"].append(
+                    {
+                        "asset_id": f"demo-en-{name}",
+                        "path": path,
+                        "artifact_sha256": hashlib.sha256(raw).hexdigest(),
+                        "evidence_ids": [self.fact["fact_id"]],
+                        "role": "demo",
+                        "locale": "en",
+                        "variant": "desktop",
+                        "captured": True,
+                        "demo_script_ref": script,
+                    }
+                )
+            manifest["assets"].sort(key=lambda item: item["path"])
             return manifest
         finally:
             shutil.rmtree(source_root)

@@ -55,6 +55,9 @@ _V3_COMPILED_FIELDS = {"inventory", "fingerprint", "retention"}
 _V3_SVG_PATH = re.compile(
     r"assets/readme-showcase/(?P<locale>[^/]+)/(?P<name>[^/]+)\.svg\Z"
 )
+_V3_DEMO_CAPTURE_PATH = re.compile(
+    r"assets/readme-showcase/(?P<locale>[^/]+)/(?P<name>[^/]+)\.(?:gif|cast)\Z"
+)
 _V3_COMPILED_SVG_PATH = re.compile(
     r"assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\.svg\Z"
 )
@@ -423,9 +426,11 @@ def _v3_svg_reference(value: Any, context: str) -> tuple[dict[str, str], str]:
     reference = _v3_reference(value, context)
     match = _V3_SVG_PATH.fullmatch(reference["path"])
     if match is None:
+        match = _V3_DEMO_CAPTURE_PATH.fullmatch(reference["path"])
+    if match is None:
         raise ContractError(
             "E_BUNDLE_ASSET",
-            f"{context}.path must be a publishable stage-6 SVG",
+            f"{context}.path must be a publishable stage-6 SVG or demo capture",
         )
     try:
         from ..contracts.locale import parse_locale

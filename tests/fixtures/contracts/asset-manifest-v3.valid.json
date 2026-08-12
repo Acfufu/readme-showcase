@@ -19,6 +19,27 @@
       "variant": "desktop"
     },
     {
+      "asset_id": "demo-en-hero",
+      "path": "assets/readme-showcase/en/hero-demo.svg",
+      "artifact_sha256": "ad9b3d4ffa105a33c9e2675a50b1e4403406ad79f56792feefb87cee84a859da",
+      "evidence_ids": [
+        "FACT_ID"
+      ],
+      "role": "demo",
+      "locale": "en",
+      "variant": "desktop",
+      "captured": true,
+      "demo_script_ref": {
+        "path": "demo/overview-demo.cast",
+        "sha256": "2c1926a9d62cf512331baca11d137e0b1c0fff3d8947246c6fa4d89d6612d023"
+      },
+      "provenance": {
+        "kind": "derived",
+        "path": "demo/overview-demo.cast",
+        "sha256": "2c1926a9d62cf512331baca11d137e0b1c0fff3d8947246c6fa4d89d6612d023"
+      }
+    },
+    {
       "artifact_sha256": "51a1c68ea3fd7cd6cd745caf86828b5a44d4417fb2fe91899b371e0e73876aea",
       "asset_id": "diagram-en-mobile",
       "evidence_ids": [
@@ -35,6 +56,38 @@
       "role": "diagram",
       "scene_sha256": "3fcdd98f2e16c7130316f015dba29024519f6fc31a74a316339e4820e05aea2f",
       "variant": "mobile"
+    },
+    {
+      "asset_id": "demo-en-overview",
+      "path": "assets/readme-showcase/en/overview-demo.gif",
+      "artifact_sha256": "f70ba7280028e7bfe079e7ec7b9b5a7b40c5404cdd4183a19ac757d8362e0f07",
+      "evidence_ids": [
+        "FACT_ID"
+      ],
+      "role": "demo",
+      "locale": "en",
+      "variant": "desktop",
+      "captured": true,
+      "demo_script_ref": {
+        "path": "demo/overview-demo.cast",
+        "sha256": "2c1926a9d62cf512331baca11d137e0b1c0fff3d8947246c6fa4d89d6612d023"
+      }
+    },
+    {
+      "asset_id": "demo-en-session",
+      "path": "assets/readme-showcase/en/session-demo.cast",
+      "artifact_sha256": "9da197a0c502c27f9f281046780c841e65b32f719dab9b152003e85920f7a4f3",
+      "evidence_ids": [
+        "FACT_ID"
+      ],
+      "role": "demo",
+      "locale": "en",
+      "variant": "desktop",
+      "captured": true,
+      "demo_script_ref": {
+        "path": "demo/overview-demo.cast",
+        "sha256": "2c1926a9d62cf512331baca11d137e0b1c0fff3d8947246c6fa4d89d6612d023"
+      }
     },
     {
       "artifact_sha256": "b8ad4af2c571b2f40adc7b415c131ae00568cead60dfd8e0a5f41966601c7df8",

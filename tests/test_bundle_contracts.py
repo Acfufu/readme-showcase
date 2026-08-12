@@ -1091,9 +1091,82 @@ class BundleContractTests(unittest.TestCase):
             ],
         }
 
-    def make_motion_bundle(self, root: Path) -> dict[str, Any]:
+    def make_captured_manifest(self, root: Path) -> dict[str, Any]:
+        """A v3 manifest whose assets are runtime-captured demo products.
+
+        Captured assets use the demo role with ``*.gif`` / ``*.cast`` /
+        ``*-demo.svg`` paths and carry a required archived demo-script
+        reference.  No scene or gate hash exists, so no compiled projection
+        is required and determinism is exempt.
+        """
+        gif = self.write_bytes(
+            root,
+            "assets/readme-showcase/en/overview-demo.gif",
+            b"GIF89a-captured\n",
+        )
+        cast = self.write_bytes(
+            root,
+            "assets/readme-showcase/en/session-demo.cast",
+            b'{"version":2,"records":[]}\n',
+        )
+        svg = self.write_bytes(
+            root,
+            "assets/readme-showcase/en/hero-demo.svg",
+            self.valid_svg("Demo hero"),
+        )
+        script = self.write_bytes(
+            root,
+            "demo/overview-demo.cast",
+            b"# asciinema demo session\n",
+        )
+        fact_id = EVIDENCE["facts"][0]["fact_id"]
+        return {
+            "schema_version": 3,
+            "assets": [
+                {
+                    "asset_id": "demo-en-hero",
+                    "path": svg["path"],
+                    "artifact_sha256": svg["sha256"],
+                    "evidence_ids": [fact_id],
+                    "role": "demo",
+                    "locale": "en",
+                    "variant": "desktop",
+                    "captured": True,
+                    "demo_script_ref": {"path": script["path"], "sha256": script["sha256"]},
+                    "provenance": {
+                        "kind": "derived",
+                        "path": script["path"],
+                        "sha256": script["sha256"],
+                    },
+                },
+                {
+                    "asset_id": "demo-en-overview",
+                    "path": gif["path"],
+                    "artifact_sha256": gif["sha256"],
+                    "evidence_ids": [fact_id],
+                    "role": "demo",
+                    "locale": "en",
+                    "variant": "desktop",
+                    "captured": True,
+                    "demo_script_ref": {"path": script["path"], "sha256": script["sha256"]},
+                },
+                {
+                    "asset_id": "demo-en-session",
+                    "path": cast["path"],
+                    "artifact_sha256": cast["sha256"],
+                    "evidence_ids": [fact_id],
+                    "role": "demo",
+                    "locale": "en",
+                    "variant": "desktop",
+                    "captured": True,
+                    "demo_script_ref": {"path": script["path"], "sha256": script["sha256"]},
+                },
+            ],
+        }
+
+    def make_motion_bundle(self, root: Path, manifest: dict[str, Any] | None = None) -> dict[str, Any]:
         """Materialize a complete motion-only v3 bundle with no compiled field."""
-        manifest = self.make_motion_manifest(root)
+        manifest = self.make_motion_manifest(root) if manifest is None else manifest
         readme_raw = b"# Overview\n\nDetails\n"
         self.write_bytes(root, "README.md", readme_raw)
         plan = {
@@ -1392,6 +1465,115 @@ class BundleContractTests(unittest.TestCase):
                 (root / "readme-plan.json").read_bytes(),
             ).hexdigest()
             self.assert_code(root, bundle, "E_BUNDLE_PLAN")
+
+    # --- Task 4.1: runtime-captured demo asset category ---
+
+    def test_asset_manifest_v3_captured_demo_assets_pass_without_scene_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = self.make_captured_manifest(root)
+            normalized = validate_asset_manifest(
+                manifest,
+                evidence_graph=EVIDENCE,
+                artifact_root=root,
+            )
+            self.assertEqual(normalized, manifest)
+            self.assertEqual(
+                canonical_asset_manifest_bytes(
+                    manifest,
+                    evidence_graph=EVIDENCE,
+                    artifact_root=root,
+                ),
+                canonical_json_bytes(manifest),
+            )
+            self.assertEqual(
+                list(Draft202012Validator(self._asset_manifest_v3_schema()).iter_errors(manifest)),
+                [],
+            )
+
+    def test_asset_manifest_v3_non_demo_role_cannot_mark_captured(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = self.make_captured_manifest(root)
+            manifest["assets"][0]["role"] = "hero"
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_SCHEMA_UNKNOWN_FIELD")
+            self.assertTrue(
+                Draft202012Validator(self._asset_manifest_v3_schema()).is_valid(manifest) is False
+            )
+
+            # Captured-only fields are equally closed to the animation role.
+            manifest = self.make_captured_manifest(root)
+            manifest["assets"][1]["role"] = "animation"
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_SCHEMA_UNKNOWN_FIELD")
+
+    def test_asset_manifest_v3_captured_requires_demo_script_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = self.make_captured_manifest(root)
+            del manifest["assets"][0]["demo_script_ref"]
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_SCHEMA_MISSING_FIELD")
+            self.assertTrue(
+                Draft202012Validator(self._asset_manifest_v3_schema()).is_valid(manifest) is False
+            )
+
+            # An un-captured demo asset cannot carry a script reference.
+            manifest = self.make_captured_manifest(root)
+            del manifest["assets"][0]["captured"]
+            del manifest["assets"][0]["provenance"]
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_BUNDLE_ASSET")
+
+            manifest = self.make_captured_manifest(root)
+            manifest["assets"][0]["captured"] = "yes"
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_SCHEMA_VALUE")
+
+    def test_asset_manifest_v3_captured_demo_provenance_binds_script(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = self.make_captured_manifest(root)
+            manifest["assets"][0]["provenance"]["kind"] = "generated"
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_BUNDLE_ASSET")
+            self.assertTrue(
+                Draft202012Validator(self._asset_manifest_v3_schema()).is_valid(manifest) is False
+            )
+
+            manifest = self.make_captured_manifest(root)
+            manifest["assets"][0]["provenance"]["path"] = "demo/other-demo.sh"
+            manifest["assets"][0]["provenance"]["sha256"] = "0" * 64
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_VISUAL_FINGERPRINT")
+
+            manifest = self.make_captured_manifest(root)
+            manifest["assets"][0]["demo_script_ref"]["path"] = "scripts/record.sh"
+            manifest["assets"][0]["demo_script_ref"]["sha256"] = "0" * 64
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_PATH")
+
+    def test_generated_bundle_v3_captured_only_passes_without_compiled_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self.make_motion_bundle(root, manifest=self.make_captured_manifest(root))
+            report = validate_generated_bundle(bundle, root)
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["candidate_count"], 4)
+            self.assertNotIn("inventory_sha256", report)
+            self.assertEqual(
+                list(Draft202012Validator(self._generated_bundle_v3_schema()).iter_errors(bundle)),
+                [],
+            )
 
 
 if __name__ == "__main__":

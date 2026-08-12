@@ -35,7 +35,8 @@ _V3_ASSET_REQUIRED_FIELDS = {
 }
 _V3_ASSET_OPTIONAL_FIELDS = {"provenance"}
 _V3_DIAGRAM_ONLY_FIELDS = {"scene_sha256", "gate_sha256"}
-_V3_ASSET_ROLES = frozenset({"diagram", "hero", "animation"})
+_V3_DEMO_ONLY_FIELDS = {"captured", "demo_script_ref"}
+_V3_ASSET_ROLES = frozenset({"diagram", "hero", "animation", "demo"})
 _V3_MOTION_ROLES = _V3_ASSET_ROLES - {"diagram"}
 _V3_COMPILED_ASSET_PATH = re.compile(
     r"^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:desktop|mobile)\.svg\Z"
@@ -46,6 +47,10 @@ _V3_HERO_ASSET_PATH = re.compile(
 _V3_ANIMATION_ASSET_PATH = re.compile(
     r"^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/[^/]+\.svg\Z"
 )
+_V3_DEMO_ASSET_PATH = re.compile(
+    r"^assets/readme-showcase/(?:en|zh-Hans|zh-Hant|ja|ko|fr|de)/(?:[^/]+\.(?:gif|cast)|[^/]+-demo\.svg)\Z"
+)
+_V3_DEMO_SCRIPT_PATH = re.compile(r"^demo/.*\.(?:cast|sh|txt)\Z")
 _V3_VARIANT_COLLECTIONS = {
     "scenes": "compiled/scenes/{locale}/{variant}.json",
     "gates": "compiled/gates/{locale}/{variant}.json",
@@ -500,50 +505,120 @@ def _validate_asset_manifest_v3(
                 raise ContractError("E_BUNDLE_HASH", f"{context} artifact bytes changed")
             normalized_assets.append(normalized_asset)
             continue
-        unknown = sorted(set(raw) - _V3_ASSET_REQUIRED_FIELDS - _V3_ASSET_OPTIONAL_FIELDS)
-        missing = sorted(_V3_ASSET_REQUIRED_FIELDS - set(raw))
-        if unknown:
-            raise ContractError("E_SCHEMA_UNKNOWN_FIELD", f"{context} contains unknown field: {unknown[0]}")
-        if missing:
-            raise ContractError("E_SCHEMA_MISSING_FIELD", f"{context} is missing field: {missing[0]}")
-        asset_id = normalize_text(raw["asset_id"], f"{context}.asset_id", maximum=512)
-        path = _path(raw["path"], f"{context}.path")
-        locale = parse_locale(raw["locale"], f"{context}.locale")
-        variant = raw["variant"]
-        if not isinstance(variant, str) or variant not in {"desktop", "mobile"}:
-            raise ContractError("E_SCHEMA_VALUE", f"{context}.variant must be desktop or mobile")
-        expected_pattern = _V3_HERO_ASSET_PATH if role == "hero" else _V3_ANIMATION_ASSET_PATH
-        if expected_pattern.fullmatch(path) is None:
-            raise ContractError("E_PATH", f"{context}.path must be a motion SVG under assets/readme-showcase")
-        if asset_id in seen_ids or path in seen_paths:
-            raise ContractError("E_BUNDLE_ASSET", f"{context} duplicates asset identity or path")
-        seen_ids.add(asset_id)
-        seen_paths.add(path)
-        artifact_hash = _sha(raw["artifact_sha256"], f"{context}.artifact_sha256")
-        identifiers = _ids(raw["evidence_ids"], f"{context}.evidence_ids")
-        if known_ids is not None and not set(identifiers).issubset(known_ids):
-            raise ContractError("E_CLAIM_EVIDENCE", f"{context} references missing evidence")
-        normalized_asset = {
-            "asset_id": asset_id,
-            "path": path,
-            "artifact_sha256": artifact_hash,
-            "evidence_ids": identifiers,
-            "role": role,
-            "locale": locale,
-            "variant": variant,
-        }
-        if "provenance" in raw:
-            provenance = _closed(raw["provenance"], _PROVENANCE_FIELDS, f"{context}.provenance")
-            if provenance["kind"] != "generated":
-                raise ContractError("E_BUNDLE_ASSET", f"{context}.provenance.kind must be generated")
-            source_path = _path(provenance["path"], f"{context}.provenance.path")
-            source_hash = _sha(provenance["sha256"], f"{context}.provenance.sha256")
-            if hashlib.sha256(_v3_read(artifact_root, source_path, f"{context}.provenance")).hexdigest() != source_hash:
-                raise ContractError("E_BUNDLE_HASH", f"{context}.provenance bytes changed")
-            normalized_asset["provenance"] = {"kind": "generated", "path": source_path, "sha256": source_hash}
-        if hashlib.sha256(_v3_read(artifact_root, path, context)).hexdigest() != artifact_hash:
-            raise ContractError("E_BUNDLE_HASH", f"{context} artifact bytes changed")
-        normalized_assets.append(normalized_asset)
+        if role != "demo":
+            unknown = sorted(set(raw) - _V3_ASSET_REQUIRED_FIELDS - _V3_ASSET_OPTIONAL_FIELDS)
+            missing = sorted(_V3_ASSET_REQUIRED_FIELDS - set(raw))
+            if unknown:
+                raise ContractError("E_SCHEMA_UNKNOWN_FIELD", f"{context} contains unknown field: {unknown[0]}")
+            if missing:
+                raise ContractError("E_SCHEMA_MISSING_FIELD", f"{context} is missing field: {missing[0]}")
+            asset_id = normalize_text(raw["asset_id"], f"{context}.asset_id", maximum=512)
+            path = _path(raw["path"], f"{context}.path")
+            locale = parse_locale(raw["locale"], f"{context}.locale")
+            variant = raw["variant"]
+            if not isinstance(variant, str) or variant not in {"desktop", "mobile"}:
+                raise ContractError("E_SCHEMA_VALUE", f"{context}.variant must be desktop or mobile")
+            expected_pattern = _V3_HERO_ASSET_PATH if role == "hero" else _V3_ANIMATION_ASSET_PATH
+            if expected_pattern.fullmatch(path) is None:
+                raise ContractError("E_PATH", f"{context}.path must be a motion SVG under assets/readme-showcase")
+            if asset_id in seen_ids or path in seen_paths:
+                raise ContractError("E_BUNDLE_ASSET", f"{context} duplicates asset identity or path")
+            seen_ids.add(asset_id)
+            seen_paths.add(path)
+            artifact_hash = _sha(raw["artifact_sha256"], f"{context}.artifact_sha256")
+            identifiers = _ids(raw["evidence_ids"], f"{context}.evidence_ids")
+            if known_ids is not None and not set(identifiers).issubset(known_ids):
+                raise ContractError("E_CLAIM_EVIDENCE", f"{context} references missing evidence")
+            normalized_asset = {
+                "asset_id": asset_id,
+                "path": path,
+                "artifact_sha256": artifact_hash,
+                "evidence_ids": identifiers,
+                "role": role,
+                "locale": locale,
+                "variant": variant,
+            }
+            if "provenance" in raw:
+                provenance = _closed(raw["provenance"], _PROVENANCE_FIELDS, f"{context}.provenance")
+                if provenance["kind"] != "generated":
+                    raise ContractError("E_BUNDLE_ASSET", f"{context}.provenance.kind must be generated")
+                source_path = _path(provenance["path"], f"{context}.provenance.path")
+                source_hash = _sha(provenance["sha256"], f"{context}.provenance.sha256")
+                if hashlib.sha256(_v3_read(artifact_root, source_path, f"{context}.provenance")).hexdigest() != source_hash:
+                    raise ContractError("E_BUNDLE_HASH", f"{context}.provenance bytes changed")
+                normalized_asset["provenance"] = {"kind": "generated", "path": source_path, "sha256": source_hash}
+            if hashlib.sha256(_v3_read(artifact_root, path, context)).hexdigest() != artifact_hash:
+                raise ContractError("E_BUNDLE_HASH", f"{context} artifact bytes changed")
+            normalized_assets.append(normalized_asset)
+            continue
+        if role == "demo":
+            unknown = sorted(set(raw) - _V3_ASSET_REQUIRED_FIELDS - _V3_ASSET_OPTIONAL_FIELDS - _V3_DEMO_ONLY_FIELDS)
+            missing = sorted(_V3_ASSET_REQUIRED_FIELDS - set(raw))
+            if unknown:
+                raise ContractError("E_SCHEMA_UNKNOWN_FIELD", f"{context} contains unknown field: {unknown[0]}")
+            if missing:
+                raise ContractError("E_SCHEMA_MISSING_FIELD", f"{context} is missing field: {missing[0]}")
+            asset_id = normalize_text(raw["asset_id"], f"{context}.asset_id", maximum=512)
+            path = _path(raw["path"], f"{context}.path")
+            if _V3_DEMO_ASSET_PATH.fullmatch(path) is None:
+                raise ContractError("E_PATH", f"{context}.path must be a demo capture under assets/readme-showcase")
+            locale = parse_locale(raw["locale"], f"{context}.locale")
+            variant = raw["variant"]
+            if not isinstance(variant, str) or variant not in {"desktop", "mobile"}:
+                raise ContractError("E_SCHEMA_VALUE", f"{context}.variant must be desktop or mobile")
+            captured = raw.get("captured", False)
+            if not isinstance(captured, bool):
+                raise ContractError("E_SCHEMA_VALUE", f"{context}.captured must be boolean")
+            script_path: str | None = None
+            script_hash: str | None = None
+            if captured:
+                if "demo_script_ref" not in raw:
+                    raise ContractError("E_SCHEMA_MISSING_FIELD", f"{context} is missing required field: demo_script_ref")
+                script_ref = _closed(raw["demo_script_ref"], _V3_REF_FIELDS, f"{context}.demo_script_ref")
+                script_path = _path(script_ref["path"], f"{context}.demo_script_ref.path")
+                if _V3_DEMO_SCRIPT_PATH.fullmatch(script_path) is None:
+                    raise ContractError("E_PATH", f"{context}.demo_script_ref.path must be an archived demo script under demo/")
+                script_hash = _sha(script_ref["sha256"], f"{context}.demo_script_ref.sha256")
+            elif "demo_script_ref" in raw:
+                raise ContractError("E_BUNDLE_ASSET", f"{context}.demo_script_ref requires captured: true")
+            if asset_id in seen_ids or path in seen_paths:
+                raise ContractError("E_BUNDLE_ASSET", f"{context} duplicates asset identity or path")
+            seen_ids.add(asset_id)
+            seen_paths.add(path)
+            artifact_hash = _sha(raw["artifact_sha256"], f"{context}.artifact_sha256")
+            identifiers = _ids(raw["evidence_ids"], f"{context}.evidence_ids")
+            if known_ids is not None and not set(identifiers).issubset(known_ids):
+                raise ContractError("E_CLAIM_EVIDENCE", f"{context} references missing evidence")
+            normalized_asset = {
+                "asset_id": asset_id,
+                "path": path,
+                "artifact_sha256": artifact_hash,
+                "evidence_ids": identifiers,
+                "role": role,
+                "locale": locale,
+                "variant": variant,
+                "captured": captured,
+            }
+            if captured:
+                assert script_path is not None and script_hash is not None
+                normalized_asset["demo_script_ref"] = {"path": script_path, "sha256": script_hash}
+                if hashlib.sha256(_v3_read(artifact_root, script_path, f"{context}.demo_script_ref")).hexdigest() != script_hash:
+                    raise ContractError("E_BUNDLE_HASH", f"{context}.demo_script_ref bytes changed")
+            if "provenance" in raw:
+                provenance = _closed(raw["provenance"], _PROVENANCE_FIELDS, f"{context}.provenance")
+                if provenance["kind"] != "derived":
+                    raise ContractError("E_BUNDLE_ASSET", f"{context}.provenance.kind must be derived")
+                source_path = _path(provenance["path"], f"{context}.provenance.path")
+                source_hash = _sha(provenance["sha256"], f"{context}.provenance.sha256")
+                if not captured or source_path != script_path or source_hash != script_hash:
+                    raise ContractError("E_VISUAL_FINGERPRINT", f"{context}.provenance must bind its demo script source")
+                if hashlib.sha256(_v3_read(artifact_root, source_path, f"{context}.provenance")).hexdigest() != source_hash:
+                    raise ContractError("E_BUNDLE_HASH", f"{context}.provenance bytes changed")
+                normalized_asset["provenance"] = {"kind": "derived", "path": source_path, "sha256": source_hash}
+            if hashlib.sha256(_v3_read(artifact_root, path, context)).hexdigest() != artifact_hash:
+                raise ContractError("E_BUNDLE_HASH", f"{context} artifact bytes changed")
+            normalized_assets.append(normalized_asset)
+            continue
     if [item["path"] for item in normalized_assets] != sorted(item["path"] for item in normalized_assets):
         raise ContractError("E_BUNDLE_ASSET", "asset manifest v3 must use path order")
     if compiled is not None:
