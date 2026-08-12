@@ -294,6 +294,14 @@ Animation is an output variant, not a third mode. Offer it only when motion expl
   `"$README_SHOWCASE_SKILL/scripts/render_motion_gif.py"`.
 - If dependencies, legibility, loop quality, or file-size limits fail, deliver the static SVG instead.
 
+### Optional demo recording
+
+Runtime-captured demos are opt-in like motion. `record_demo.py` records an
+archived demo script with `asciinema` and renders the cast with `agg`;
+**asciinema and agg are never auto-installed** — when either is missing the
+recorder fails with an install hint and static SVG stays the default. See the
+[Demo Recording](references/motion-production.md#demo-recording) section.
+
 ## Verify
 
 - Run `python3 "$README_SHOWCASE_SKILL/scripts/audit_readme.py" /path/to/README.md`

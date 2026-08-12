@@ -11,7 +11,8 @@ This workflow is adapted from oil-oil's MIT-licensed `beautify-github-readme`. U
 5. [Motion spec](#motion-spec)
 6. [Render](#render)
 7. [Verify](#verify)
-8. [Upstream license](#upstream-license)
+8. [Demo recording](#demo-recording)
+9. [Upstream license](#upstream-license)
 
 ## Gate
 
@@ -196,6 +197,62 @@ For flat graphics:
 4. Verify frames, FPS, duration, dimensions, and size with `ffprobe`.
 5. Keep SVG and motion JSON beside the derived GIF.
 6. Fall back to static SVG on dependency, rendering, legibility, loop, or file-size failure.
+
+## Demo Recording
+
+Runtime-captured demos are an opt-in variant of motion: the terminal output
+of an archived demo script becomes a `.cast` recording and then a deterministic
+GIF, declared as a role-`demo` asset. Use `skill/scripts/record_demo.py`.
+
+### Pipeline and dependencies
+
+```text
+demo/<name>.sh|.txt  --asciinema rec-->  assets/readme-showcase/<locale>/<name>.cast
+assets/.../<name>.cast  --agg-->  assets/readme-showcase/<locale>/<name>.gif
+```
+
+- `asciinema` records the script run into a `.cast` (wall-clock timestamps,
+  idle limited to 2 s); `agg` renders the cast into the GIF. agg embeds its own
+  GIF encoder, so **no ffmpeg step is needed** on this route.
+- Both tools are opt-in: they are **never auto-installed**. When either is
+  missing, `record_demo` fails with a clear `DemoDependencyError` install hint
+  and the static SVG route stays the default.
+- The script must be archived under `demo/` with `.sh`, `.txt`, or `.cast`
+  suffix; outputs must be role-demo assets under
+  `assets/readme-showcase/<locale>/` (the Task 4.1 runtime-captured contract:
+  `captured: true`, `demo_script_ref` bound to the archived script, provenance
+  `kind: derived`). A `.cast` input is used directly and never executed.
+
+```bash
+python3 scripts/record_demo.py \
+  demo/demo.sh \
+  assets/readme-showcase/en/demo.cast \
+  assets/readme-showcase/en/demo.gif \
+  --verify
+```
+
+`--verify` re-renders the same cast twice and compares SHA-256. The demo
+approval envelope (Task 4.3) hooks into the execution seam: `record_demo`
+accepts an `approval_check(script)` callback that runs before any script
+execution and aborts the recording by raising. `.cast` inputs never execute
+and never trigger the check.
+
+### Determinism
+
+The deterministic claim is cast → GIF: **one cast rendered twice by agg
+produces byte-identical output**. Empirically verified 2026-08-13 on
+`agg 1.9.0` with the fixed option set (`--theme asciinema
+--idle-time-limit 2 --last-frame-duration 2 --fps-cap 20 --speed 1`): a
+real demo cast rendered three times — twice through `record_demo.py
+--verify` and once through an independent direct `agg` invocation — produced
+identical bytes every time
+(`render sha256: eedf8226a21e94005ed29ebd050e5f52ea5d081f3c7839655baab3c6d6b3d8df`).
+Recording itself is not reproducible across runs (asciinema records real
+timestamps), so the cast is the archived, hash-bound source: change the
+script, re-record, and re-declare the manifest.
+
+If `--verify` ever reports `identical=False`, treat the render as
+nondeterministic and fall back to static SVG per the route fallback contract.
 
 ## Upstream License
 
