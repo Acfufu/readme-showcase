@@ -1,8 +1,7 @@
 """Closed, deterministic Theme v1 values and desktop/mobile policy.
 
-Repository tokens can change only the small, project-owned palette and metric
-surface below.  Theme resolution never reads files or resources and never
-accepts coordinates: layout remains an independent decision for each variant.
+Theme resolution never reads files or resources and never accepts
+coordinates: layout remains an independent decision for each variant.
 """
 
 from __future__ import annotations
@@ -14,7 +13,6 @@ from types import MappingProxyType
 from typing import Any
 
 from ...pipeline_contracts import ContractError, canonical_json_bytes, canonical_sha256
-from ..contracts.common import validate_bounded_json
 
 
 THEME_SCHEMA_VERSION = 1
@@ -49,12 +47,6 @@ _VARIANT_DEFAULTS = {
     "mobile": {"width": 720, "render_width": 360, "min_font_size": 24},
 }
 
-_GROUP_DEFAULTS = {
-    "colors": _COLOR_DEFAULTS,
-    "spacing": _SPACING_DEFAULTS,
-    "strokes": _STROKE_DEFAULTS,
-    "text": _TEXT_DEFAULTS,
-}
 _COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}\Z")
 _SCHEME_RE = re.compile(r"(?i)(?:^|[^a-z0-9_])(?:https?|ftp|file|data|javascript|mailto):")
 _PATH_FIELD_NAMES = frozenset({"file", "files", "href", "path", "src", "url", "urls"})
@@ -263,42 +255,17 @@ class Theme:
         return canonical_sha256(self.as_dict())
 
 
-def resolve_theme(repository_tokens: Mapping[str, Any] | None = None) -> Theme:
-    """Resolve repository-safe token overrides into a canonical Theme v1."""
+def resolve_theme() -> Theme:
+    """Resolve the canonical default Theme v1."""
 
-    colors = dict(_COLOR_DEFAULTS)
-    spacing = dict(_SPACING_DEFAULTS)
-    strokes = dict(_STROKE_DEFAULTS)
-    text = dict(_TEXT_DEFAULTS)
-    if repository_tokens is not None:
-        if not isinstance(repository_tokens, Mapping):
-            raise _fail("E_SCHEMA_TYPE", "repository tokens must be an object")
-        payload = dict(repository_tokens)
-        validate_bounded_json(payload)
-        unknown = sorted(set(payload) - set(_GROUP_DEFAULTS))
-        if unknown:
-            kind = _field_kind(unknown[0])
-            if kind == "path":
-                raise _fail("E_VISUAL_PATH", f"repository tokens contain an unsupported path token: {unknown[0]}")
-            if kind == "resource":
-                raise _fail("E_VISUAL_RESOURCE", f"repository tokens contain an unsupported resource token: {unknown[0]}")
-            if kind == "geometry":
-                raise _fail("E_VISUAL_GEOMETRY", f"repository tokens contain an unsupported coordinate token: {unknown[0]}")
-            raise _fail("E_SCHEMA_UNKNOWN_FIELD", f"repository tokens contain unknown group: {unknown[0]}")
-        for group_name, target in (("colors", colors), ("spacing", spacing), ("strokes", strokes), ("text", text)):
-            if group_name not in payload:
-                continue
-            group = payload[group_name]
-            if not isinstance(group, Mapping):
-                raise _fail("E_SCHEMA_TYPE", f"repository tokens.{group_name} must be an object")
-            parsed = _validate_closed_group(
-                group,
-                _GROUP_DEFAULTS[group_name],
-                f"repository tokens.{group_name}",
-                require_all=False,
-            )
-            target.update(parsed)
-    return Theme(THEME_SCHEMA_VERSION, colors, spacing, strokes, text, _VARIANT_DEFAULTS)
+    return Theme(
+        THEME_SCHEMA_VERSION,
+        dict(_COLOR_DEFAULTS),
+        dict(_SPACING_DEFAULTS),
+        dict(_STROKE_DEFAULTS),
+        dict(_TEXT_DEFAULTS),
+        _VARIANT_DEFAULTS,
+    )
 
 
 __all__ = ["Theme", "resolve_theme"]

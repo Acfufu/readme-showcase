@@ -14,7 +14,7 @@ from skill.scripts.pipeline_contracts import ContractError
 from skill.scripts.readme_showcase.visual_kernel.scene import Scene
 from skill.scripts.readme_showcase.visual_kernel.geometry import validate_visual_geometry
 from skill.scripts.readme_showcase.visual_kernel.svg import serialize_svg
-from skill.scripts.readme_showcase.visual_kernel.theme import resolve_theme
+from skill.scripts.readme_showcase.visual_kernel.theme import Theme, resolve_theme
 
 from tests.unit.visual_kernel.test_scene import _build
 
@@ -127,8 +127,17 @@ class SvgSerializationTests(unittest.TestCase):
 
     def test_theme_hash_and_reserved_title_are_hard_bindings(self) -> None:
         scene = _build("flow", "desktop")
+        default_theme = resolve_theme()
+        altered_theme = Theme(
+            default_theme.schema_version,
+            {**default_theme.colors, "accent": "#22c55e"},
+            default_theme.spacing,
+            default_theme.strokes,
+            default_theme.text,
+            default_theme.variants,
+        )
         with self.assertRaises(ContractError) as raised:
-            serialize_svg(scene, resolve_theme({"colors": {"accent": "#22c55e"}}))
+            serialize_svg(scene, altered_theme)
         self.assertEqual(raised.exception.code, "E_VISUAL_FINGERPRINT")
 
         title = next(item for item in scene.primitives if item.source_id == "__scene_intent__")

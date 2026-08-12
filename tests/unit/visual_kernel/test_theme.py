@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import subprocess
 import sys
@@ -11,6 +12,13 @@ from skill.scripts.readme_showcase.visual_kernel.theme import Theme, resolve_the
 
 
 class ThemeResolutionTests(unittest.TestCase):
+    def test_resolve_theme_signature_has_no_repository_tokens(self) -> None:
+        self.assertNotIn("repository_tokens", inspect.signature(resolve_theme).parameters)
+        theme = resolve_theme()
+        self.assertIsInstance(theme, Theme)
+        self.assertEqual(theme.as_dict()["schema_version"], 1)
+        self.assertEqual(dict(theme.as_dict()["colors"]), dict(theme_module._COLOR_DEFAULTS))
+
     def test_public_surface_and_default_policy_are_closed(self) -> None:
         self.assertEqual(theme_module.__all__, ["Theme", "resolve_theme"])
         self.assertIsInstance(resolve_theme(), Theme)
@@ -20,28 +28,36 @@ class ThemeResolutionTests(unittest.TestCase):
         with self.assertRaises((AttributeError, TypeError)):
             resolve_theme().colors["accent"] = "#ffffff"  # type: ignore[index]
 
-    def test_safe_project_color_override_is_canonical_and_does_not_mutate_input(self) -> None:
-        tokens = {"colors": {"accent": "#22C55E"}}
-        first = resolve_theme(tokens)
-        tokens["colors"]["accent"] = "#000000"
-        second = resolve_theme({"colors": {"accent": "#22c55e"}})
-        self.assertEqual(first.colors["accent"], "#22c55e")
+    def test_default_theme_is_canonical_and_repeated_resolution_is_stable(self) -> None:
+        first = resolve_theme()
+        second = resolve_theme()
         self.assertEqual(first.canonical_bytes(), second.canonical_bytes())
-        self.assertEqual(first.as_dict()["colors"]["accent"], "#22c55e")
+        self.assertEqual(first.as_dict(), second.as_dict())
 
-    def test_contrast_and_trust_boundaries_fail_closed(self) -> None:
+    def test_theme_validation_fails_closed(self) -> None:
+        defaults = resolve_theme()
+        base = {
+            "schema_version": defaults.schema_version,
+            "colors": dict(defaults.colors),
+            "spacing": dict(defaults.spacing),
+            "strokes": dict(defaults.strokes),
+            "text": dict(defaults.text),
+            "variants": {name: dict(policy) for name, policy in defaults.variants.items()},
+        }
         cases = (
-            ({"colors": {"text": "#121212"}}, "E_SCHEMA_VALUE"),
-            ({"colors": {"accent": "https://example.invalid/a.svg"}}, "E_VISUAL_PATH"),
-            ({"colors": {"unknown": "#22c55e"}}, "E_SCHEMA_UNKNOWN_FIELD"),
-            ({"font": "system-ui"}, "E_VISUAL_RESOURCE"),
-            ({"colors": {"accent": "../accent.svg"}}, "E_VISUAL_PATH"),
-            ({"coordinates": {"desktop": {"x": 1}}}, "E_VISUAL_GEOMETRY"),
+            ("colors", {"text": "#121212"}, "E_SCHEMA_VALUE"),
+            ("colors", {"accent": "https://example.invalid/a.svg"}, "E_VISUAL_PATH"),
+            ("colors", {"unknown": "#22c55e"}, "E_SCHEMA_UNKNOWN_FIELD"),
+            ("spacing", {"font": "system-ui"}, "E_VISUAL_RESOURCE"),
+            ("colors", {"accent": "../accent.svg"}, "E_VISUAL_PATH"),
+            ("spacing", {"coordinates": {"desktop": {"x": 1}}}, "E_VISUAL_GEOMETRY"),
         )
-        for tokens, code in cases:
-            with self.subTest(tokens=tokens):
+        for group, tokens, code in cases:
+            with self.subTest(group=group, tokens=tokens):
+                payload = dict(base)
+                payload[group] = {**base[group], **tokens}
                 with self.assertRaises(ContractError) as raised:
-                    resolve_theme(tokens)
+                    Theme(**payload)
                 self.assertEqual(raised.exception.code, code)
 
     def test_variant_policy_rejects_reused_desktop_coordinates(self) -> None:
@@ -61,11 +77,11 @@ class ThemeResolutionTests(unittest.TestCase):
                 self.assertGreaterEqual(max(base_size, minimum), required, (variant, role))
 
     def test_canonical_projection_is_json_and_fresh_process_stable(self) -> None:
-        result = resolve_theme({"colors": {"accent": "#22c55e"}})
+        result = resolve_theme()
         self.assertEqual(json.loads(result.canonical_bytes()), result.as_dict())
         code = (
             "from skill.scripts.readme_showcase.visual_kernel.theme import resolve_theme; "
-            "print(resolve_theme({'colors': {'accent': '#22c55e'}}).canonical_bytes().decode(), end='')"
+            "print(resolve_theme().canonical_bytes().decode(), end='')"
         )
         environment = {"PYTHONDONTWRITEBYTECODE": "1"}
         first = subprocess.check_output([sys.executable, "-c", code], text=True, env=environment)

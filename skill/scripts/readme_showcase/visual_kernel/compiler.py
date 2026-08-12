@@ -427,10 +427,10 @@ def _identity_from_geometry(result: ElkGeometryResult) -> tuple[str, str]:
     return package, renderer
 
 
-def _compile_once(spec: Any, evidence_graph: Mapping[str, Any], repository_tokens: Mapping[str, Any] | None) -> CompiledVisual:
+def _compile_once(spec: Any, evidence_graph: Mapping[str, Any]) -> CompiledVisual:
     kernel_identity = _kernel_identity()
     plan = normalize_visual_spec(spec, evidence_graph)
-    theme = resolve_theme(repository_tokens)
+    theme = resolve_theme()
     graph = compile_graph(plan)
     timeline = derive_timeline(plan)
     interaction = derive_interaction(plan)
@@ -497,12 +497,11 @@ def _compile_once(spec: Any, evidence_graph: Mapping[str, Any], repository_token
 def compile_visual(
     spec: Any,
     evidence_graph: Mapping[str, Any],
-    repository_tokens: Mapping[str, Any] | None = None,
 ) -> CompiledVisual:
     """Compile one Evidence-bound Visual Spec into immutable stage-6 bytes."""
 
-    first = _compile_once(spec, evidence_graph, repository_tokens)
-    second = _compile_once(spec, evidence_graph, repository_tokens)
+    first = _compile_once(spec, evidence_graph)
+    second = _compile_once(spec, evidence_graph)
     if first.artifacts != second.artifacts or first.inventory_sha256 != second.inventory_sha256:
         raise _fail("E_VISUAL_DETERMINISM", "visual compilation changed between identical runs")
     return first
