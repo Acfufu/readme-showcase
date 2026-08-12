@@ -20,9 +20,12 @@ from unittest import mock
 
 from skill.scripts import record_demo as rd
 from skill.scripts.pipeline_contracts import ContractError
+from skill.scripts.readme_showcase.contracts.evidence import build_fact
+from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MOTION_PRODUCTION = REPO_ROOT / "skill/references/motion-production.md"
+VISUAL_PRODUCTION = REPO_ROOT / "skill/references/visual-production.md"
 SKILL_MD = REPO_ROOT / "skill/SKILL.md"
 
 FAKE_TOOLS = rd.DemoTools(asciinema="/usr/bin/asciinema", agg="/usr/bin/agg")
@@ -31,6 +34,49 @@ FAKE_TOOLS = rd.DemoTools(asciinema="/usr/bin/asciinema", agg="/usr/bin/agg")
 def fake_cast_bytes(version: int = 2) -> bytes:
     header = json.dumps({"version": version, "width": 80, "height": 24})
     return f'{header}\n[1.0, "o", "hello\\n"]\n'.encode("utf-8")
+
+
+def cast_with_output(text: str) -> bytes:
+    """A fake cast whose single output event carries `text`."""
+    header = json.dumps({"version": 2, "width": 80, "height": 24})
+    return f'{header}\n{json.dumps([1.0, "o", text])}\n'.encode("utf-8")
+
+
+def evidence_with_cli_entrypoint(name: str) -> dict[str, object]:
+    """A valid repository-evidence.v2 graph declaring one cli-entrypoint."""
+    fact = build_fact(
+        kind="cli-entrypoint",
+        path="pyproject.toml",
+        locator={"json_pointer": f"/project/scripts/{name}"},
+        semantic_key=f"python-script:{name}",
+        value=f"{name}.main:run",
+        source_bytes=f'[project.scripts]\n{name} = "{name}.main:run"\n'.encode("utf-8"),
+    )
+    return EvidenceGraph([fact]).to_dict()
+
+
+def evidence_with_command_observation(command: str) -> dict[str, object]:
+    """A valid repository-evidence.v2 graph declaring one verified command."""
+    fact = build_fact(
+        kind="command-observation",
+        path="evidence/commands.json",
+        locator={"json_pointer": ""},
+        semantic_key="cmd-1",
+        value={
+            "command_id": "cmd-1",
+            "command": command,
+            "cwd": ".",
+            "exit_code": 0,
+            "stdout_sha256": "0" * 64,
+            "stderr_sha256": "0" * 64,
+            "observed_at_base_sha": "0" * 40,
+            "input_hashes": {},
+            "runner": "manual",
+            "verification": "verified",
+        },
+        source_bytes=b'{"command_id": "cmd-1"}\n',
+    )
+    return EvidenceGraph([fact]).to_dict()
 
 
 class RecordDemoDependencyTests(unittest.TestCase):
@@ -407,6 +453,164 @@ class RecordDemoDeterminismTests(unittest.TestCase):
             rd.verify_determinism(self.cast, workspace=self.root, agg_path="/usr/bin/agg")
 
 
+class RecordDemoReviewGateTests(unittest.TestCase):
+    """演示内容审查门 (Task 4.4): 无环境泄露 + 无编造 (命令与仓库能力一致)."""
+
+    def _review(self, cast: bytes, gif: bytes = b"GIF-DEMO", evidence: dict[str, object] | None = None) -> dict[str, object]:
+        return rd.review_demo_capture(cast, gif, evidence=evidence)
+
+    def _kinds(self, result: dict[str, object]) -> list[str]:
+        findings = result["findings"]
+        self.assertIsInstance(findings, list)
+        return [f["kind"] for f in findings if isinstance(f, dict)]
+
+    def test_absolute_macos_user_path_leaks_fail(self) -> None:
+        result = self._review(cast_with_output("cd /Users/alice/projects/secret && ls"))
+        self.assertFalse(result["pass"])
+        self.assertIn("leak-path", self._kinds(result))
+
+    def test_absolute_linux_home_path_leaks_fail(self) -> None:
+        result = self._review(cast_with_output("pwd\n/home/runner/work/demo/repo"))
+        self.assertFalse(result["pass"])
+        self.assertIn("leak-path", self._kinds(result))
+
+    def test_tilde_home_reference_leaks_fail(self) -> None:
+        result = self._review(cast_with_output("echo ~/secrets"))
+        self.assertFalse(result["pass"])
+        self.assertIn("leak-path", self._kinds(result))
+
+    def test_email_identity_leaks_fail(self) -> None:
+        result = self._review(cast_with_output("configured by alice@example.com"))
+        self.assertFalse(result["pass"])
+        self.assertIn("leak-identity", self._kinds(result))
+
+    def test_github_token_leaks_fail(self) -> None:
+        token = "ghp_" + "a" * 40
+        result = self._review(cast_with_output(f"git push {token}"))
+        self.assertFalse(result["pass"])
+        self.assertIn("leak-credential", self._kinds(result))
+
+    def test_key_value_secret_leaks_fail(self) -> None:
+        result = self._review(cast_with_output("export API_KEY=abcdef0123456789"))
+        self.assertFalse(result["pass"])
+        self.assertIn("leak-credential", self._kinds(result))
+
+    def test_gif_text_with_leak_fails(self) -> None:
+        gif = b"GIF89a demo path /Users/bob/code/private keys"
+        result = self._review(cast_with_output("all good"), gif=gif)
+        self.assertFalse(result["pass"])
+        self.assertIn("leak-path", self._kinds(result))
+
+    def test_fabricated_command_fails_against_evidence(self) -> None:
+        evidence = evidence_with_cli_entrypoint("demo-tool")
+        result = self._review(cast_with_output("$ readme-showcase shape ."), evidence=evidence)
+        self.assertFalse(result["pass"])
+        kinds = self._kinds(result)
+        self.assertIn("fabrication", kinds)
+        detail = str([f for f in result["findings"] if isinstance(f, dict) and f["kind"] == "fabrication"][0]["detail"])
+        self.assertIn("readme-showcase", detail)
+
+    def test_claim_matching_cli_entrypoint_passes(self) -> None:
+        evidence = evidence_with_cli_entrypoint("demo-tool")
+        result = self._review(cast_with_output("$ demo-tool run --repo ."), evidence=evidence)
+        self.assertTrue(result["pass"])
+        self.assertEqual(result["findings"], [])
+
+    def test_claim_matching_command_observation_passes(self) -> None:
+        evidence = evidence_with_command_observation("demo-tool verify")
+        result = self._review(cast_with_output("$ demo-tool verify --all"), evidence=evidence)
+        self.assertTrue(result["pass"])
+        self.assertEqual(result["findings"], [])
+
+    def test_generic_shell_commands_pass_without_evidence(self) -> None:
+        result = self._review(
+            cast_with_output("$ ls\n$ python3 demo/run.py\n$ git status")
+        )
+        self.assertTrue(result["pass"])
+        self.assertEqual(result["findings"], [])
+
+    def test_leak_fails_even_without_evidence(self) -> None:
+        result = self._review(cast_with_output("$ pwd\n/Users/alice/workspace"), evidence=None)
+        self.assertFalse(result["pass"])
+        self.assertIn("leak-path", self._kinds(result))
+
+    def test_pass_case_has_no_findings(self) -> None:
+        evidence = evidence_with_cli_entrypoint("demo-tool")
+        result = self._review(
+            cast_with_output("$ demo-tool run --repo .\nDemo project\nall good\n"),
+            evidence=evidence,
+        )
+        self.assertTrue(result["pass"])
+        self.assertEqual(result["findings"], [])
+
+    def test_path_inputs_are_read_and_reviewed(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="review-path-") as temporary:
+            root = Path(temporary)
+            cast = root / "demo.cast"
+            cast.write_bytes(cast_with_output("$ demo-tool run"))
+            gif = root / "demo.gif"
+            gif.write_bytes(b"GIF-DEMO")
+            result = rd.review_demo_capture(cast, gif, evidence=evidence_with_cli_entrypoint("demo-tool"))
+        self.assertTrue(result["pass"])
+
+
+class RecordDemoReviewWireInTests(unittest.TestCase):
+    """record_demo 集成: 审查门在渲染后、返回前执行; 失败 → DemoReviewError."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory(prefix="record-demo-review-")
+        self.root = Path(self._temp.name)
+        self.demo = self.root / "demo"
+        self.demo.mkdir()
+        self.assets = self.root / "assets" / "readme-showcase" / "en"
+        self.assets.mkdir(parents=True)
+        self.script = self.demo / "demo.sh"
+        self.script.write_text("#!/usr/bin/env bash\necho hello\n", encoding="utf-8")
+        self.out_cast = self.assets / "demo.cast"
+        self.out_gif = self.assets / "demo.gif"
+
+    def tearDown(self) -> None:
+        self._temp.cleanup()
+
+    def _mock_subprocess(self, cast_bytes: bytes) -> None:
+        def run(command: list[str], **kwargs: object) -> None:  # noqa: ARG001
+            if command[1] == "rec":
+                Path(command[2]).write_bytes(cast_bytes)
+            else:
+                Path(command[-1]).write_bytes(b"GIF-DEMO")
+
+        patcher = mock.patch.object(rd.subprocess, "run", side_effect=run)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_leak_aborts_recording_with_review_error(self) -> None:
+        self._mock_subprocess(cast_with_output("$ pwd\n/Users/alice/workspace"))
+        with self.assertRaises(rd.DemoReviewError) as raised:
+            rd.record_demo(self.script, self.out_cast, self.out_gif, tools=FAKE_TOOLS)
+        message = str(raised.exception)
+        self.assertIn("review", message.lower())
+        self.assertIn("leak", message.lower())
+
+    def test_fabrication_aborts_when_evidence_provided(self) -> None:
+        self._mock_subprocess(cast_with_output("$ readme-showcase shape ."))
+        evidence = evidence_with_cli_entrypoint("demo-tool")
+        with self.assertRaises(rd.DemoReviewError) as raised:
+            rd.record_demo(
+                self.script,
+                self.out_cast,
+                self.out_gif,
+                evidence=evidence,
+                tools=FAKE_TOOLS,
+            )
+        self.assertIn("fabrication", str(raised.exception))
+
+    def test_clean_recording_passes_review_and_returns_artifacts(self) -> None:
+        self._mock_subprocess(fake_cast_bytes())
+        artifacts = rd.record_demo(self.script, self.out_cast, self.out_gif, tools=FAKE_TOOLS)
+        self.assertEqual(artifacts.cast_path, self.out_cast)
+        self.assertEqual(artifacts.gif_path, self.out_gif)
+
+
 class RecordDemoCliTests(unittest.TestCase):
     """CLI 契约: 依赖缺失 → exit 2 + opt-in 提示; --verify 打印确定性证明."""
 
@@ -470,6 +674,53 @@ class RecordDemoCliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("envelope", stderr.getvalue().lower())
 
+    def test_evidence_flag_exits_2_on_leaky_capture(self) -> None:
+        def run(command: list[str], **kwargs: object) -> None:  # noqa: ARG001
+            if command[1] == "rec":
+                Path(command[2]).write_bytes(cast_with_output("$ pwd\n/Users/alice/workspace"))
+            else:
+                Path(command[-1]).write_bytes(b"GIF-DEMO")
+
+        evidence = self.root / "evidence.json"
+        evidence.write_text(
+            json.dumps(evidence_with_cli_entrypoint("demo-tool")), encoding="utf-8"
+        )
+        with mock.patch.object(rd.shutil, "which", return_value="/usr/bin/tool"), \
+                mock.patch.object(rd.subprocess, "run", side_effect=run):
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised:
+                    rd.main(
+                        [
+                            str(self.script),
+                            str(self.out_cast),
+                            str(self.out_gif),
+                            "--evidence",
+                            str(evidence),
+                        ]
+                    )
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("review", stderr.getvalue().lower())
+
+    def test_invalid_evidence_file_exits_2(self) -> None:
+        evidence = self.root / "evidence.json"
+        evidence.write_text("{not json\n", encoding="utf-8")
+        with mock.patch.object(rd.shutil, "which", return_value="/usr/bin/tool"):
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised:
+                    rd.main(
+                        [
+                            str(self.script),
+                            str(self.out_cast),
+                            str(self.out_gif),
+                            "--evidence",
+                            str(evidence),
+                        ]
+                    )
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("evidence", stderr.getvalue().lower())
+
     def test_full_tier_envelope_records_via_cli(self) -> None:
         def run(command: list[str], **kwargs: object) -> None:  # noqa: ARG001
             if command[1] == "rec":
@@ -515,6 +766,7 @@ class RecordDemoDocContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.motion = MOTION_PRODUCTION.read_text(encoding="utf-8")
+        cls.visual = VISUAL_PRODUCTION.read_text(encoding="utf-8")
         cls.skill = SKILL_MD.read_text(encoding="utf-8")
 
     def test_motion_doc_documents_demo_recording(self) -> None:
@@ -537,6 +789,15 @@ class RecordDemoDocContractTests(unittest.TestCase):
         lowered = self.skill.lower()
         self.assertIn("asciinema", lowered)
         self.assertIn("agg", lowered)
+
+    def test_visual_doc_documents_recording_contract(self) -> None:
+        lowered = self.visual.lower()
+        self.assertIn("demo recording contract", lowered)
+        self.assertIn("review_demo_capture", self.visual)
+        self.assertIn("fabricat", lowered)
+        self.assertIn("leak", lowered)
+        self.assertIn("repository-evidence", lowered)
+        self.assertIn("-demo.svg", self.visual)
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ Read this reference before creating or revising README assets. Visuals must comm
 6. [Choose a structure implementation](#choose-a-structure-implementation)
 7. [Produce SVG](#produce-svg)
 8. [Preview and validate](#preview-and-validate)
+9. [Demo recording contract](#demo-recording-contract)
 
 ## Derive the Visual System
 
@@ -265,3 +266,42 @@ When two versions communicate equally well, keep the simpler one.
 For a user-requested attribution mark, derive one compact signature from the
 project's existing visual system and preview it before embedding. Never add an
 unsolicited backlink or make attribution a condition of delivery.
+
+## Demo Recording Contract
+
+Runtime-captured demos (role-`demo` assets, see
+[motion-production.md](motion-production.md#demo-recording)) are terminal
+recordings of an archived script, so the capture itself is part of the
+deliverable. Every capture must pass the content review gate
+(`skill/scripts/record_demo.py` `review_demo_capture`; Task 4.4) before the
+artifacts are returned or declared in a manifest. The gate enforces two rules:
+
+**No environment leakage.** The output the capture shows must not expose the
+recording host: no absolute user paths (`/Users/<name>/…`, `/home/<name>/…`),
+no `~` or `$HOME` home references, no email addresses or `user@host`
+identities, and no tokens, API keys, or secrets. The leakage check always runs
+and reports `leak-path`, `leak-identity`, or `leak-credential` findings.
+
+**No fabrication.** Every command the capture shows must exist in the
+repository's own capability: command names declared by `cli-entrypoint`
+evidence facts (`python-script:<name>`, `node-bin:<name>`) or the leading
+tokens of verified `command-observation` facts in the repository-evidence
+graph. Generic shell utilities (`echo`, `ls`, `git`, `python3`, `node`, …) are
+always allowed; any other claimed command is reported as `fabrication` with
+the evidence set it was checked against. Pass the repository-evidence graph
+with `--evidence` to enable the capability check.
+
+So that a capture is reviewable, the archived script must echo each command as
+a `$ command` prompt line before running it — the cast then shows exactly what
+was executed. Never fabricate output or hand-edit a cast; a `.cast` input is
+used as recorded.
+
+Path conventions (Task 4.1): the script archive lives at
+`demo/<name>.sh`, `demo/<name>.txt`, or `demo/<name>.cast`; outputs are
+locale-scoped assets `assets/readme-showcase/<locale>/<name>.cast` and
+`assets/readme-showcase/<locale>/<name>.gif`, with `<name>-demo.svg` reserved
+for the retained static source variant. The script archive must exist in the
+repository before manifest validation: validation byte-checks `demo_script_ref`
+against the archived file, so the producer materializes the archive (recording
+does this) before declaring the asset. A failed review raises
+`DemoReviewError` and the CLI exits 2.

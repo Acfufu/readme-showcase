@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Final, assert_never
@@ -34,6 +34,9 @@ if __package__ and __package__.startswith("skill."):
     from skill.scripts.readme_showcase.contracts.demo_envelope import (
         validate_demo_envelope_v1,
     )
+    from skill.scripts.readme_showcase.contracts.evidence import (
+        validate_evidence_graph,
+    )
 else:  # The installed Skill runs this file directly from its scripts directory.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from scripts.pipeline_contracts import (
@@ -44,10 +47,14 @@ else:  # The installed Skill runs this file directly from its scripts directory.
     from scripts.readme_showcase.contracts.demo_envelope import (
         validate_demo_envelope_v1,
     )
+    from scripts.readme_showcase.contracts.evidence import (
+        validate_evidence_graph,
+    )
 
 
 MAX_DEMO_CAST_BYTES: Final = 64 * 1024 * 1024
 MAX_DEMO_GIF_BYTES: Final = 64 * 1024 * 1024
+MAX_DEMO_EVIDENCE_BYTES: Final = 8 * 1024 * 1024
 MAX_DEMO_SUBPROCESS_SECONDS: Final = 300
 IDLE_TIME_LIMIT_SECONDS: Final = "2"
 LAST_FRAME_DURATION_SECONDS: Final = "2"
@@ -58,6 +65,52 @@ _DEMO_ASSET_PATH: Final = re.compile(
     rf"assets/readme-showcase/{_LOCALES}/(?:[^/]+\.(?:gif|cast))"
 )
 _DEMO_SCRIPT_PATH: Final = re.compile(r"demo/.*\.(?:cast|sh|txt)")
+
+# Task 4.4 content review gate: leakage patterns scanned over the capture text.
+# A single finding per pattern kind is reported, so a fixable capture produces a
+# bounded, actionable review result.
+_LEAK_PATTERNS: Final = (
+    (
+        "leak-path",
+        re.compile(
+            r"/(?:Users|home)/[^/\s\"'`;]+"
+            r"|~/(?:[^\s\"'`]*)"
+            r"|\$(?:HOME|\{HOME\})"
+        ),
+    ),
+    (
+        "leak-identity",
+        re.compile(r"\b[\w.+-]+@(?:[\w-]*[A-Za-z][\w-]*)(?:\.[\w-]*[A-Za-z][\w-]*)*\b"),
+    ),
+    (
+        "leak-credential",
+        re.compile(
+            r"gh[pousr]_[A-Za-z0-9]{36,}"
+            r"|sk-[A-Za-z0-9]{20,}"
+            r"|(?:api[_-]?key|access[_-]?token|token|secret|password)"
+            r"\s*[:=]\s*[\"']?[A-Za-z0-9_\-.]{12,}"
+            r"|bearer\s+[A-Za-z0-9._~+/=-]{16,}",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+# Generic shell utilities never need repository capability evidence; every
+# other command a capture shows must be backed by a cli-entrypoint or
+# command-observation fact in the repository-evidence graph.
+_GENERIC_SHELL_COMMANDS: Final = frozenset(
+    {
+        "awk", "bash", "cat", "cd", "chmod", "cp", "curl", "date", "docker",
+        "echo", "env", "export", "false", "find", "git", "go", "grep", "gzip",
+        "head", "jq", "ls", "make", "mkdir", "mv", "node", "npm", "npx",
+        "pip", "pip3", "poetry", "printf", "pwd", "python", "python3", "rm",
+        "ruby", "sed", "set", "sh", "sleep", "sort", "source", "tail", "tar",
+        "tee", "touch", "tree", "true", "uname", "uniq", "uv", "wc", "wget",
+        "which", "xargs", "yes", "zsh",
+    }
+)
+
+_PRINTABLE_RUN: Final = re.compile(rb"[\x20-\x7e]{8,}")
 
 
 class DemoRecordingError(Exception):
@@ -86,6 +139,10 @@ class DemoDeterminismError(DemoRecordingError):
 
 class DemoApprovalError(DemoRecordingError):
     """The demo script is not covered by its demo-envelope approval tier."""
+
+
+class DemoReviewError(DemoRecordingError):
+    """The recorded capture failed the content review gate (leakage or fabrication)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +349,148 @@ def demo_approval_gate(
     return check
 
 
+def _decode_capture_bytes(raw: bytes) -> str:
+    return raw.decode("utf-8", errors="replace")
+
+
+def _read_capture_text(source: Path | bytes, label: str, maximum: int) -> str:
+    if isinstance(source, Path):
+        try:
+            raw = read_regular_bytes(source, maximum=maximum)
+        except ContractError as exc:
+            raise DemoReviewError(f"demo capture {label} is unreadable: {exc}") from exc
+    else:
+        raw = source
+    return _decode_capture_bytes(raw)
+
+
+def _gif_visible_text(gif_bytes: bytes) -> str:
+    """Text-like ASCII runs from a GIF (comment extensions, metadata)."""
+    return b"\n".join(_PRINTABLE_RUN.findall(gif_bytes)).decode("ascii", errors="ignore")
+
+
+def _evidence_capability_commands(evidence: Mapping[str, object]) -> set[str]:
+    """Command names the repository evidence graph proves exist."""
+    commands: set[str] = set()
+    facts = evidence.get("facts")
+    if not isinstance(facts, list):
+        return commands
+    for fact in facts:
+        if not isinstance(fact, dict):
+            continue
+        kind = fact.get("kind")
+        key = fact.get("semantic_key")
+        if kind == "cli-entrypoint" and isinstance(key, str):
+            for prefix in ("python-script:", "node-bin:"):
+                if key.startswith(prefix):
+                    name = key[len(prefix) :]
+                    if name:
+                        commands.add(name)
+                    break
+            else:
+                if key == "javascript-shebang":
+                    commands.add("node")
+                elif key == "python-main-guard":
+                    commands.add("python")
+        elif kind == "command-observation":
+            value = fact.get("value")
+            if isinstance(value, Mapping):
+                command = value.get("command")
+                if isinstance(command, str):
+                    try:
+                        tokens = shlex.split(command)
+                    except ValueError:
+                        continue
+                    if tokens:
+                        commands.add(tokens[0])
+    return commands
+
+
+def _cast_output_text(cast_text: str) -> str:
+    """The output a cast shows: text payloads of its `"o"` events, in order."""
+    parts: list[str] = []
+    for line in cast_text.splitlines():
+        try:
+            payload = json.loads(line)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if isinstance(payload, list) and len(payload) >= 3 and isinstance(payload[2], str):
+            parts.append(payload[2])
+    return "\n".join(parts)
+
+
+def _claimed_commands(cast_text: str) -> list[str]:
+    """Distinct `$ command` prompt lines the capture itself shows, in order."""
+    claimed: list[str] = []
+    seen: set[str] = set()
+    for line in cast_text.splitlines():
+        match = re.match(r"\s*\$\s+(\S+)", line.strip())
+        if not match:
+            continue
+        command = match.group(1)
+        if command not in seen:
+            seen.add(command)
+            claimed.append(command)
+    return claimed
+
+
+def _snippet(match: re.Match[str]) -> str:
+    text = match.group(0)
+    return text if len(text) <= 120 else text[:117] + "..."
+
+
+def review_demo_capture(
+    cast: Path | bytes,
+    gif: Path | bytes,
+    evidence: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Review a demo capture for environment leakage and fabrication.
+
+    The leakage check always runs over the cast output and any text visible in
+    the GIF: absolute user home paths, `~`/`$HOME` references, email-style
+    identities, and tokens or secrets fail the gate with `leak-path`,
+    `leak-identity`, or `leak-credential` findings. When `evidence` (a
+    repository-evidence graph) is provided, commands the capture shows as
+    `$ command` prompt lines must be backed by a `cli-entrypoint` or
+    `command-observation` fact or be a generic shell utility; anything else is
+    a `fabrication` finding. Returns {"pass": bool, "findings": [...]} with one
+    finding per kind.
+    """
+    cast_text = _read_capture_text(cast, "cast", MAX_DEMO_CAST_BYTES)
+    gif_raw = _read_capture_text(gif, "gif", MAX_DEMO_GIF_BYTES)
+    gif_text = _gif_visible_text(gif_raw.encode("utf-8", errors="ignore"))
+    cast_output = _cast_output_text(cast_text)
+    scanned = f"{cast_output}\n{gif_text}"
+
+    findings: list[dict[str, object]] = []
+    for kind, pattern in _LEAK_PATTERNS:
+        match = pattern.search(scanned)
+        if match is not None:
+            findings.append({"kind": kind, "detail": _snippet(match)})
+
+    if evidence is not None:
+        capability = _GENERIC_SHELL_COMMANDS | _evidence_capability_commands(evidence)
+        for command in _claimed_commands(cast_output):
+            if command not in capability:
+                findings.append(
+                    {
+                        "kind": "fabrication",
+                        "detail": (
+                            f"demo claims command '{command}' which repository "
+                            "evidence does not support"
+                        ),
+                    }
+                )
+                break
+
+    return {"pass": not findings, "findings": findings}
+
+
+def _format_review_findings(findings: Iterable[Mapping[str, object]]) -> str:
+    parts = [f"{finding.get('kind')}: {finding.get('detail')}" for finding in findings]
+    return "demo capture review failed: " + "; ".join(parts)
+
+
 def record_demo(
     demo_script: Path,
     out_cast: Path,
@@ -300,6 +499,7 @@ def record_demo(
     approval_check: Callable[[Path], None] | None = None,
     demo_envelope: dict[str, object] | None = None,
     permitted_commands: Iterable[str] = (),
+    evidence: Mapping[str, object] | None = None,
     tools: DemoTools | None = None,
     fps: int = DEFAULT_FPS,
     theme: str = DEFAULT_THEME,
@@ -315,8 +515,13 @@ def record_demo(
     is provided, it replaces the raw callback with the envelope gate, whose
     tier is enforced against `permitted_commands` — commands the client
     permission system already allowed skip the envelope while the script is
-    still recorded and archived. The returned DemoArtifacts carries the exact
-    SHA-256 values the producer must declare in the asset manifest.
+    still recorded and archived. After rendering, the Task 4.4 content review
+    gate (`review_demo_capture`) runs over the capture: the leakage check is
+    always enforced, and the no-fabrication capability check runs when
+    `evidence` (a repository-evidence graph) is provided; a failing review
+    raises DemoReviewError before any artifacts are returned. The returned
+    DemoArtifacts carries the exact SHA-256 values the producer must declare in
+    the asset manifest.
     """
     script = demo_script.expanduser()
     _require_demo_script(script)
@@ -377,6 +582,15 @@ def record_demo(
         "agg GIF rendering",
     )
     gif_bytes = _read_limited(gif_output, MAX_DEMO_GIF_BYTES, DemoExecutionError)
+    review = review_demo_capture(cast_output, gif_output, evidence=evidence)
+    if not review["pass"]:
+        raw_findings = review["findings"]
+        findings = (
+            [f for f in raw_findings if isinstance(f, Mapping)]
+            if isinstance(raw_findings, list)
+            else []
+        )
+        raise DemoReviewError(_format_review_findings(findings))
     return DemoArtifacts(
         cast_path=cast_output,
         gif_path=gif_output,
@@ -464,6 +678,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=[],
         help="command already allowed by the client permission system (repeatable)",
     )
+    parser.add_argument(
+        "--evidence",
+        type=Path,
+        help="repository-evidence.v2 JSON enabling the no-fabrication capability review",
+    )
     parser.add_argument("--fps", type=int, default=DEFAULT_FPS, help="agg fps cap")
     parser.add_argument(
         "--theme", default=DEFAULT_THEME, help="agg color theme (default: asciinema)"
@@ -485,6 +704,23 @@ def _read_envelope(path: Path) -> dict[str, object]:
     return payload
 
 
+def _read_evidence(path: Path) -> dict[str, object]:
+    try:
+        raw = read_regular_bytes(path, maximum=MAX_DEMO_EVIDENCE_BYTES)
+    except ContractError as exc:
+        raise DemoReviewError(f"demo review evidence is unreadable: {exc}") from exc
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DemoReviewError(f"demo review evidence is not valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise DemoReviewError(f"demo review evidence must be a JSON object: {path}")
+    try:
+        return validate_evidence_graph(payload)
+    except ContractError as exc:
+        raise DemoReviewError(f"demo review evidence failed validation: {exc}") from exc
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     try:
@@ -492,12 +728,16 @@ def main(argv: list[str] | None = None) -> None:
         envelope = (
             _read_envelope(args.envelope) if args.envelope is not None else None
         )
+        evidence = (
+            _read_evidence(args.evidence) if args.evidence is not None else None
+        )
         artifacts = record_demo(
             args.demo_script,
             args.out_cast,
             args.out_gif,
             demo_envelope=envelope,
             permitted_commands=args.permitted_command,
+            evidence=evidence,
             tools=tools,
             fps=args.fps,
             theme=args.theme,
