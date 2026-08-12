@@ -20,6 +20,13 @@ except (ImportError, SystemExit):  # The legacy-all CI job does not install Pill
     Image = None  # type: ignore[assignment]
     render_motion_gif = None  # type: ignore[assignment]
 
+from skill.scripts.pipeline_contracts import ContractError
+
+try:
+    from skill.scripts.render_static_frame import render_static_frame
+except (ImportError, SystemExit):
+    render_static_frame = None  # type: ignore[assignment]
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "skill/scripts/render_motion_gif.py"
@@ -48,6 +55,9 @@ class MotionProductionContractTests(unittest.TestCase):
         lowered = self.text.lower()
         self.assertIn("frozen frame", lowered)
         self.assertIn("reduced-motion", lowered)
+
+    def test_doc_describes_static_frame_generator(self) -> None:
+        self.assertIn("render_static_frame", self.text)
 
 
 @unittest.skipUnless(render_motion_gif is not None, "Pillow is required for motion renderer tests")
@@ -793,6 +803,230 @@ class MotionRendererTests(unittest.TestCase):
         self.assertIn("SVG element id not found: missing", result.stderr)
         self.assertEqual(output.read_bytes(), b"previous-output")
         self.assertFalse((frames_root / "frames").exists())
+
+
+@unittest.skipUnless(render_static_frame is not None, "render_static_frame is required")
+class StaticFrameRendererTests(unittest.TestCase):
+    """Settled static-frame derivation from an animated SVG source (Task 2.3)."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory(prefix="readme-static-test-")
+        self.root = Path(self.temp.name)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def _svg(self, body: str) -> Path:
+        path = self.root / "animated.svg"
+        path.write_text(
+            f'''<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80" viewBox="0 0 160 80">
+  <rect width="160" height="80" fill="#ffffff"/>
+{body}
+</svg>
+''',
+            encoding="utf-8",
+        )
+        return path
+
+    def _v2_spec(self, *, scene_id: str = "moving") -> dict[str, object]:
+        return {
+            "schema_version": 2,
+            "width": 1200,
+            "fps": 30,
+            "duration": 8.0,
+            "colors": 192,
+            "dither": "none",
+            "transparent_color": "#ff00ff",
+            "alpha_threshold": 128,
+            "clip_to_base_alpha": False,
+            "max_size_mb": 2.0,
+            "scenes": [
+                {
+                    "id": scene_id,
+                    "interpolation": "linear",
+                    "enter": {"start": 0.2, "end": 0.9},
+                    "hold": {"start": 0.9, "end": 7.2},
+                }
+            ],
+            "typewriter": {"mode": "per-char", "locale": "en", "char_width_factor": 0.6},
+            "reduced_motion": {"mode": "static", "visible": [scene_id]},
+        }
+
+    def test_settled_frame_freezes_width_bar_at_full_value(self) -> None:
+        """The settled frame shows the animation end, never the t=0 width=0 bar."""
+        self.assertIsNotNone(render_static_frame)
+        svg = self._svg(
+            '  <rect id="moving" x="24" y="24" width="0" height="32" fill="#111111">\n'
+            '    <animate attributeName="width" from="0" to="112" dur="1s" fill="freeze"/>\n'
+            "  </rect>"
+        )
+        data = render_static_frame(svg.read_bytes(), self._v2_spec())
+        root = ET.fromstring(data)
+        rect = root.find(".//{http://www.w3.org/2000/svg}rect[@id='moving']")
+        self.assertIsNotNone(rect)
+        assert rect is not None
+        self.assertEqual(rect.get("width"), "112")
+        smil_tags = [
+            element.tag.rsplit("}", 1)[-1]
+            for element in root.iter()
+            if element.tag.rsplit("}", 1)[-1]
+            in {"animate", "set", "animateTransform", "animateMotion"}
+        ]
+        self.assertEqual(smil_tags, [])
+
+    def test_settled_frame_uses_last_values_entry(self) -> None:
+        self.assertIsNotNone(render_static_frame)
+        svg = self._svg(
+            '  <rect id="moving" x="24" y="24" width="0" height="32" fill="#111111">\n'
+            '    <animate attributeName="width" values="0; 56; 112" dur="1s" fill="freeze"/>\n'
+            "  </rect>"
+        )
+        data = render_static_frame(svg.read_bytes(), self._v2_spec())
+        root = ET.fromstring(data)
+        rect = root.find(".//{http://www.w3.org/2000/svg}rect[@id='moving']")
+        assert rect is not None
+        self.assertEqual(rect.get("width"), "112")
+
+    def test_settled_frame_freezes_animate_transform(self) -> None:
+        self.assertIsNotNone(render_static_frame)
+        svg = self._svg(
+            '  <rect id="moving" x="24" y="24" width="112" height="32" fill="#111111">\n'
+            '    <animateTransform attributeName="transform" type="translate" '
+            'from="0 0" to="24 24" dur="1s" fill="freeze"/>\n'
+            "  </rect>"
+        )
+        data = render_static_frame(svg.read_bytes(), self._v2_spec())
+        root = ET.fromstring(data)
+        rect = root.find(".//{http://www.w3.org/2000/svg}rect[@id='moving']")
+        assert rect is not None
+        self.assertEqual(rect.get("transform"), "translate(24 24)")
+
+    def test_settled_frame_strips_css_keyframes_and_animation(self) -> None:
+        self.assertIsNotNone(render_static_frame)
+        svg = self._svg(
+            "  <style>\n"
+            "    @keyframes grow { from { width: 0 } to { width: 112px } }\n"
+            "    .frame { fill: #111111 }\n"
+            "  </style>\n"
+            '  <rect id="moving" class="frame" x="24" y="24" width="112" height="32" '
+            'style="animation: grow 1s forwards"/>\n'
+        )
+        data = render_static_frame(svg.read_bytes(), self._v2_spec())
+        text = data.decode("utf-8")
+        self.assertNotIn("@keyframes", text)
+        self.assertNotIn("animation", text)
+        self.assertIn(".frame { fill: #111111 }", text)
+
+    def test_settled_frame_preserves_defs_and_static_geometry(self) -> None:
+        self.assertIsNotNone(render_static_frame)
+        svg = self._svg(
+            "  <defs>\n"
+            '    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">\n'
+            '      <stop offset="0" stop-color="#eeeeee"/>\n'
+            '      <stop offset="1" stop-color="#cccccc"/>\n'
+            "    </linearGradient>\n"
+            "  </defs>\n"
+            '  <rect id="background" x="0" y="0" width="160" height="80" fill="url(#bg)"/>\n'
+            '  <rect id="moving" x="24" y="24" width="0" height="32" fill="#111111">\n'
+            '    <animate attributeName="width" from="0" to="112" dur="1s" fill="freeze"/>\n'
+            "  </rect>"
+        )
+        data = render_static_frame(svg.read_bytes(), self._v2_spec())
+        root = ET.fromstring(data)
+        self.assertIsNotNone(
+            root.find(".//{http://www.w3.org/2000/svg}linearGradient[@id='bg']")
+        )
+        background = root.find(".//{http://www.w3.org/2000/svg}rect[@id='background']")
+        assert background is not None
+        self.assertEqual(background.get("fill"), "url(#bg)")
+        self.assertEqual(background.get("width"), "160")
+
+    def test_settled_frame_rejects_unknown_variant(self) -> None:
+        self.assertIsNotNone(render_static_frame)
+        svg = self._svg(
+            '  <rect id="moving" x="24" y="24" width="112" height="32" fill="#111111"/>'
+        )
+        with self.assertRaises(ContractError) as raised:
+            render_static_frame(svg.read_bytes(), self._v2_spec(), variant="t0")
+        self.assertEqual(raised.exception.code, "E_VISUAL_DETERMINISM")
+
+    def test_settled_frame_rejects_scene_id_missing_from_svg(self) -> None:
+        """Stale motion specs fail loudly instead of silently producing a frame."""
+        self.assertIsNotNone(render_static_frame)
+        svg = self._svg(
+            '  <rect id="other" x="24" y="24" width="112" height="32" fill="#111111"/>'
+        )
+        with self.assertRaises(ContractError) as raised:
+            render_static_frame(svg.read_bytes(), self._v2_spec(scene_id="missing"))
+        self.assertEqual(raised.exception.code, "E_VISUAL_SPEC_ID")
+        self.assertIn("SVG element id not found: missing", str(raised.exception))
+
+    def test_settled_frame_rejects_invalid_motion_spec(self) -> None:
+        self.assertIsNotNone(render_static_frame)
+        svg = self._svg(
+            '  <rect id="moving" x="24" y="24" width="112" height="32" fill="#111111"/>'
+        )
+        spec = self._v2_spec()
+        spec["intruder"] = 1
+        with self.assertRaises(ContractError) as raised:
+            render_static_frame(svg.read_bytes(), spec)
+        self.assertEqual(raised.exception.code, "E_SCHEMA_UNKNOWN_FIELD")
+
+        with self.assertRaises(ContractError) as raised:
+            render_static_frame(svg.read_bytes(), "not-a-spec")  # type: ignore[arg-type]
+        self.assertEqual(raised.exception.code, "E_SCHEMA_TYPE")
+
+    def test_settled_frame_accepts_v1_spec_scene_ids(self) -> None:
+        self.assertIsNotNone(render_static_frame)
+        svg = self._svg(
+            '  <rect id="moving" x="24" y="24" width="0" height="32" fill="#111111">\n'
+            '    <animate attributeName="width" from="0" to="112" dur="1s" fill="freeze"/>\n'
+            "  </rect>"
+        )
+        spec = {
+            "schema_version": 1,
+            "width": 1200,
+            "fps": 30,
+            "duration": 5.0,
+            "reveals": [{"id": "moving", "axis": "x", "start": 0, "end": 1}],
+            "layers": [],
+        }
+        data = render_static_frame(svg.read_bytes(), spec)
+        root = ET.fromstring(data)
+        rect = root.find(".//{http://www.w3.org/2000/svg}rect[@id='moving']")
+        assert rect is not None
+        self.assertEqual(rect.get("width"), "112")
+
+    def test_settled_frame_cli_writes_static_svg(self) -> None:
+        svg = self._svg(
+            '  <rect id="moving" x="24" y="24" width="0" height="32" fill="#111111">\n'
+            '    <animate attributeName="width" from="0" to="112" dur="1s" fill="freeze"/>\n'
+            "  </rect>"
+        )
+        spec = self.root / "motion-v2.json"
+        spec.write_text(json.dumps(self._v2_spec()), encoding="utf-8")
+        output = self.root / "hero-static.svg"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(REPO_ROOT / "skill/scripts/render_static_frame.py"),
+                str(svg),
+                str(output),
+                "--spec",
+                str(spec),
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("STATIC-FRAME", result.stdout)
+        rect = ET.fromstring(output.read_bytes()).find(
+            ".//{http://www.w3.org/2000/svg}rect[@id='moving']"
+        )
+        assert rect is not None
+        self.assertEqual(rect.get("width"), "112")
 
 
 if __name__ == "__main__":

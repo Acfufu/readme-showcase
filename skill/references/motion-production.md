@@ -65,6 +65,32 @@ accidental intermediate:
 - Reduced-motion users, static fallbacks, and failed renders see exactly the
   frozen frame — never rely on motion to communicate the asset's meaning.
 
+### Static Frame Generator
+
+The animated route (`diagram_route: "animated"` with `static_frame: true`)
+derives its still asset with `skill/scripts/render_static_frame.py`:
+
+- `render_static_frame(svg, motion_spec, variant="settled") -> bytes` returns a
+  static SVG whose geometry is the settled composition — the animation end
+  state, never the `t=0` empty frame.  SMIL `<animate>`/`<set>`/`<animateTransform>`
+  final values (`to`, or the last `values` entry) are baked into the target
+  attributes and the animation elements removed; CSS `@keyframes` blocks and
+  `animation` declarations are stripped so the authored settled values show.
+- The settled state keys off the SVG's own animation declarations, never a
+  motion JSON that may sit stale beside a fallback GIF: the spec is validated
+  and cross-checked (every scene id must exist in the SVG) but never trusted
+  for geometry.
+- The animated route records this asset as `*-static.svg` (base-set asset form:
+  role `animation`/`hero`, no scene/gate hash), satisfying the route contract
+  that the animated route always carries a still frame.
+
+```bash
+python3 scripts/render_static_frame.py \
+  assets/readme/hero.svg \
+  assets/readme/hero-static.svg \
+  --spec assets/readme/hero-motion.json
+```
+
 ## Motion Spec
 
 Give animated SVG elements stable IDs and keep inherited transforms and typography on ancestor groups.
