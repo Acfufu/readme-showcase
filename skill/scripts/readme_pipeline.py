@@ -332,11 +332,20 @@ def _preview(arguments: argparse.Namespace) -> dict[str, object]:
 
 
 _PREVIEW_BROWSER_HINT = "可选: `preview --browser` 双引擎渲染检查"
+_BROWSER_CHECK_TIMEOUT = 300
 
 
 def _invoke_browser_check() -> None:
     script = Path(__file__).resolve().parent / "verify_animation_matrix.py"
-    completed = subprocess.run([sys.executable, str(script)], check=False)
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(script)], check=False, timeout=_BROWSER_CHECK_TIMEOUT
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ContractError(
+            "E_BROWSER_CHECK",
+            f"dual-engine matrix verifier timed out after {_BROWSER_CHECK_TIMEOUT}s",
+        ) from exc
     if completed.returncode != 0:
         raise ContractError(
             "E_BROWSER_CHECK",
