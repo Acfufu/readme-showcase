@@ -16,6 +16,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 
 if __package__ and __package__.startswith("skill."):
     from skill.scripts.audit_readme import MAX_SVG_DEPTH, MAX_SVG_ELEMENTS
@@ -35,6 +36,7 @@ if __package__ and __package__.startswith("skill."):
         TimelineV2,
         typewriter_char_width_factor,
     )
+    from skill.scripts.render_static_frame import render_static_frame
 else:  # The installed Skill runs this file directly from its scripts directory.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from scripts.audit_readme import MAX_SVG_DEPTH, MAX_SVG_ELEMENTS
@@ -54,6 +56,7 @@ else:  # The installed Skill runs this file directly from its scripts directory.
         TimelineV2,
         typewriter_char_width_factor,
     )
+    from scripts.render_static_frame import render_static_frame
 
 try:
     from PIL import Image, ImageChops
@@ -1084,14 +1087,21 @@ def render_once(
 
 
 def write_static_fallback(
-    input_svg: Path,
+    svg_source: Any,
+    spec: dict,
     output_gif: Path,
     renderer: tuple[str, str],
     workspace: Path,
 ) -> tuple[int, int, int]:
     """Fall back to a single settled frame when the motion budget floor is exceeded."""
+    try:
+        settled = render_static_frame(svg_source, spec)
+    except ContractError as exc:
+        fail(f"{exc.code}: {exc}")
+    settled_path = workspace / "static-frame.svg"
+    write_bytes_atomic(settled_path, settled)
     png_path = workspace / "static-frame.png"
-    render_svg(renderer, input_svg, png_path)
+    render_svg(renderer, settled_path, png_path)
     with Image.open(png_path) as image:
         width, height = image.size
     with tempfile.NamedTemporaryFile(
@@ -1129,8 +1139,9 @@ def run(args: argparse.Namespace) -> None:
         spec = load_timeline(args.timeline.expanduser())
     validate_spec(spec)
 
+    raw_svg = _read_input(input_svg, MAX_MOTION_SVG_BYTES)
     try:
-        root = ET.fromstring(_read_input(input_svg, MAX_MOTION_SVG_BYTES))
+        root = ET.fromstring(raw_svg)
     except ET.ParseError as exc:
         fail(f"invalid SVG XML: {exc}")
     ffmpeg = command_path("ffmpeg")
@@ -1167,7 +1178,7 @@ def run(args: argparse.Namespace) -> None:
                 )
             if output_bytes > budget:
                 output_bytes, width, height = write_static_fallback(
-                    input_svg, output_gif, renderer, workspace
+                    raw_svg, spec, output_gif, renderer, workspace
                 )
                 frame_count = 1
                 fallback = True

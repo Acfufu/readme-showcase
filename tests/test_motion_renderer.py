@@ -346,6 +346,69 @@ class MotionRendererTests(unittest.TestCase):
             self.assertEqual(getattr(image, "n_frames", 1), 1)
         self.assertEqual(motion_json.read_text(encoding="utf-8"), "previous")
 
+    def test_v2_fallback_renders_settled_frame_not_initial_state(self) -> None:
+        self.assertIsNotNone(render_motion_gif)
+        spec_path = self._write_v2_spec(
+            duration=6.0,
+            fps=20,
+            scenes=[
+                {
+                    "id": "moving",
+                    "interpolation": "linear",
+                    "enter": {"start": 0.2, "end": 0.9},
+                    "hold": {"start": 0.9, "end": 5.5},
+                }
+            ],
+        )
+        svg = self.root / "animated.svg"
+        svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80" viewBox="0 0 160 80">\n'
+            '  <rect width="160" height="80" fill="#ffffff"/>\n'
+            '  <rect id="moving" x="24" y="24" width="0" height="32" fill="#111111">\n'
+            '    <animate attributeName="width" from="0" to="112" dur="2s" fill="freeze"/>\n'
+            '  </rect>\n'
+            '</svg>\n',
+            encoding="utf-8",
+        )
+        output = self.root / "settled-fallback.gif"
+        motion_json = self.root / "settled-fallback-motion.json"
+        motion_json.write_text("previous", encoding="utf-8")
+        frames_work = self.root / "frames-work"
+        rendered_widths: list[str] = []
+
+        def fake_render(_renderer: tuple[str, str], svg_path: Path, png_path: Path) -> None:
+            settled_root = ET.parse(svg_path).getroot()
+            bar = next(el for el in settled_root.iter() if el.get("id") == "moving")
+            rendered_widths.append(bar.get("width", ""))
+            Image.new("RGBA", (160, 80), (255, 255, 255, 255)).save(png_path)
+
+        args = Namespace(
+            input_svg=svg,
+            output_gif=output,
+            spec=spec_path,
+            timeline=None,
+            keep_frames=None,
+            motion_json=motion_json,
+        )
+        with (
+            mock.patch.object(render_motion_gif, "command_path", return_value="ffmpeg"),
+            mock.patch.object(render_motion_gif, "choose_renderer", return_value=("rsvg-convert", "renderer")),
+            mock.patch.object(
+                render_motion_gif,
+                "build_frames",
+                return_value=(frames_work, 240, 1200, 600, False),
+            ),
+            mock.patch.object(render_motion_gif, "encode_gif", return_value=3 * 1024 * 1024),
+            mock.patch.object(render_motion_gif, "render_svg", side_effect=fake_render),
+        ):
+            render_motion_gif.run(args)
+
+        self.assertEqual(rendered_widths, ["112"])
+        with Image.open(output) as image:
+            self.assertEqual(image.format, "GIF")
+            self.assertEqual(getattr(image, "n_frames", 1), 1)
+        self.assertEqual(motion_json.read_text(encoding="utf-8"), "previous")
+
     def test_explicit_timeline_renders_and_preserves_reduced_motion_projection(self) -> None:
         self._require_external_renderer()
         svg = self._write_svg()
