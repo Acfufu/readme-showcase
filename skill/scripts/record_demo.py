@@ -79,11 +79,12 @@ _LEAK_PATTERNS: Final = (
         ),
     ),
     # Email / `user@host` identities: the host must have >=2 dotted labels and
-    # every label must contain a letter, so version/package syntax (`foo@beta`,
-    # `bar@v1`, `module@v1.2.3`, `target@x86_64`) no longer matches. Tokens that
-    # still look email-shaped (e.g. `python@2x.png`) are accepted residuals:
-    # this is a demo-content gate, not a security boundary, and a capture
-    # containing such a token can be edited and re-recorded.
+    # every label must contain a letter, so version/package syntax without a
+    # dotted alphabetic host (`foo@beta`, `bar@v1`, `module@v1.2.3`,
+    # `target@x86_64`) does not match. Tokens that still look email-shaped
+    # (`python@2x.png`) DO match and fail the gate: this is a demo-content
+    # gate, not a security boundary, and a failing capture can be edited and
+    # re-recorded.
     (
         "leak-identity",
         re.compile(

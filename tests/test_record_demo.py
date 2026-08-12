@@ -550,6 +550,14 @@ class RecordDemoReviewGateTests(unittest.TestCase):
                 result = self._review(cast_with_output(line))
                 self.assertTrue(result["pass"], msg=f"false leak-identity for {line!r}")
 
+    def test_leak_identity_flags_email_shaped_file_token(self) -> None:
+        # `python@2x.png` matches leak-identity: `2x` has a letter and
+        # `.png` is a dotted alphabetic label. Locks current behavior so a
+        # future regex change cannot silently loosen the gate.
+        result = self._review(cast_with_output("$ python@2x.png"))
+        self.assertFalse(result["pass"])
+        self.assertIn("leak-identity", self._kinds(result))
+
     def test_currency_line_does_not_fabricate_command(self) -> None:
         evidence = evidence_with_cli_entrypoint("demo-tool")
         result = self._review(
