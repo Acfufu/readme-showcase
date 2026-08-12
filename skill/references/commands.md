@@ -100,3 +100,17 @@ Use for one README-only visual or a coordinated asset set.
 
 These routes locate existing central run state. They never infer a new mode or
 grant authority beyond the run's approved scope.
+
+## Incident log and override recording
+
+Every failed evaluation appends one entry per hard-gate finding to
+`lessons-pending.json` in the same directory as the evaluation report; a
+written identity override that was used during evaluation is recorded there by
+`check-publish-gate` as an independent non-failure entry. Each entry carries
+the gate, the root cause, and (for failures) a fix hint; re-running an
+evaluation never duplicates an entry.
+
+`lessons-pending.json` is a candidate inbox, never the ledger. Only
+human-confirmed entries migrate into [lessons.md](lessons.md), converting the
+automated fix hint into a durable `rule_change`. See
+[lessons.md](lessons.md) for the migration rule and entry format.

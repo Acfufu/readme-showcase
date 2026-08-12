@@ -201,6 +201,14 @@ Motion rendering additionally needs Pillow, `ffmpeg`, and `rsvg-convert` or
 macOS `sips`. ELK details live in
 [`elk-structure.md`](skill/references/elk-structure.md).
 
+## Feedback and incidents
+
+Report hard-gate failures, rule suggestions, or override decisions as GitHub
+issues: <https://github.com/Acfufu/readme-showcase/issues>. Every evaluation
+failure and identity override is also recorded locally as a candidate entry in
+`lessons-pending.json` beside the evaluation report; human-confirmed lessons
+migrate into [`skill/references/lessons.md`](skill/references/lessons.md).
+
 ## Repository map
 
 ```text

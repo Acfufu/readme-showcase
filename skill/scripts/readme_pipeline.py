@@ -26,6 +26,7 @@ _FEEDBACK = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.delivery.feed
 _FEEDBACK_CONTRACT = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.feedback")
 _GITHUB = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.delivery.github")
 _PUBLISHING = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.contracts.publishing")
+_INCIDENT_LOG = importlib.import_module(f"{_RUN_PREFIX}readme_showcase.evaluation.incident_log")
 ContractError = _CONTRACTS.ContractError
 canonical_json_bytes = _CONTRACTS.canonical_json_bytes
 canonical_sha256 = _CONTRACTS.canonical_sha256
@@ -40,6 +41,8 @@ evaluate_generated_bundle = _CORE.evaluate_generated_bundle
 build_pr_bundle = _CORE.build_pr_bundle
 check_publish_gate = _CORE.check_publish_gate
 write_canonical_json_atomic = _CONTRACTS.write_canonical_json_atomic
+append_failure_entry = _INCIDENT_LOG.append_failure_entry
+record_identity_override = _INCIDENT_LOG.record_identity_override
 import_benchmark = _BENCHMARK.import_benchmark
 StageLogger = _RUN_LOGGING.StageLogger
 STAGE_NAMES = _RUN_CONTRACT.STAGE_NAMES
@@ -149,6 +152,7 @@ def _evaluate(arguments: argparse.Namespace) -> dict[str, object]:
         identity_override=identity_override,
     )
     write_canonical_json_atomic(arguments.output, report)
+    append_failure_entry(report, arguments.output.parent)
     return report
 
 
@@ -206,6 +210,16 @@ def _check_publish_gate(arguments: argparse.Namespace) -> dict[str, object]:
         _read_canonical_input(arguments.approval, "E_PUBLISH_INPUT"),
         arguments.pr_bundle.parent.resolve(),
     )
+    incident_root = arguments.pr_bundle.parent.resolve()
+    try:
+        report = _read_canonical_input(
+            incident_root / "evaluation-report.json",
+            "E_PUBLISH_INPUT",
+        )
+    except ContractError:
+        report = None
+    if report is not None:
+        record_identity_override(report, incident_root)
     write_canonical_json_atomic(arguments.output, result)
     return result
 
