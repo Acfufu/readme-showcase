@@ -734,7 +734,7 @@ def assemble_generated_bundle_v3(
     target: Mapping[str, Any],
     candidate: Mapping[str, Any],
     artifacts: Mapping[str, Any],
-    compiled: Mapping[str, Any],
+    compiled: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble a canonical Bundle v3 over already materialized stage bytes."""
 
@@ -746,17 +746,17 @@ def assemble_generated_bundle_v3(
     }
     candidate_body["candidate_sha256"] = canonical_sha256(candidate_body)
     artifacts_copy = copy.deepcopy(dict(artifacts))
-    if not isinstance(compiled, Mapping):
-        raise ContractError("E_SCHEMA_TYPE", "generated bundle v3 compiled must be an object")
-    compiled_copy = copy.deepcopy(dict(compiled))
     bundle = {
         "schema_version": GENERATED_BUNDLE_V3_SCHEMA_VERSION,
         "mode": mode,
         "target": {"repository": canonical_repository(target.get("repository")), "base_sha": target.get("base_sha")},
         "candidate": candidate_body,
         "artifacts": artifacts_copy,
-        "compiled": compiled_copy,
     }
+    if compiled is not None:
+        if not isinstance(compiled, Mapping):
+            raise ContractError("E_SCHEMA_TYPE", "generated bundle v3 compiled must be an object")
+        bundle["compiled"] = copy.deepcopy(dict(compiled))
     _validate_generated_bundle_v3(bundle, artifact_root)
     return copy.deepcopy(bundle)
 

@@ -14,6 +14,7 @@ from skill.scripts.readme_showcase.contracts.assets import validate_asset_manife
 from skill.scripts.readme_showcase.contracts.evidence import build_fact
 from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
 from skill.scripts.readme_showcase.generation.assembler import (
+    _V3_COMPILED_SVG_PATH,
     assemble_generated_bundle_v3,
     canonical_markdown_blocks,
     validate_generated_bundle_v3,
@@ -476,6 +477,56 @@ class BundleV3ContractTests(unittest.TestCase):
             (root2 / "README.md").unlink()
             (root2 / "README.md").symlink_to(outside)
             self.assert_code(self, "E_PATH", linked, root2)
+
+    def test_assemble_captured_only_bundle_without_compiled(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self.make_bundle(root)
+            # captured-only: plan declares a non-compiled route
+            plan = json.loads((root / "readme-plan.json").read_bytes())
+            plan["diagram_route"] = "static"
+            self._write_json(root, "readme-plan.json", plan)
+            bundle["artifacts"]["plan"]["sha256"] = hashlib.sha256(
+                (root / "readme-plan.json").read_bytes()
+            ).hexdigest()
+            # readme/asset-only mode REQUIRES >=1 publishable SVG candidate
+            # (_v3_candidate raises E_BUNDLE_MODE on empty assets), and any
+            # compiled-shaped path would re-require `compiled` — so keep one
+            # non-compiled static SVG candidate instead of stripping all.
+            static = self._write_bytes(
+                root,
+                "assets/readme-showcase/en/hero-static.svg",
+                b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>\n',
+            )
+            # The bundle validator closes candidate SVGs over the Asset
+            # Manifest, so a captured-only run also carries a manifest that
+            # matches its candidate: one static hero, no compiled projection.
+            manifest = {
+                "schema_version": 3,
+                "assets": [{
+                    "asset_id": "hero-en-static",
+                    "path": static["path"],
+                    "artifact_sha256": static["sha256"],
+                    "evidence_ids": [EVIDENCE["facts"][0]["fact_id"]],
+                    "role": "hero",
+                    "locale": "en",
+                    "variant": "desktop",
+                }],
+            }
+            self._write_json(root, "asset-manifest.json", manifest)
+            bundle["artifacts"]["asset_manifest"]["sha256"] = hashlib.sha256(
+                (root / "asset-manifest.json").read_bytes()
+            ).hexdigest()
+            body = {"readmes": bundle["candidate"]["readmes"], "assets": [static]}
+            reassembled = assemble_generated_bundle_v3(
+                root,
+                mode=bundle["mode"],
+                target=bundle["target"],
+                candidate=body,
+                artifacts=bundle["artifacts"],
+            )
+            self.assertNotIn("compiled", reassembled)
+            validate_generated_bundle_v3(reassembled, root)
 
 
 if __name__ == "__main__":
