@@ -401,6 +401,7 @@ class ResumablePipelineTests(unittest.TestCase):
             "docs/guide.md": "# Guide\n",
             "src/main.py": "print('demo')\n",
             "tests/test_main.py": "def test_demo():\n    pass\n",
+            "theme.json": test_pipeline_contracts.COMPILED_THEME_JSON.decode("ascii"),
         }.items():
             path = target / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -518,6 +519,7 @@ class ResumablePipelineTests(unittest.TestCase):
             "docs/guide.md": "# Guide\n",
             "src/main.py": "print('demo')\n",
             "tests/test_main.py": "def test_demo():\n    pass\n",
+            "theme.json": test_pipeline_contracts.COMPILED_THEME_JSON.decode("ascii"),
         }.items():
             path = target / relative
             path.parent.mkdir(parents=True, exist_ok=True)

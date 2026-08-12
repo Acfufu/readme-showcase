@@ -16,6 +16,7 @@ from skill.scripts.readme_showcase.evaluation.identity import (
 )
 from skill.scripts.readme_showcase.evaluation.legacy import evaluate_generated_bundle
 from skill.scripts.readme_showcase.scanner.visual import extract_visual_tokens, svg_tokens
+from skill.scripts.readme_showcase.visual_kernel.theme import resolve_theme
 
 
 PRODUCT_TOKENS = {
@@ -241,7 +242,17 @@ class IdentityReportContractTests(unittest.TestCase):
 class IdentityBundleEvaluationTests(unittest.TestCase):
     """End-to-end evaluate: candidate visual tokens vs evidence visual facts."""
 
-    def _bundle_with_visual_facts(self, root: Path) -> dict[str, object]:
+    # Compiled-route fixture projections render the default theme, so the
+    # bundle's visual facts must match that palette for the gate to pass.
+    _COMPILED_PALETTE = sorted(resolve_theme().colors.values())
+
+    def _bundle_with_visual_facts(
+        self,
+        root: Path,
+        *,
+        palette: list[str] | None = None,
+        typography: list[str] | None = None,
+    ) -> dict[str, object]:
         from tests.contract.test_bundle_v3 import BundleV3ContractTests
         from tests.unit.visual_kernel.test_scene import EVIDENCE
         from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
@@ -252,7 +263,10 @@ class IdentityBundleEvaluationTests(unittest.TestCase):
             path="assets/logo.svg",
             locator={"line_start": 1, "line_end": 1},
             semantic_key="visual:assets/logo.svg",
-            value={"palette": ["#123456", "#abcdef"], "typography": ["Inter"]},
+            value={
+                "palette": self._COMPILED_PALETTE if palette is None else palette,
+                "typography": ["system-ui", "sans-serif"] if typography is None else typography,
+            },
             source_bytes=PRODUCT_SVG.encode("utf-8"),
             confidence="derived",
             derivation="visual tokens derived from project logo and design tokens",
@@ -267,8 +281,8 @@ class IdentityBundleEvaluationTests(unittest.TestCase):
         bundle["artifacts"]["evidence"]["sha256"] = hashlib.sha256(raw).hexdigest()  # type: ignore[index]
         return bundle
 
-    def test_compiled_diagram_assets_are_identity_exempt(self) -> None:
-        """Compiled projections are renderer outputs; the identity gate judges no tokens."""
+    def test_compiled_diagram_assets_match_repository_visual_facts(self) -> None:
+        """Compiled projections carry the theme palette; matching facts pass."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             bundle = self._bundle_with_visual_facts(root)
@@ -277,18 +291,34 @@ class IdentityBundleEvaluationTests(unittest.TestCase):
             codes = [finding["code"] for finding in report["hard_gate"]["findings"]]
             self.assertNotIn("E_IDENTITY_MATCH", codes)
 
-    def test_compiled_bundle_without_visual_facts_passes_identity(self) -> None:
-        """No repository visual facts and no authored candidate tokens pass the gate."""
+    def test_conflicting_candidate_identity_fails_evaluation_with_finding(self) -> None:
+        """Compiled projections are identity-checked: off-palette colors fail closed."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = self._bundle_with_visual_facts(root, palette=["#123456", "#abcdef"])
+            report = evaluate_generated_bundle(bundle, root)
+            self.assertEqual(report["status"], "fail")
+            codes = [finding["code"] for finding in report["hard_gate"]["findings"]]
+            self.assertIn("E_IDENTITY_MATCH", codes)
+
+    def test_compiled_bundle_without_visual_facts_fails_closed(self) -> None:
+        """No repository visual facts: compiled off-palette projections fail closed."""
         from tests.contract.test_bundle_v3 import BundleV3ContractTests
+        from tests.unit.visual_kernel.test_scene import EVIDENCE
+        from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
+        from skill.scripts.pipeline_contracts import canonical_json_bytes
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             bundle = BundleV3ContractTests().make_bundle(root)
             bundle["target"] = {"repository": "owner/target", "base_sha": "0" * 40}
+            raw = canonical_json_bytes(EvidenceGraph([*EVIDENCE["facts"]]).to_dict())
+            (root / "repository-evidence.json").write_bytes(raw)
+            bundle["artifacts"]["evidence"]["sha256"] = hashlib.sha256(raw).hexdigest()  # type: ignore[index]
             report = evaluate_generated_bundle(bundle, root)
-            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["status"], "fail")
             codes = [finding["code"] for finding in report["hard_gate"]["findings"]]
-            self.assertNotIn("E_IDENTITY_MATCH", codes)
+            self.assertIn("E_IDENTITY_MATCH", codes)
 
     def test_compiled_bundle_identity_override_not_recorded_without_conflicts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -304,8 +334,8 @@ class IdentityBundleEvaluationTests(unittest.TestCase):
             bundle = self._bundle_with_visual_facts(root)
             evidence = json.loads((root / "repository-evidence.json").read_text(encoding="utf-8"))
             tokens = collect_visual_tokens(evidence)
-            self.assertEqual(tokens["palette"], ["#123456", "#abcdef"])
-            self.assertEqual(tokens["typography"], ["Inter"])
+            self.assertEqual(tokens["palette"], self._COMPILED_PALETTE)
+            self.assertEqual(tokens["typography"], ["sans-serif", "system-ui"])
             self.assertEqual(tokens["sources"], ["visual:assets/logo.svg"])
 
 

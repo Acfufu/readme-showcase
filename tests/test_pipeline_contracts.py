@@ -53,6 +53,14 @@ from tests.unit.visual_kernel.test_scene import EVIDENCE, _spec
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# Compiled fixtures render the default visual-kernel Theme; fixture
+# repositories carry a theme.json with the same palette so the identity gate
+# passes legitimately instead of failing closed on renderer output.
+COMPILED_THEME_JSON = (
+    b'{"colors":{"accent":"#4fd1c5","background":"#0b1020","line":"#47617f",'
+    b'"muted":"#b6c2d9","surface":"#121a2e","text":"#f8fafc"}}'
+)
+
 
 class ExistingAuditCompatibilityTests(unittest.TestCase):
     def test_audit_without_readme_preserves_usage_contract(self) -> None:

@@ -11,6 +11,8 @@ from typing import Any
 
 from skill.scripts.pipeline_contracts import ContractError, canonical_json_bytes, canonical_sha256
 from skill.scripts.readme_showcase.contracts.assets import validate_asset_manifest_v3
+from skill.scripts.readme_showcase.contracts.evidence import build_fact
+from skill.scripts.readme_showcase.evidence.graph import EvidenceGraph
 from skill.scripts.readme_showcase.generation.assembler import (
     assemble_generated_bundle_v3,
     canonical_markdown_blocks,
@@ -214,7 +216,25 @@ class BundleV3ContractTests(unittest.TestCase):
         claims = self._claim_map(spec_payload, readmes)
         self._write_json(root, "readme-plan.json", plan)
         self._write_json(root, "retrieval-packet.json", retrieval)
-        self._write_json(root, "repository-evidence.json", EVIDENCE)
+        # The compiled projections are identity-checked like every candidate
+        # SVG asset, so the fixture evidence carries visual facts matching the
+        # compiled theme palette; the gate then passes legitimately.
+        theme = resolve_theme()
+        visual = build_fact(
+            kind="visual",
+            path="scene-evidence-1.md",
+            locator={"line_start": 1, "line_end": 1},
+            semantic_key="visual:compiled/theme.json",
+            value={
+                "palette": sorted(theme.colors.values()),
+                "typography": ["system-ui", "sans-serif"],
+            },
+            source_bytes=b"scene-evidence-1",
+            confidence="derived",
+            derivation="visual tokens derived from the compiled theme",
+        )
+        evidence = EvidenceGraph([*EVIDENCE["facts"], visual]).to_dict()
+        self._write_json(root, "repository-evidence.json", evidence)
         self._write_json(root, "claim-map.json", claims)
         self._write_json(root, "visual-spec.json", spec_payload)
         self._write_json(root, "asset-manifest.json", manifest)

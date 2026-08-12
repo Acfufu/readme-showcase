@@ -104,6 +104,7 @@ class PreviewReportTests(unittest.TestCase):
         plan, candidate, _, _ = pipeline_contracts.BundleAssembleStageTests._compiled_inputs_with_v1_evidence()
         plan_path = self.root / "readme-plan-v3.json"
         plan_path.write_bytes(canonical_json_bytes(plan))
+        (self.target / "theme.json").write_bytes(pipeline_contracts.COMPILED_THEME_JSON)
         started = self.cli(
             "run", "--root", str(self.target), "--workspace", str(self.workspace),
             "--mode", "readme", "--project-type", "developer-tool", "--locale", "en",
