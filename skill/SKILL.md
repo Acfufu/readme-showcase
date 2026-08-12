@@ -225,6 +225,8 @@ branch, and base SHA.
 | `none` | Diagram adds no material proof or comprehension | Keep facts and instructions in Markdown |
 | `static` | Project identity/composition matters more than automatic layout; diagram is compact; type is unsupported by ELK | Skill-authored project-native static SVG |
 | `elk` | Allowed `architecture`, `flowchart`, or `c4` body diagram has relationship-heavy grouping, routing, or label wrapping and exact Node 22.22.3 is available | Strict semantic JSON plus project-serialized standalone SVG |
+| `compiled` | Plan v3 needs independent desktop/mobile projections of one deterministic source | Visual Spec plus immutable Stage 6 outputs; see `references/visual-compiler.md` |
+| `animated` | Plan v3 opts in (`diagram_route: "animated"` + `static_frame: true`); a state change or sequence adds understanding and `prefers-reduced-motion` users have a still frame | SMIL/CSS `@keyframes` animated SVG source plus static frame variant and motion JSON; GitHub-safe, no script or foreignObject |
 | Fallback | Any route that fails its gate, dependency check, or determinism check | Select `static`; preserve README, semantic source, raw SVG, metadata, and last-known-good asset bytes |
 
 ELK never owns hero/title bar, palette choice, claims, README copy,

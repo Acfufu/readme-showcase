@@ -16,7 +16,7 @@ README_PLAN_V3_SCHEMA_VERSION = 3
 PLAN_MODES = frozenset({"readme", "asset-only", "audit-only"})
 PLAN_LANGUAGES = frozenset({"en", "zh"})
 DIAGRAM_ROUTES = frozenset({"none", "static", "elk"})
-_V3_DIAGRAM_ROUTES = DIAGRAM_ROUTES | {"compiled"}
+_V3_DIAGRAM_ROUTES = DIAGRAM_ROUTES | {"compiled", "animated"}
 MAX_PLAN_ITEMS = 10_000
 MAX_PLAN_TEXT_BYTES = 4096
 _URL = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>(){}\[\]\"']+")
@@ -168,8 +168,14 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
         "schema_version", "mode", version_field, "sections", "visual_intent",
         "diagram_route", "commands", "evidence_ids",
     }
+    # Plan v3-only opt-in marker; required only when diagram_route is animated.
+    if version == README_PLAN_V3_SCHEMA_VERSION:
+        fields = fields | {"static_frame"}
+        required = fields - {"static_frame"}
+    else:
+        required = fields
     unknown = sorted(set(payload) - fields)
-    missing = sorted(fields - set(payload))
+    missing = sorted(required - set(payload))
     if unknown:
         raise ContractError("E_SCHEMA_UNKNOWN_FIELD", f"README plan contains unknown field: {unknown[0]}")
     if missing:
@@ -190,6 +196,11 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
     allowed_routes = _V3_DIAGRAM_ROUTES if version == README_PLAN_V3_SCHEMA_VERSION else DIAGRAM_ROUTES
     if diagram_route not in allowed_routes:
         raise ContractError("E_BUNDLE_PLAN", "README plan diagram route is unsupported")
+    if version == README_PLAN_V3_SCHEMA_VERSION and diagram_route == "animated":
+        if plan.get("static_frame") is not True:
+            raise ContractError(
+                "E_BUNDLE_PLAN", "README plan animated route requires static_frame: true"
+            )
     evidence_ids = _strings(plan["evidence_ids"], "README plan.evidence_ids")
     if version in {README_PLAN_V2_SCHEMA_VERSION, README_PLAN_V3_SCHEMA_VERSION} and not evidence_ids:
         raise ContractError("E_CLAIM_EVIDENCE", f"README plan v{version} requires normative evidence")
@@ -209,6 +220,8 @@ def validate_readme_plan(payload: Any, *, mode: str | None = None) -> dict[str, 
         "commands": _strings(plan["commands"], "README plan.commands"),
         "evidence_ids": evidence_ids,
     }
+    if version == README_PLAN_V3_SCHEMA_VERSION and plan.get("static_frame") is True:
+        normalized["static_frame"] = True
     return copy.deepcopy(normalized)
 
 

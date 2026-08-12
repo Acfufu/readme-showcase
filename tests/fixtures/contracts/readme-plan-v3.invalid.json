@@ -15,6 +15,48 @@
       }
     },
     {
+      "name": "v1-animated-route",
+      "code": "E_BUNDLE_PLAN",
+      "payload": {
+        "schema_version": 1,
+        "mode": "readme",
+        "languages": ["en"],
+        "sections": ["overview"],
+        "visual_intent": "project-structure",
+        "diagram_route": "animated",
+        "commands": [],
+        "evidence_ids": ["FACT_ID"]
+      }
+    },
+    {
+      "name": "v2-animated-route",
+      "code": "E_BUNDLE_PLAN",
+      "payload": {
+        "schema_version": 2,
+        "mode": "readme",
+        "locales": [{"tag": "en", "readme_path": "README.md"}],
+        "sections": ["overview"],
+        "visual_intent": "project-structure",
+        "diagram_route": "animated",
+        "commands": [],
+        "evidence_ids": ["FACT_ID"]
+      }
+    },
+    {
+      "name": "v3-animated-without-static-frame",
+      "code": "E_BUNDLE_PLAN",
+      "payload": {
+        "schema_version": 3,
+        "mode": "readme",
+        "locales": [{"tag": "en", "readme_path": "README.md"}],
+        "sections": ["overview"],
+        "visual_intent": "project-structure",
+        "diagram_route": "animated",
+        "commands": [],
+        "evidence_ids": ["FACT_ID"]
+      }
+    },
+    {
       "name": "v3-unknown-field",
       "code": "E_SCHEMA_UNKNOWN_FIELD",
       "payload": {

@@ -73,6 +73,73 @@ class VisualContractTests(unittest.TestCase):
             "86a4973990ea0e5c6b198c235e1fdf7a496358a8d681b2a231cb45710bc2d694",
         )
 
+    @staticmethod
+    def _v3_plan(route: str, **overrides: Any) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "schema_version": 3,
+            "mode": "readme",
+            "locales": [{"tag": "en", "readme_path": "README.md"}],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": route,
+            "commands": [],
+            "evidence_ids": ["file:" + "a" * 64],
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_v3_animated_route_validates_with_static_frame(self) -> None:
+        for route in ("none", "static", "elk", "compiled", "animated"):
+            with self.subTest(route=route):
+                payload = self._v3_plan(route)
+                if route == "animated":
+                    payload["static_frame"] = True
+                normalized = plan_contract.validate_readme_plan(payload)
+                self.assertEqual(normalized["diagram_route"], route)
+                if route == "animated":
+                    self.assertIs(normalized["static_frame"], True)
+                else:
+                    self.assertNotIn("static_frame", normalized)
+                self.assertEqual(
+                    plan_contract.canonical_readme_plan_bytes(payload),
+                    plan_contract.canonical_json_bytes(payload),
+                )
+
+    def test_animated_route_is_rejected_before_plan_v3(self) -> None:
+        v1_payload = {
+            "schema_version": 1,
+            "mode": "readme",
+            "languages": ["en"],
+            "sections": ["overview"],
+            "visual_intent": "project-structure",
+            "diagram_route": "animated",
+            "commands": [],
+            "evidence_ids": ["file:README.md"],
+        }
+        for version, payload in ((1, v1_payload), (2, self._v3_plan("animated", schema_version=2))):
+            with self.subTest(version=version):
+                with self.assertRaises(ContractError) as raised:
+                    plan_contract.validate_readme_plan(payload)
+                self.assertEqual(raised.exception.code, "E_BUNDLE_PLAN")
+
+    def test_v3_animated_route_requires_static_frame(self) -> None:
+        for overrides in (
+            {},
+            {"static_frame": False},
+            {"static_frame": 1},
+        ):
+            with self.subTest(overrides=overrides):
+                payload = self._v3_plan("animated", **overrides)
+                with self.assertRaises(ContractError) as raised:
+                    plan_contract.validate_readme_plan(payload)
+                self.assertEqual(raised.exception.code, "E_BUNDLE_PLAN")
+
+    def test_static_frame_is_unknown_field_outside_plan_v3(self) -> None:
+        v2_payload = self._v3_plan("static", schema_version=2, static_frame=True)
+        with self.assertRaises(ContractError) as raised:
+            plan_contract.validate_readme_plan(v2_payload)
+        self.assertEqual(raised.exception.code, "E_SCHEMA_UNKNOWN_FIELD")
+
     def test_legacy_plan_regression_detects_one_byte_serializer_drift(self) -> None:
         payload = json.loads(
             (CONTRACT_FIXTURES / "readme-plan-v1.valid.json").read_text(

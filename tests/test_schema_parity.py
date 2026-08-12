@@ -285,6 +285,43 @@ class SchemaParityTests(unittest.TestCase):
                     else:
                         self.assertTrue(errors)
 
+    def test_animated_route_is_v3_only_in_schema_and_requires_static_frame(self) -> None:
+        v1 = _load(SCHEMAS / "readme-plan.v1.schema.json")
+        v2 = _load(SCHEMAS / "readme-plan.v2.schema.json")
+        v3 = _load(SCHEMAS / "readme-plan.v3.schema.json")
+        for version, schema in (("v1", v1), ("v2", v2)):
+            with self.subTest(version=version):
+                self.assertNotIn("animated", schema["properties"]["diagram_route"]["enum"])
+        v3_routes = v3["properties"]["diagram_route"]["enum"]
+        self.assertIn("animated", v3_routes)
+        self.assertEqual(v3_routes, ["none", "static", "elk", "compiled", "animated"])
+
+        animated = self._payload(
+            json.loads(
+                (FIXTURES / "readme-plan-v3.valid.json").read_text(encoding="utf-8")
+            )
+        )
+        animated["diagram_route"] = "animated"
+        draft = Draft202012Validator(v3)
+        self.assertTrue(list(draft.iter_errors(animated)))
+        animated["static_frame"] = True
+        self.assertEqual(list(draft.iter_errors(animated)), [])
+        animated["static_frame"] = False
+        self.assertTrue(list(draft.iter_errors(animated)))
+
+        entry = next(
+            item for item in self.index["schemas"] if item["schema"] == "readme-plan.v3.schema.json"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            missing_frame = self._payload(animated)
+            missing_frame.pop("static_frame")
+            missing_frame["diagram_route"] = "animated"
+            python_ok, python_code = self._python_result(
+                entry, missing_frame, Path(temporary), valid=False
+            )
+            self.assertFalse(python_ok)
+            self.assertEqual(python_code, "E_BUNDLE_PLAN")
+
     def test_readme_plan_v1_v2_schema_and_fixture_bytes_remain_unchanged(self) -> None:
         expected = {
             "skill/schemas/readme-plan.v1.schema.json": "f9936697c6aee37ec337edd5a6e929bf230a7759323cb43512196fe41045afc9",

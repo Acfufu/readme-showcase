@@ -136,6 +136,7 @@ scan → retrieve → plan-import → generation-request → candidate
 | `static` | Identity and compact geometry matter | Editable project-owned SVG |
 | `elk` | Architecture, flowchart, or C4 relationships need layout | Semantic JSON + verified SVG |
 | `compiled` | Plan v3 needs independent desktop/mobile projections | Visual Spec + immutable Stage 6 outputs |
+| `animated` | Plan v3 opts in with `static_frame: true`; a state change or sequence adds understanding | Animated SVG source + static frame variant + motion JSON + derived GIF |
 | motion | A state change or sequence adds understanding | Static SVG + motion JSON + derived GIF |
 
 <details>
