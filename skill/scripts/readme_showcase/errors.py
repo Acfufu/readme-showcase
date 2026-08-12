@@ -27,6 +27,7 @@ FAIL_FAST_CODES = frozenset(
         "E_APPROVAL_FINGERPRINT",
         "E_APPROVAL_REPOSITORY",
         "E_APPROVAL_TARGET",
+        "E_BROWSER_CHECK",
         "E_BUNDLE_ASSET",
         "E_BUNDLE_CLAIM",
         "E_BUNDLE_HASH",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import subprocess
 import sys
 from pathlib import Path
 from typing import Callable
@@ -321,7 +322,26 @@ def _explain(arguments: argparse.Namespace) -> dict[str, object]:
 
 
 def _preview(arguments: argparse.Namespace) -> dict[str, object]:
-    return _RUNNER.preview_run(arguments.workspace, arguments.root or Path.cwd())
+    result = _RUNNER.preview_run(arguments.workspace, arguments.root or Path.cwd())
+    if arguments.browser:
+        _invoke_browser_check()
+        result["browser_check"] = {"status": "pass"}
+    else:
+        print(_PREVIEW_BROWSER_HINT, file=sys.stderr)
+    return result
+
+
+_PREVIEW_BROWSER_HINT = "可选: `preview --browser` 双引擎渲染检查"
+
+
+def _invoke_browser_check() -> None:
+    script = Path(__file__).resolve().parent / "verify_animation_matrix.py"
+    completed = subprocess.run([sys.executable, str(script)], check=False)
+    if completed.returncode != 0:
+        raise ContractError(
+            "E_BROWSER_CHECK",
+            f"dual-engine matrix verifier exited {completed.returncode}; see verifier output above",
+        )
 
 
 def _path_argument(
@@ -445,6 +465,11 @@ def build_parser() -> argparse.ArgumentParser:
     preview = subcommands.add_parser("preview")
     _path_argument(preview, "--workspace", required=False)
     _path_argument(preview, "--root", required=False)
+    preview.add_argument(
+        "--browser",
+        action="store_true",
+        help="human-triggered dual-engine matrix check (requires Chrome, Firefox, geckodriver)",
+    )
     preview.set_defaults(handler=_preview)
 
     return parser

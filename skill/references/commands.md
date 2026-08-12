@@ -97,6 +97,17 @@ Use for one README-only visual or a coordinated asset set.
 - `status [target]` calls the existing pipeline `status` route.
 - `resume [target]` calls the existing pipeline `resume` route.
 - `preview [target]` calls the existing pipeline `preview` route.
+- `preview --browser [target]` runs the same preview route, then invokes
+  `verify_animation_matrix.py` as a subprocess for a human-triggered dual-engine
+  matrix check (SMIL + CSS `@keyframes` in Chrome and Firefox, six assets).
+  The flag is opt-in only: CI and the default pipeline never launch a browser,
+  and a plain `preview` prints the hint line
+  "可选: `preview --browser` 双引擎渲染检查" instead of invoking anything.
+  The verifier runs against its standard public test repository (its region
+  detection is bound to that page layout); run
+  `verify_animation_matrix.py --dry-run` first to confirm dependencies.
+  A verifier failure (missing dependencies exit 2, matrix mismatch exit 1)
+  fails the preview with `E_BROWSER_CHECK`.
 
 These routes locate existing central run state. They never infer a new mode or
 grant authority beyond the run's approved scope.
