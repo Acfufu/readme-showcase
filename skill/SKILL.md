@@ -40,6 +40,14 @@ publication authority.
 projections stay deterministic. `low` does not promise wow; it targets a
 clear, sober, evidence-first graphic.
 
+`shape` accepts `--ask auto|semi|manual` to control guided-interview
+questioning when the invocation routes into the novice interview: `auto`
+asks only the critical questions (mode, scope) and defaults every optional
+question; `semi` (default) always asks the critical questions and asks
+optional questions with defaults; `manual` confirms every step before
+proceeding. The critical/optional question classification lives in
+[references/novice-interview.md](references/novice-interview.md) section 4.
+
 Read [references/commands.md](references/commands.md) for command contracts and
 routing. A bare invocation inspects the current README, dirty tree, and latest
 run. If the request shows novice signals — no command vocabulary, a

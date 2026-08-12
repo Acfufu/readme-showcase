@@ -77,6 +77,34 @@ routes) is:
 | style | Visual style? | 1 跟随现有品牌 (follow existing brand) · 2 极简 (minimal) · 3 技术暗色 (dark technical) · 4 活泼 (expressive) · 5 你推荐 (you recommend) → `visual_intent` | 5 |
 | extras | Extras? (multi-select) | 1 GIF 动图 (animated GIF) → motion intent via `commands`/`visual_intent`, never `diagram_route` · 2 多语言 (localization) → `locales` from pre-fill + selection · 3 无 (none) → no extras | 3 |
 
+### Question classification and `--ask` intensity
+
+Every question is classified critical or optional. The class controls how
+many questions the Agent asks under the `shape --ask` intensity flag; a bare
+novice invocation (section 1, rule 4) uses `semi` (default).
+
+| id | Class | Why it is asked |
+| --- | --- | --- |
+| goal | critical | Picks the command route and operating mode; never defaulted silently |
+| scope | critical | Sets the scope boundary; never defaulted silently |
+| audience | optional | Refines narrative priority and `project_type`; safe to default |
+| proof | optional | Refines `visual_intent`; safe to default |
+| style | optional | Refines `visual_intent`; safe to default |
+| extras | optional | Additive choices only; safe to default |
+
+- `shape --ask auto` — minimum questioning: only the critical questions
+  (goal, scope) are asked; every optional question uses its default without a
+  panel. Pre-fill inspection (section 3) still feeds the defaults.
+- `shape --ask semi` — default. Critical questions are always asked; optional
+  questions are asked with defaults, batched per section 5.
+- `shape --ask manual` — confirm every step: every question is asked and every
+  default is explicitly confirmed before the next panel; nothing is defaulted
+  silently.
+
+Critical questions stay asked in every intensity; only optional questions are
+skipped under `auto`. If the user stops answering under any intensity, the
+all-skip default path (section 9) still applies.
+
 Rendering rule: `prompt` is the EN canonical prompt; `label_zh` carries the
 Chinese button text; every other supported UI locale
 (`x-supported-ui-locales`: `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `fr`,

@@ -176,6 +176,39 @@ class SkillWorkflowTests(unittest.TestCase):
             self.assertIn("does not accept", flat)
             self.assertIn("does not promise wow", flat)
 
+    def test_shape_ask_intensity_contract(self) -> None:
+        """`shape --ask auto|semi|manual` questioning contract: default semi;
+        critical questions always asked, optional questions defaulted in auto;
+        manual confirms every step. The classification is documented in the
+        novice-interview reference alongside the two command docs."""
+
+        text = SKILL.read_text(encoding="utf-8")
+        commands = (REPO_ROOT / "skill/references/commands.md").read_text(encoding="utf-8")
+        interview = (REPO_ROOT / "skill/references/novice-interview.md").read_text(encoding="utf-8")
+
+        for name, haystack in (("SKILL.md", text), ("commands.md", commands)):
+            flat = " ".join(haystack.split())
+            self.assertIn("--ask", flat, f"{name} must document --ask")
+            self.assertIn("auto|semi|manual", flat, f"{name} must name the three intensities")
+            self.assertIn("`semi` (default)", flat, f"{name} must state the semi default")
+            self.assertIn("critical", flat, f"{name} must classify critical questions")
+            self.assertIn("optional", flat, f"{name} must classify optional questions")
+
+        interview_flat = " ".join(interview.split())
+        self.assertIn("--ask", interview_flat)
+        self.assertIn("`semi` (default)", interview_flat)
+        for row in (
+            "| goal | critical |",
+            "| scope | critical |",
+            "| audience | optional |",
+            "| proof | optional |",
+            "| style | optional |",
+            "| extras | optional |",
+        ):
+            self.assertIn(row, interview, f"classification table must keep row {row}")
+        self.assertIn("minimum", interview_flat, "auto must ask the minimum")
+        self.assertIn("confirm every step", interview_flat, "manual must confirm every step")
+
     def test_compiled_reference_documents_opt_in_outputs_limits_and_local_boundary(self) -> None:
         _assert_compiled_documentation_contract(REPO_ROOT)
         reference = VISUAL_COMPILER.read_text(encoding="utf-8")

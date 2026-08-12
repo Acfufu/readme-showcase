@@ -28,6 +28,13 @@ direction, or plan before implementation.
 - Keep the proposal in chat. Do not create candidate files, edit the target,
   or start a generating pipeline stage.
 - Stop for explicit approval or one correction round.
+- `--ask auto|semi|manual` selects guided-interview questioning intensity when
+  the invocation routes into the novice interview: `auto` asks only the
+  critical questions and defaults every optional question; `semi` (default)
+  always asks the critical questions and asks optional questions with
+  defaults; `manual` confirms every step before proceeding. The
+  critical/optional classification is in
+  [novice-interview.md](novice-interview.md) section 4.
 
 ## `audit [target]`
 
