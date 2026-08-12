@@ -109,6 +109,23 @@ language-neutral; declare that on the SVG root with
 `data-readme-language="neutral"`. Renaming an untranslated asset does not count
 as localization.
 
+## Asset Replacement Contract
+
+GitHub serves README images through its `camo` proxy, which caches by URL for
+roughly a year by default; `PURGE` requests are unreliable. The only dependable
+cache-bust is changing the URL itself.
+
+Therefore, every time a published README asset changes, ship it under a new
+filename or a new query parameter — never in place:
+
+- `hero.svg` → `hero-2026-08.svg` (new filename)
+- `hero.svg?v=2` (new query parameter)
+
+Keep the retained editable source current so the next revision starts from
+truth, and keep the old file only while any published README still references
+it. Check the final README URLs with `audit_readme.py` before handoff; an
+in-place replacement of a previously published asset is a contract violation.
+
 ## Choose a Structure Implementation
 
 Hand-author compact SVGs, title systems, and diagrams whose project-specific
@@ -183,7 +200,7 @@ Render every asset and inspect:
 - weak contrast on GitHub light and dark pages;
 - generic motifs unrelated to the project;
 - unreadable proof or excessive density;
-- accidental remote resources or sanitizer-sensitive SVG features.
+- accidental remote resources or CSP-sensitive SVG features (script, external references, `foreignObject`).
 - matching language between each localized README and every text-bearing SVG.
 
 Run `audit_readme.py` once per README variant. Its `E_SVG_LOCALE` hard gate

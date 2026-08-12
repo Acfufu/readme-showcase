@@ -102,6 +102,13 @@ class VisualContractTests(unittest.TestCase):
         self.assertEqual(plan_contract.canonical_readme_plan_bytes(payload, version=1), expected)
         self.assertEqual(hashlib.sha256(expected).hexdigest(), expected_sha)
 
+    def test_visual_production_doc_pins_camo_cache_busting_contract(self) -> None:
+        doc = REPO_ROOT / "skill/references/visual-production.md"
+        text = doc.read_text(encoding="utf-8")
+        self.assertIn("camo", text)
+        self.assertIn("query", text)
+        self.assertIn("Asset Replacement Contract", text)
+
     def update_manifest(
         self,
         root: Path,
