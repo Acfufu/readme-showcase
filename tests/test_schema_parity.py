@@ -362,6 +362,10 @@ class SchemaParityTests(unittest.TestCase):
                     self.assertEqual(python_code, expected_code)
                     self.assertIn(expected_code, declared)
 
+    def test_schema_count_at_least_27(self) -> None:
+        count = len(list(SCHEMAS.glob("*.schema.json")))
+        self.assertGreaterEqual(count, 27)
+
 
 if __name__ == "__main__":
     unittest.main()
