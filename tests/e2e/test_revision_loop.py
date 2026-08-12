@@ -98,43 +98,38 @@ class RevisionLoopTests(unittest.TestCase):
         self.assertEqual(validate_revision_request(value), value)
         return raw, value
 
-    def test_three_attempts_are_immutable_and_fourth_requires_manual_review(self) -> None:
+    def test_one_auto_revision_is_immutable_and_second_failure_requires_manual_review(self) -> None:
         self.start()
         upstream = [stage["output_sha256"] for stage in self.manifest()["stages"][:5]]
-        snapshots: dict[int, bytes] = {}
-        for attempt, heading in enumerate(("Generated", "Revision two", "Revision three"), 1):
-            if attempt > 1:
-                self.mutate_candidate(heading)
-            result = self.cli("resume", "--workspace", str(self.workspace), "--log-format", "json")
-            self.assertEqual(result.returncode, 1, result.stderr)
-            self.assertEqual(json.loads(result.stdout)["status"], "manual-review-required")
-            raw, request = self.request(attempt)
-            snapshots[attempt] = raw
-            self.assertEqual(request["attempt"], attempt)
-            self.assertIn("original_request_sha256", request)
-            self.assertIn("before_candidate_sha256", request)
-            self.assertIn("after_candidate_sha256", request)
-            self.assertEqual(request["allowed_files"], ["README.md", "asset-manifest.json", "claim-map.json"])
-            self.assertTrue(request["reasons"])
-            self.assertNotIn("target repository evidence", raw.decode())
-            self.assertTrue(all(self.request(index)[0] == snapshots[index] for index in snapshots))
-            self.assertEqual(
-                self.manifest()["current_revision"],
-                f"stages/04-generation-request/revisions/{attempt}/revision-request.json",
-            )
-
-        self.assertEqual(MAX_REVISION_ATTEMPTS, 3)
-        self.mutate_candidate("Revision four")
-        fourth = self.cli("resume", "--workspace", str(self.workspace), "--log-format", "json")
-        self.assertEqual(fourth.returncode, 1, fourth.stderr)
-        self.assertEqual(json.loads(fourth.stdout)["status"], "manual-review-required")
-        self.assertFalse((self.revisions() / "4").exists())
-        pointer = json.loads((self.revisions() / "revision-manifest.json").read_text())
-        self.assertEqual(pointer, {"current": "3/revision-request.json"})
+        first = self.cli("resume", "--workspace", str(self.workspace), "--log-format", "json")
+        self.assertEqual(first.returncode, 1, first.stderr)
+        self.assertEqual(json.loads(first.stdout)["status"], "manual-review-required")
+        raw, request = self.request(1)
+        self.assertEqual(request["attempt"], 1)
+        self.assertIn("original_request_sha256", request)
+        self.assertIn("before_candidate_sha256", request)
+        self.assertIn("after_candidate_sha256", request)
+        self.assertEqual(request["allowed_files"], ["README.md", "asset-manifest.json", "claim-map.json"])
+        self.assertTrue(request["reasons"])
+        self.assertNotIn("target repository evidence", raw.decode())
         self.assertEqual(
             self.manifest()["current_revision"],
-            "stages/04-generation-request/revisions/3/revision-request.json",
+            "stages/04-generation-request/revisions/1/revision-request.json",
         )
+
+        self.assertEqual(MAX_REVISION_ATTEMPTS, 1)
+        self.mutate_candidate("Revision two")
+        second = self.cli("resume", "--workspace", str(self.workspace), "--log-format", "json")
+        self.assertEqual(second.returncode, 1, second.stderr)
+        self.assertEqual(json.loads(second.stdout)["status"], "manual-review-required")
+        self.assertFalse((self.revisions() / "2").exists())
+        pointer = json.loads((self.revisions() / "revision-manifest.json").read_text())
+        self.assertEqual(pointer, {"current": "1/revision-request.json"})
+        self.assertEqual(
+            self.manifest()["current_revision"],
+            "stages/04-generation-request/revisions/1/revision-request.json",
+        )
+        self.assertEqual(self.request(1)[0], raw)
         after = [stage["output_sha256"] for stage in self.manifest()["stages"][:5]]
         self.assertEqual(after[:4], upstream[:4])
 
@@ -146,8 +141,8 @@ class RevisionLoopTests(unittest.TestCase):
             [stage["output_sha256"] for stage in self.manifest()["stages"][:4]],
             upstream[:4],
         )
-        self.assertFalse((self.revisions() / "4").exists())
-        self.assertTrue(all(self.request(index)[0] == snapshots[index] for index in snapshots))
+        self.assertFalse((self.revisions() / "2").exists())
+        self.assertEqual(self.request(1)[0], raw)
 
     def test_existing_attempt_collision_is_fail_closed(self) -> None:
         self.start()
@@ -258,20 +253,10 @@ class RevisionLoopTests(unittest.TestCase):
 
     def test_pointer_commit_failure_removes_only_new_attempt(self) -> None:
         self.start()
-        first = self.cli("resume", "--workspace", str(self.workspace))
-        self.assertEqual(first.returncode, 1, first.stderr)
-        first_raw, request = self.request(1)
-        pointer_path = self.revisions() / "revision-manifest.json"
-        pointer_raw = pointer_path.read_bytes()
-        second = dict(request)
-        second["attempt"] = 2
-        second["before_candidate_sha256"] = request["after_candidate_sha256"]
-        second["after_candidate_sha256"] = "f" * 64
-        normalized = validate_revision_request(second)
         atomic_write = runner_module.write_canonical_json_atomic
 
         def fail_pointer(path: Path, value: object) -> None:
-            if path == pointer_path:
+            if path.name == "revision-manifest.json":
                 raise ContractError("E_TEST_POINTER", "injected pointer failure")
             atomic_write(path, value)
 
@@ -279,11 +264,15 @@ class RevisionLoopTests(unittest.TestCase):
             runner_module, "write_canonical_json_atomic", side_effect=fail_pointer
         ):
             with self.assertRaises(ContractError) as raised:
-                runner_module._append_revision(self.revisions(), normalized, pointer_raw)
+                runner_module.resume_run(
+                    workspace_path=self.workspace,
+                    plan=None,
+                    stop_after=None,
+                    logger=StageLogger(),
+                )
         self.assertEqual(raised.exception.code, "E_TEST_POINTER")
-        self.assertEqual(self.request(1)[0], first_raw)
-        self.assertEqual(pointer_path.read_bytes(), pointer_raw)
-        self.assertFalse((self.revisions() / "2").exists())
+        self.assertFalse((self.revisions() / "1").exists())
+        self.assertFalse((self.revisions() / "revision-manifest.json").exists())
         self.assertFalse(any(path.name.endswith(".tmp") for path in self.revisions().iterdir()))
 
     def test_run_manifest_failure_restores_attempt_one_and_retry_reuses_number(self) -> None:
@@ -323,55 +312,6 @@ class RevisionLoopTests(unittest.TestCase):
         self.assertEqual(
             self.manifest()["current_revision"],
             "stages/04-generation-request/revisions/1/revision-request.json",
-        )
-
-    def test_run_manifest_failure_restores_attempt_two_after_write(self) -> None:
-        self.start()
-        first = self.cli("resume", "--workspace", str(self.workspace))
-        self.assertEqual(first.returncode, 1, first.stderr)
-        revision_one = self.request(1)[0]
-        pointer_one = (self.revisions() / "revision-manifest.json").read_bytes()
-        self.mutate_candidate("Revision two")
-        snapshots: list[bytes] = []
-        atomic_write = workspace_module.write_canonical_json_atomic
-
-        def fail_after_write(path: Path, value: object) -> None:
-            if (
-                path.name == "run-manifest.json"
-                and isinstance(value, dict)
-                and value.get("current_revision", "").endswith("/2/revision-request.json")
-            ):
-                snapshots.append(path.read_bytes())
-                atomic_write(path, value)
-                raise ContractError("E_TEST_MANIFEST", "injected post-write failure")
-            atomic_write(path, value)
-
-        with mock.patch.object(
-            workspace_module, "write_canonical_json_atomic", side_effect=fail_after_write
-        ):
-            with self.assertRaises(ContractError) as raised:
-                runner_module.resume_run(
-                    workspace_path=self.workspace,
-                    plan=None,
-                    stop_after=None,
-                    logger=StageLogger(),
-                )
-        self.assertEqual(raised.exception.code, "E_REVISION_COMMIT")
-        self.assertEqual((self.workspace / "run-manifest.json").read_bytes(), snapshots[0])
-        self.assertEqual(self.request(1)[0], revision_one)
-        self.assertEqual((self.revisions() / "revision-manifest.json").read_bytes(), pointer_one)
-        self.assertFalse((self.revisions() / "2").exists())
-        self.assertEqual(
-            self.manifest()["current_revision"],
-            "stages/04-generation-request/revisions/1/revision-request.json",
-        )
-
-        retry = self.cli("resume", "--workspace", str(self.workspace))
-        self.assertEqual(retry.returncode, 1, retry.stderr)
-        self.request(2)
-        self.assertEqual(
-            self.manifest()["current_revision"],
-            "stages/04-generation-request/revisions/2/revision-request.json",
         )
 
     def test_stale_or_traversing_authoritative_pointer_fails_closed(self) -> None:

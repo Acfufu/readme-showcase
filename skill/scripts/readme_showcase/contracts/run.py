@@ -43,7 +43,7 @@ _SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
 _CURRENT_REVISION = re.compile(
-    r"stages/04-generation-request/revisions/([1-3])/revision-request\.json\Z"
+    r"stages/04-generation-request/revisions/([1])/revision-request\.json\Z"
 )
 _CONFIGURATION_FIELDS = frozenset({"mode", "project_type", "locales", "scanner_profile"})
 

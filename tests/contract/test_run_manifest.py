@@ -77,13 +77,14 @@ class RunManifestContractTests(unittest.TestCase):
         self.assertEqual(validate_run_manifest(nullable), nullable)
         current = json.loads(json.dumps(legacy))
         current["current_revision"] = (
-            "stages/04-generation-request/revisions/2/revision-request.json"
+            "stages/04-generation-request/revisions/1/revision-request.json"
         )
         self.assertEqual(validate_run_manifest(current), current)
         for invalid in (
             "../revision-request.json",
             "/tmp/revision-request.json",
             "stages/04-generation-request/revisions/0/revision-request.json",
+            "stages/04-generation-request/revisions/2/revision-request.json",
             "stages/04-generation-request/revisions/4/revision-request.json",
             "stages/04-generation-request/revisions/1/../revision-request.json",
             "stages/04-generation-request/revisions/1/other.json",

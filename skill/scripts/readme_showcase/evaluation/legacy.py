@@ -12,6 +12,7 @@ from ..contracts.evidence import validate_evidence_graph
 from ..contracts.plan import validate_readme_plan
 from ..evaluation.contract import metric
 from ..evaluation.identity import collect_visual_tokens, evaluate_identity_gate
+from ..evaluation.self_review import collect_evidence_facts, self_review_check
 from ..evaluation.voice import collect_voice_samples, evaluate_voice_match
 from ..scanner.visual import svg_tokens
 from ..visual_kernel.gates import validate_visual_gate_report
@@ -159,6 +160,22 @@ def _v3_identity(
         "identity_override": dict(override_value) if isinstance(override_value, Mapping) else None,
         "evidence": str(match.get("evidence")),
     }
+
+
+def _v3_self_review(
+    claims: Mapping[str, Any],
+    evidence: Mapping[str, Any],
+) -> dict[str, object]:
+    """Review candidate claims against the repository-evidence fact index.
+
+    The self-review's reference object is the evidence graph, never the
+    candidate README itself: every non-decorative claim must reference at
+    least one evidence fact that exists in ``repository-evidence.json``.
+    Nothing here touches the target repository.  The reviewer is the same
+    model that generated the candidate, so a failed review may auto-revise at
+    most once (``MAX_SELF_REVIEW_REVISIONS``) before the verdict stands.
+    """
+    return self_review_check(claims, collect_evidence_facts(evidence))
 
 
 def _v3_report(
@@ -400,6 +417,9 @@ def _evaluate_v3(
         identity = _v3_identity(payload, artifact_root, evidence, identity_override=identity_override)
         if not identity["pass"]:
             findings.append({"code": "E_IDENTITY_MATCH", "message": str(identity["evidence"])})
+        self_review = _v3_self_review(claims, evidence)
+        if not self_review["pass"]:
+            findings.append({"code": "E_SELF_REVIEW", "message": str(self_review["evidence"])})
 
         advisory = _EVALUATION.compute_advisory_metrics(
             plan=plan,

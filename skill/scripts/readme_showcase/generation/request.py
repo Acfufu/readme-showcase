@@ -17,7 +17,10 @@ from ..errors import AGGREGATABLE_CODES
 GENERATION_REQUEST_SCHEMA_VERSION = 1
 MAX_GENERATION_REQUEST_BYTES = 1024 * 1024
 MAX_REVISION_REQUEST_BYTES = 256 * 1024
-MAX_REVISION_ATTEMPTS = 3
+# The critic (validation/self-review) and the generator are the same model:
+# more than one auto-revision invites sycophantic loops, so the run may
+# auto-revise exactly once before the final verdict stands.
+MAX_REVISION_ATTEMPTS = 1
 MAX_REQUEST_ITEMS = 10_000
 MAX_REQUEST_TEXT_BYTES = 4096
 PROJECT_CLASSIFICATIONS = frozenset({"developer-tool", "library", "runtime-toolchain", "web-framework"})

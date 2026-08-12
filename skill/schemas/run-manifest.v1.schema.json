@@ -21,7 +21,7 @@
     },
     "current_revision": {
       "type": ["string", "null"],
-      "pattern": "^stages/04-generation-request/revisions/[1-3]/revision-request\\.json$"
+      "pattern": "^stages/04-generation-request/revisions/[1]/revision-request\\.json$"
     },
     "stages": {
       "type": "array",
