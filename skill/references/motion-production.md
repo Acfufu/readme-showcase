@@ -237,6 +237,36 @@ accepts an `approval_check(script)` callback that runs before any script
 execution and aborts the recording by raising. `.cast` inputs never execute
 and never trigger the check.
 
+### Demo approval envelope (demo-envelope.v1)
+
+Recording an archived script is gated by a `demo-envelope.v1` document
+(`skill/schemas/demo-envelope.v1.schema.json`, validator
+`contracts.demo_envelope.validate_demo_envelope_v1`, producer M12-T1). The
+envelope binds the script (`demo_script.path` under `demo/` plus its lowercase
+SHA-256) and declares one of three `granularity` tiers:
+
+| Tier | Meaning |
+| --- | --- |
+| `full` | The whole script is approved; no `auto_approved` or `sandbox_dir` allowed. |
+| `read-only-auto` | The declared `auto_approved` read-only command list runs without prompting; every other command needs per-command approval. |
+| `sandbox` | The envelope declares `sandbox_dir` (safe relative POSIX path) that the recording host must honor as the sandbox working directory; commands outside the declared read-only list need per-command approval. |
+
+```bash
+python3 scripts/record_demo.py \
+  demo/demo.sh \
+  assets/readme-showcase/en/demo.cast \
+  assets/readme-showcase/en/demo.gif \
+  --envelope demo/demo-envelope.json \
+  --permitted-command ls
+```
+
+The envelope is advisory for commands the client permission system has already
+allowed (`--permitted-command`, repeatable): those skip the envelope while the
+recording still runs and the script is still archived. Every other unapproved
+command aborts the recording with a `DemoApprovalError` naming the commands,
+so the caller can route them to per-command approval (Codex permission
+fallback) and re-run with the approved commands permitted.
+
 ### Determinism
 
 The deterministic claim is cast → GIF: **one cast rendered twice by agg

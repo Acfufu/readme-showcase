@@ -20,9 +20,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Final, assert_never
 
 if __package__ and __package__.startswith("skill."):
@@ -31,12 +31,18 @@ if __package__ and __package__.startswith("skill."):
         read_regular_bytes,
         write_bytes_atomic,
     )
+    from skill.scripts.readme_showcase.contracts.demo_envelope import (
+        validate_demo_envelope_v1,
+    )
 else:  # The installed Skill runs this file directly from its scripts directory.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from scripts.pipeline_contracts import (
         ContractError,
         read_regular_bytes,
         write_bytes_atomic,
+    )
+    from scripts.readme_showcase.contracts.demo_envelope import (
+        validate_demo_envelope_v1,
     )
 
 
@@ -76,6 +82,10 @@ class DemoExecutionError(DemoRecordingError):
 
 class DemoDeterminismError(DemoRecordingError):
     """agg rendered the same cast to different bytes across two runs."""
+
+
+class DemoApprovalError(DemoRecordingError):
+    """The demo script is not covered by its demo-envelope approval tier."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,12 +208,98 @@ def agg_command(agg_path: str, fps: int, theme: str, cast: Path, output: Path) -
     ]
 
 
+def _extract_commands(script_text: str) -> list[str]:
+    """Distinct leading command tokens of a bash demo script, in order.
+
+    Shebang, comment, `set`, `export`, `cd`, and `source` lines are control
+    scaffolding, not demo commands; unparsable lines are skipped. The result
+    feeds the demo-envelope tier check, where a command that is neither
+    auto-approved nor already permitted by the client permission system is
+    routed to per-command approval.
+    """
+    commands: list[str] = []
+    seen: set[str] = set()
+    for raw_line in script_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith(("set ", "export ", "cd ", "source ", ". ")):
+            continue
+        try:
+            tokens = shlex.split(line)
+        except ValueError:
+            continue
+        if not tokens:
+            continue
+        command = tokens[0]
+        if command not in seen:
+            seen.add(command)
+            commands.append(command)
+    return commands
+
+
+def demo_approval_gate(
+    envelope_payload: dict[str, object],
+    *,
+    permitted_commands: collections.abc.Iterable[str] = (),
+) -> Callable[[Path], None]:
+    """Build the approval_check callback from a demo-envelope.v1 payload.
+
+    The envelope binds the demo script (archived path name + SHA-256) and
+    declares the approval tier: `full` approves the whole script, while
+    `read-only-auto` and `sandbox` auto-approve only the declared read-only
+    command list. Commands the client permission system has already allowed
+    (`permitted_commands`) skip the envelope — the recording still runs and
+    the script is archived; every other command is reported for per-command
+    approval (Codex permission fallback).
+    """
+    try:
+        envelope = validate_demo_envelope_v1(envelope_payload)
+    except ContractError as exc:
+        raise DemoApprovalError(f"demo envelope is invalid: {exc}") from exc
+    granularity = envelope["granularity"]
+    auto_approved = frozenset(envelope.get("auto_approved") or ())
+    permitted = frozenset(permitted_commands)
+    bound_name = PurePosixPath(envelope["demo_script"]["path"]).name
+    bound_sha256 = envelope["demo_script"]["sha256"]
+
+    def check(script: Path) -> None:
+        if script.name != bound_name:
+            raise DemoApprovalError(
+                "demo envelope binds a different script: "
+                f"{script.name} != {bound_name}"
+            )
+        script_bytes = script.read_bytes()
+        if hashlib.sha256(script_bytes).hexdigest() != bound_sha256:
+            raise DemoApprovalError(
+                "demo script bytes differ from the approval envelope sha256"
+            )
+        if granularity == "full":
+            return
+        unapproved = [
+            command
+            for command in _extract_commands(script_bytes.decode("utf-8"))
+            if command not in auto_approved and command not in permitted
+        ]
+        if unapproved:
+            raise DemoApprovalError(
+                "demo script commands need per-command approval: "
+                + ", ".join(unapproved)
+                + " — approve each individually (Codex permission fallback) "
+                "or extend the envelope"
+            )
+
+    return check
+
+
 def record_demo(
     demo_script: Path,
     out_cast: Path,
     out_gif: Path,
     *,
     approval_check: Callable[[Path], None] | None = None,
+    demo_envelope: dict[str, object] | None = None,
+    permitted_commands: Iterable[str] = (),
     tools: DemoTools | None = None,
     fps: int = DEFAULT_FPS,
     theme: str = DEFAULT_THEME,
@@ -215,7 +311,11 @@ def record_demo(
     `assets/readme-showcase/<locale>/` (Task 4.1 contract). `approval_check`
     (the Task 4.3 approval-envelope seam) runs before any script execution and
     aborts the recording by raising; `.cast` inputs are never executed and so
-    never trigger the check. The returned DemoArtifacts carries the exact
+    never trigger the check. When `demo_envelope` (a demo-envelope.v1 payload)
+    is provided, it replaces the raw callback with the envelope gate, whose
+    tier is enforced against `permitted_commands` — commands the client
+    permission system already allowed skip the envelope while the script is
+    still recorded and archived. The returned DemoArtifacts carries the exact
     SHA-256 values the producer must declare in the asset manifest.
     """
     script = demo_script.expanduser()
@@ -227,6 +327,10 @@ def record_demo(
     _require_output_path(cast_output, ".cast", "cast output")
     _require_output_path(gif_output, ".gif", "gif output")
     tools = tools or require_tools()
+    if demo_envelope is not None:
+        approval_check = demo_approval_gate(
+            demo_envelope, permitted_commands=permitted_commands
+        )
 
     cast_bytes: bytes
     match script.suffix:
@@ -349,6 +453,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="re-render the cast twice and compare SHA-256 for determinism",
     )
+    parser.add_argument(
+        "--envelope",
+        type=Path,
+        help="demo-envelope.v1 JSON declaring the script's approval tier",
+    )
+    parser.add_argument(
+        "--permitted-command",
+        action="append",
+        default=[],
+        help="command already allowed by the client permission system (repeatable)",
+    )
     parser.add_argument("--fps", type=int, default=DEFAULT_FPS, help="agg fps cap")
     parser.add_argument(
         "--theme", default=DEFAULT_THEME, help="agg color theme (default: asciinema)"
@@ -356,14 +471,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _read_envelope(path: Path) -> dict[str, object]:
+    try:
+        raw = read_regular_bytes(path, maximum=64 * 1024)
+    except ContractError as exc:
+        raise DemoApprovalError(f"demo envelope is unreadable: {exc}") from exc
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DemoApprovalError(f"demo envelope is not valid JSON: {path}") from exc
+    if not isinstance(payload, dict):
+        raise DemoApprovalError(f"demo envelope must be a JSON object: {path}")
+    return payload
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     try:
         tools = require_tools()
+        envelope = (
+            _read_envelope(args.envelope) if args.envelope is not None else None
+        )
         artifacts = record_demo(
             args.demo_script,
             args.out_cast,
             args.out_gif,
+            demo_envelope=envelope,
+            permitted_commands=args.permitted_command,
             tools=tools,
             fps=args.fps,
             theme=args.theme,

@@ -229,6 +229,143 @@ class RecordDemoOrchestrationTests(unittest.TestCase):
                 rd.record_demo(self.script, self.out_cast, self.out_gif, tools=FAKE_TOOLS)
 
 
+class RecordDemoEnvelopeGateTests(unittest.TestCase):
+    """demo-envelope.v1 执行门: 分层授权 + 权限放行兼容 + 逐条审批兜底."""
+
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory(prefix="record-demo-env-")
+        self.root = Path(self._temp.name)
+        self.demo = self.root / "demo"
+        self.demo.mkdir()
+        self.assets = self.root / "assets" / "readme-showcase" / "en"
+        self.assets.mkdir(parents=True)
+        self.script = self.demo / "demo.sh"
+        self.script.write_text("#!/usr/bin/env bash\necho hello\n", encoding="utf-8")
+        self.out_cast = self.assets / "demo.cast"
+        self.out_gif = self.assets / "demo.gif"
+        self.probe: list[list[str]] = []
+
+    def tearDown(self) -> None:
+        self._temp.cleanup()
+
+    def _mock_subprocess(self) -> None:
+        """subprocess.run writes cast for asciinema and gif bytes for agg."""
+
+        def run(command: list[str], **kwargs: object) -> None:  # noqa: ARG001
+            self.probe.append(list(command))
+            if command[1] == "rec":
+                Path(command[2]).write_bytes(fake_cast_bytes())
+            else:
+                Path(command[-1]).write_bytes(b"GIF-DEMO")
+
+        patcher = mock.patch.object(rd.subprocess, "run", side_effect=run)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _envelope(
+        self,
+        granularity: str = "full",
+        *,
+        auto_approved: list[str] | None = None,
+        sandbox_dir: str | None = None,
+        sha256: str | None = None,
+        path: str | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "schema_version": 1,
+            "demo_script": {
+                "path": path or "demo/demo.sh",
+                "sha256": sha256 or hashlib.sha256(self.script.read_bytes()).hexdigest(),
+            },
+            "granularity": granularity,
+        }
+        if auto_approved is not None:
+            payload["auto_approved"] = auto_approved
+        if sandbox_dir is not None:
+            payload["sandbox_dir"] = sandbox_dir
+        return payload
+
+    def test_envelope_missing_granularity_rejected_before_execution(self) -> None:
+        self._mock_subprocess()
+        envelope = self._envelope()
+        del envelope["granularity"]
+        with self.assertRaises(rd.DemoApprovalError) as raised:
+            rd.record_demo(self.script, self.out_cast, self.out_gif, demo_envelope=envelope, tools=FAKE_TOOLS)
+        self.assertIn("granularity", str(raised.exception))
+        self.assertEqual(self.probe, [])
+
+    def test_permission_allowed_commands_skip_envelope_but_script_archived(self) -> None:
+        """客户端权限系统已放行的命令跳过信封; 录制仍进行, 脚本归档."""
+        self._mock_subprocess()
+        envelope = self._envelope("read-only-auto", auto_approved=["ls"])
+        artifacts = rd.record_demo(
+            self.script,
+            self.out_cast,
+            self.out_gif,
+            demo_envelope=envelope,
+            permitted_commands=["echo"],
+            tools=FAKE_TOOLS,
+        )
+        self.assertEqual(len(self.probe), 2)
+        self.assertEqual(Path(self.probe[0][0]).name, "asciinema")
+        self.assertEqual(artifacts.cast_path, self.out_cast)
+        self.assertEqual(self.out_cast.read_bytes(), fake_cast_bytes())
+
+    def test_unapproved_command_routes_to_per_command_approval(self) -> None:
+        """未批准命令 → 逐条审批 (Codex 权限兜底): 先拒后放行."""
+        self._mock_subprocess()
+        envelope = self._envelope("read-only-auto", auto_approved=["ls"])
+        with self.assertRaises(rd.DemoApprovalError) as raised:
+            rd.record_demo(self.script, self.out_cast, self.out_gif, demo_envelope=envelope, tools=FAKE_TOOLS)
+        self.assertIn("echo", str(raised.exception))
+        self.assertEqual(self.probe, [])
+        artifacts = rd.record_demo(
+            self.script,
+            self.out_cast,
+            self.out_gif,
+            demo_envelope=envelope,
+            permitted_commands=["echo"],
+            tools=FAKE_TOOLS,
+        )
+        self.assertEqual(len(self.probe), 2)
+        self.assertEqual(artifacts.cast_sha256, hashlib.sha256(fake_cast_bytes()).hexdigest())
+
+    def test_full_tier_approves_entire_script(self) -> None:
+        self._mock_subprocess()
+        envelope = self._envelope("full")
+        artifacts = rd.record_demo(self.script, self.out_cast, self.out_gif, demo_envelope=envelope, tools=FAKE_TOOLS)
+        self.assertEqual(len(self.probe), 2)
+        self.assertEqual(artifacts.gif_path, self.out_gif)
+
+    def test_sandbox_tier_requires_approval_for_unlisted_commands(self) -> None:
+        self._mock_subprocess()
+        envelope = self._envelope("sandbox", sandbox_dir="demo/sandbox")
+        with self.assertRaises(rd.DemoApprovalError):
+            rd.record_demo(self.script, self.out_cast, self.out_gif, demo_envelope=envelope, tools=FAKE_TOOLS)
+        self.assertEqual(self.probe, [])
+        artifacts = rd.record_demo(
+            self.script,
+            self.out_cast,
+            self.out_gif,
+            demo_envelope=envelope,
+            permitted_commands=["echo"],
+            tools=FAKE_TOOLS,
+        )
+        self.assertEqual(len(self.probe), 2)
+        self.assertEqual(artifacts.gif_path, self.out_gif)
+
+    def test_envelope_sha256_drift_rejected(self) -> None:
+        envelope = self._envelope("full", sha256="0" * 64)
+        with self.assertRaises(rd.DemoApprovalError) as raised:
+            rd.record_demo(self.script, self.out_cast, self.out_gif, demo_envelope=envelope, tools=FAKE_TOOLS)
+        self.assertIn("sha256", str(raised.exception).lower())
+
+    def test_envelope_path_name_mismatch_rejected(self) -> None:
+        envelope = self._envelope("full", path="demo/other.sh")
+        with self.assertRaises(rd.DemoApprovalError):
+            rd.record_demo(self.script, self.out_cast, self.out_gif, demo_envelope=envelope, tools=FAKE_TOOLS)
+
+
 class RecordDemoDeterminismTests(unittest.TestCase):
     """agg 确定性: 同一 cast 两次渲染 → SHA-256 对比."""
 
@@ -314,6 +451,63 @@ class RecordDemoCliTests(unittest.TestCase):
         self.assertIn("identical", output)
         self.assertIn(hashlib.sha256(b"GIF-DEMO").hexdigest(), output)
 
+    def test_invalid_envelope_exits_2_with_hint(self) -> None:
+        envelope = self.root / "envelope.json"
+        envelope.write_text("{not json\n", encoding="utf-8")
+        with mock.patch.object(rd.shutil, "which", return_value="/usr/bin/tool"):
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised:
+                    rd.main(
+                        [
+                            str(self.script),
+                            str(self.out_cast),
+                            str(self.out_gif),
+                            "--envelope",
+                            str(envelope),
+                        ]
+                    )
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("envelope", stderr.getvalue().lower())
+
+    def test_full_tier_envelope_records_via_cli(self) -> None:
+        def run(command: list[str], **kwargs: object) -> None:  # noqa: ARG001
+            if command[1] == "rec":
+                Path(command[2]).write_bytes(fake_cast_bytes())
+            else:
+                Path(command[-1]).write_bytes(b"GIF-DEMO")
+
+        envelope = self.root / "envelope.json"
+        envelope.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "demo_script": {
+                        "path": "demo/demo.sh",
+                        "sha256": hashlib.sha256(self.script.read_bytes()).hexdigest(),
+                    },
+                    "granularity": "full",
+                }
+            ),
+            encoding="utf-8",
+        )
+        with mock.patch.object(rd.shutil, "which", return_value="/usr/bin/tool"), \
+                mock.patch.object(rd.subprocess, "run", side_effect=run):
+            stdout = io.StringIO()
+            with mock.patch.object(sys, "stdout", stdout):
+                rd.main(
+                    [
+                        str(self.script),
+                        str(self.out_cast),
+                        str(self.out_gif),
+                        "--envelope",
+                        str(envelope),
+                    ]
+                )
+        output = stdout.getvalue()
+        self.assertIn("CAST:", output)
+        self.assertIn("GIF:", output)
+
 
 class RecordDemoDocContractTests(unittest.TestCase):
     """Doc contracts: motion-production.md demo section + SKILL.md opt-in note."""
@@ -330,6 +524,14 @@ class RecordDemoDocContractTests(unittest.TestCase):
         self.assertIn("agg", lowered)
         self.assertIn("determin", lowered)
         self.assertIn("record_demo", self.motion)
+
+    def test_motion_doc_documents_demo_approval_envelope(self) -> None:
+        lowered = self.motion.lower()
+        self.assertIn("demo-envelope", lowered)
+        self.assertIn("granularity", lowered)
+        self.assertIn("full", lowered)
+        self.assertIn("read-only-auto", lowered)
+        self.assertIn("sandbox", lowered)
 
     def test_skill_doc_declares_opt_in_dependencies(self) -> None:
         lowered = self.skill.lower()

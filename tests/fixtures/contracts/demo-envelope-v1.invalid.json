@@ -1,0 +1,209 @@
+{
+  "cases": [
+    {
+      "code": "E_SCHEMA_MISSING_FIELD",
+      "name": "missing-granularity",
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "code": "E_SCHEMA_MISSING_FIELD",
+      "name": "missing-demo-script",
+      "payload": {
+        "schema_version": 1,
+        "granularity": "full"
+      }
+    },
+    {
+      "code": "E_SCHEMA_UNKNOWN_FIELD",
+      "name": "unknown-field",
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "full",
+        "mystery": true
+      }
+    },
+    {
+      "code": "E_SCHEMA_VERSION",
+      "name": "schema-version",
+      "payload": {
+        "schema_version": 2,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "full"
+      }
+    },
+    {
+      "code": "E_SCHEMA_VALUE",
+      "name": "bad-granularity",
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "everything"
+      }
+    },
+    {
+      "code": "E_DEMO_ENVELOPE_BINDING",
+      "name": "bad-sha256",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
+        },
+        "granularity": "full"
+      }
+    },
+    {
+      "code": "E_DEMO_ENVELOPE_BINDING",
+      "name": "short-sha256",
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "abc"
+        },
+        "granularity": "full"
+      }
+    },
+    {
+      "code": "E_DEMO_ENVELOPE_BINDING",
+      "name": "bad-script-path",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "outside.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "full"
+      }
+    },
+    {
+      "code": "E_DEMO_ENVELOPE_GRANULARITY",
+      "name": "full-with-sandbox-dir",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "full",
+        "sandbox_dir": "demo/sandbox"
+      }
+    },
+    {
+      "code": "E_DEMO_ENVELOPE_GRANULARITY",
+      "name": "full-with-auto-approved",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "full",
+        "auto_approved": ["ls"]
+      }
+    },
+    {
+      "code": "E_DEMO_ENVELOPE_GRANULARITY",
+      "name": "read-only-without-auto",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "read-only-auto"
+      }
+    },
+    {
+      "code": "E_DEMO_ENVELOPE_GRANULARITY",
+      "name": "read-only-with-empty-auto",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "read-only-auto",
+        "auto_approved": []
+      }
+    },
+    {
+      "code": "E_DEMO_ENVELOPE_GRANULARITY",
+      "name": "read-only-with-sandbox-dir",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "read-only-auto",
+        "auto_approved": ["ls"],
+        "sandbox_dir": "demo/sandbox"
+      }
+    },
+    {
+      "code": "E_DEMO_ENVELOPE_GRANULARITY",
+      "name": "sandbox-missing-dir",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "sandbox"
+      }
+    },
+    {
+      "code": "E_DEMO_ENVELOPE_BINDING",
+      "name": "unsafe-sandbox-dir",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "sandbox",
+        "sandbox_dir": "../escape"
+      }
+    },
+    {
+      "code": "E_SCHEMA_VALUE",
+      "name": "bad-auto-approved-entry",
+      "semantic": true,
+      "payload": {
+        "schema_version": 1,
+        "demo_script": {
+          "path": "demo/overview-demo.sh",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "granularity": "read-only-auto",
+        "auto_approved": ["rm -rf"]
+      }
+    }
+  ]
+}

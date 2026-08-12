@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/demo-envelope.v1.schema.json",
+  "title": "Demo Envelope v1",
+  "$comment": "Draft 2020-12 validates the closed envelope shape: the archived demo script binding, the granularity enum, the bounded auto_approved list, and the sandbox_dir string. Python validation additionally enforces the tier contract (full approves the whole script and declares nothing else; read-only-auto requires a non-empty auto_approved read-only command list and no sandbox_dir; sandbox requires a safe relative sandbox_dir), the demo/ archive path binding, and the lowercase SHA-256 script fingerprint. The envelope is advisory for commands the client permission system has already allowed; record_demo remains the enforcement point and routes unapproved commands to per-command approval (Codex permission fallback).",
+  "x-python-semantic-validation": {
+    "validator": "skill.scripts.readme_showcase.contracts.demo_envelope.validate_demo_envelope_v1",
+    "codes": [
+      "E_SCHEMA_VERSION",
+      "E_SCHEMA_TYPE",
+      "E_SCHEMA_UNKNOWN_FIELD",
+      "E_SCHEMA_MISSING_FIELD",
+      "E_SCHEMA_VALUE",
+      "E_DEMO_ENVELOPE_BINDING",
+      "E_DEMO_ENVELOPE_GRANULARITY"
+    ]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "demo_script",
+    "granularity"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "demo_script": {"$ref": "#/$defs/scriptRef"},
+    "granularity": {"enum": ["full", "read-only-auto", "sandbox"]},
+    "auto_approved": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {"type": "string", "minLength": 1, "maxLength": 4096}
+    },
+    "sandbox_dir": {"type": "string", "minLength": 1, "maxLength": 4096}
+  },
+  "$defs": {
+    "scriptRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "sha256": {"type": "string", "minLength": 64, "maxLength": 64}
+      }
+    }
+  }
+}
