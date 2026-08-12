@@ -21,6 +21,8 @@ def _mean(values: list[int]) -> float:
 
 
 def _population_std(values: list[int]) -> float:
+    # Population standard deviation (÷ n), not sample (÷ n-1): the scan
+    # covers the full corpus, so values are the population, not a sample.
     if len(values) < 2:
         return 0.0
     mean = _mean(values)
@@ -81,7 +83,7 @@ def voice_match_check(candidate_text: str, voice_samples: Mapping[str, Any]) -> 
 
     The distance is the largest standardized deviation across sentence-length
     mean, imperative ratio, and technical-term density; a distance beyond two
-    sample standard deviations fails the hard gate.  ``score`` is a bounded
+    population standard deviations fails the hard gate.  ``score`` is a bounded
     0..1 similarity (1 / (1 + distance)) and ``evidence`` a deterministic
     explanation.
     """
