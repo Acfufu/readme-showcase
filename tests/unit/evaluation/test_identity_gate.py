@@ -73,6 +73,13 @@ class IdentityGateTests(unittest.TestCase):
         )
         self.assertTrue(result["pass"])
 
+    def test_github_default_font_stack_never_conflicts(self) -> None:
+        stack = ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"]
+        self.assertTrue(identity_check({"palette": ["#ffffff"], "typography": stack}, {})["pass"])
+        self.assertTrue(
+            identity_check({"palette": ["#0a1f44"], "typography": stack}, PRODUCT_TOKENS)["pass"]
+        )
+
     def test_non_system_font_outside_product_typography_conflicts(self) -> None:
         result = identity_check(
             {"palette": ["#0a1f44"], "typography": ["Comic Sans MS"]},

@@ -10,10 +10,11 @@ from ..scanner.visual import is_neutral_color
 # Font stacks the visual-production contract permits unconditionally; any
 # other family must already exist in the repository's own typography tokens.
 _SYSTEM_FONT_FAMILIES = frozenset({
-    "-apple-system", "arial", "courier", "courier new", "geneva", "georgia",
-    "helvetica", "helvetica neue", "menlo", "monaco", "monospace", "sans-serif",
-    "segoe ui", "serif", "system-ui", "tahoma", "times", "times new roman",
-    "trebuchet ms", "ui-monospace", "ui-sans-serif", "ui-serif", "verdana",
+    "-apple-system", "arial", "blinkmacsystemfont", "courier", "courier new",
+    "geneva", "georgia", "helvetica", "helvetica neue", "menlo", "monaco",
+    "monospace", "sans-serif", "segoe ui", "serif", "system-ui", "tahoma",
+    "times", "times new roman", "trebuchet ms", "ui-monospace",
+    "ui-sans-serif", "ui-serif", "verdana",
 })
 _IDENTITY_OVERRIDE_FIELDS = frozenset({"reason", "approved_by"})
 _MAX_EVIDENCE = 4096
