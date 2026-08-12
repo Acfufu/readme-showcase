@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -166,6 +167,9 @@ class VisualScanExtractionTests(unittest.TestCase):
             sources = [fact["source"]["path"] for fact in facts]
             self.assertIn("assets/logo.svg", sources)
             self.assertIn("theme.json", sources)
+            for fact in facts:
+                on_disk = (root / fact["source"]["path"]).read_bytes()
+                self.assertEqual(fact["source_sha256"], hashlib.sha256(on_disk).hexdigest())
 
     def test_scan_without_visual_materials_extracts_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -112,14 +112,21 @@ def _visual_material_files(root: Path) -> list[Path]:
     return candidates
 
 
-def _read_text(path: Path) -> str | None:
+def _read_bytes(path: Path) -> bytes | None:
+    """Read one bounded, symlink-safe snapshot of a material file.
+
+    ``read_regular_bytes`` opens with O_NOFOLLOW and verifies the regular-file
+    identity (dev/ino/size/mtime) before and after the read, so the returned
+    bytes are a single consistent snapshot.  None when missing or unsafe.
+    """
     try:
-        raw = read_regular_bytes(path, maximum=_MAX_SOURCE_BYTES, path_code="E_SCAN_IO", size_code="E_SCAN_IO")
+        return read_regular_bytes(
+            path,
+            maximum=_MAX_SOURCE_BYTES,
+            path_code="E_SCAN_IO",
+            size_code="E_SCAN_IO",
+        )
     except ContractError:
-        return None
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
         return None
 
 
@@ -150,14 +157,19 @@ def extract_visual_tokens(root: Path) -> list[dict[str, Any]]:
     """
     facts: list[dict[str, Any]] = []
     for path in _visual_material_files(root):
-        text = _read_text(path)
-        if text is None:
+        # One bounded snapshot feeds both tokenization and the fact's source
+        # hash: tokens and source bytes can never disagree about file content.
+        raw = _read_bytes(path)
+        if raw is None:
+            continue
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
             continue
         tokens = svg_tokens(text) if path.name.endswith(".svg") else _design_tokens(text)
         if not tokens["palette"] and not tokens["typography"]:
             continue
         relative = path.relative_to(root).as_posix()
-        raw = path.read_bytes()
         facts.append(_visual_fact(path=relative, tokens=tokens, raw=raw))
     return facts
 
