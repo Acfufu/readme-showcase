@@ -165,6 +165,8 @@ Motion Spec v2 (`schema_version: 2`) replaces `reveals`/`layers` with a scene co
 
 When an 8-second default would exceed the `2 MB` budget, the renderer automatically re-renders at a reduced duration (stepping down to a `5 s` floor) and then reduced FPS (down to `15`), rescaling scene intervals with the duration. The final effective `duration`/`fps` are written back to the motion JSON (`--motion-json`) so the recorded parameters match the derived GIF. If the budget floor is still exceeded, the renderer falls back to a single static frame, which is always acceptable.
 
+On static-frame fallback the motion JSON is **not** written, and a pre-existing `--motion-json` file is left untouched: the JSON keeps describing the authored motion, not the fallback output. The JSON is the retained source and the GIF is the derived output, so the two may legitimately diverge after a fallback — do not "fix" the JSON to match the GIF. The renderer prints a `STATIC: <gif-path>` line to stdout as the truth signal that the GIF is a static fallback; treat that line, not the motion JSON, as the source of record for the fallback render.
+
 ## Render
 
 The bundled renderer requires Python with Pillow, `ffmpeg`, and either `rsvg-convert` or macOS `sips`:
