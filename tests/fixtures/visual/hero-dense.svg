@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Dense hero</title>
+  <desc id="desc">Deliberately over-packed hero for density findings.</desc>
+  <rect width="1200" height="360" fill="#0a1f44"/>
+  <text x="20" y="40" font-size="14" fill="#ffffff">Feature one</text>
+  <text x="20" y="60" font-size="14" fill="#ffffff">Feature two</text>
+  <text x="20" y="80" font-size="14" fill="#ffffff">Feature three</text>
+  <text x="20" y="100" font-size="14" fill="#ffffff">Feature four</text>
+  <text x="20" y="120" font-size="14" fill="#ffffff">Feature five</text>
+  <text x="20" y="140" font-size="14" fill="#ffffff">Feature six</text>
+  <text x="20" y="160" font-size="14" fill="#ffffff">Feature seven</text>
+  <text x="20" y="180" font-size="14" fill="#ffffff">Feature eight</text>
+  <text x="20" y="200" font-size="14" fill="#ffffff">Feature nine</text>
+  <text x="20" y="220" font-size="14" fill="#ffffff">Feature ten</text>
+</svg>
