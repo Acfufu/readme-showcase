@@ -175,6 +175,7 @@ def retrieve_patterns_v2(
     *,
     mode: str = "production",
     benchmark: bool = False,
+    exemplar_records: Sequence[Mapping[str, Any]] | None = None,
     feedback_events: Sequence[Mapping[str, Any]] | None = None,
     feedback_bindings: Mapping[tuple[str, str], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -193,6 +194,8 @@ def retrieve_patterns_v2(
     validate_dataset_manifest(manifest)
     ordered = sorted(copy.deepcopy(manifest["records"]), key=lambda item: item["record_id"])
     eligible = ordered if mode == "benchmark" else [record for record in ordered if record["split"] == "train"]
+    if exemplar_records is not None:
+        eligible = sorted([*eligible, *exemplar_records], key=lambda item: item["record_id"])
     ranked = rank_records(eligible, normalized_query)
     if mode == "production" and feedback_events is not None and feedback_bindings is not None:
         from ..evaluation.feedback_metrics import aggregate_feedback

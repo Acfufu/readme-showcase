@@ -20,6 +20,11 @@ _SIGNALS = (
     "bm25_basis_points",
     "diversity_penalty_basis_points",
 )
+# Retrieval packet v2 accepts exactly {summary, structure, proof} (strict
+# _PATTERN_FIELDS); ranker output must never leak exemplar-only keys such as
+# composition_structure. Identity for manifest records (their patterns have
+# exactly these three keys).
+_PACKET_PATTERN_FIELDS = ("summary", "structure", "proof")
 
 
 def tokenize(value: str) -> tuple[str, ...]:
@@ -36,9 +41,11 @@ def tokenize(value: str) -> tuple[str, ...]:
 
 def _text(record: Mapping[str, Any]) -> str:
     pattern = record["pattern"]
+    composition = pattern.get("composition_structure", {})
     return " ".join([
         *record["project_types"], *record["section_intents"], *record["tags"],
         pattern["summary"], pattern["structure"], pattern["proof"],
+        *composition.get("zones", []), *composition.get("negative_patterns", []),
     ])
 
 
@@ -128,7 +135,7 @@ def rank_records(records: Sequence[Mapping[str, Any]], query: Mapping[str, Any],
             "project_types": list(record["project_types"]),
             "section_intents": list(record["section_intents"]),
             "tags": list(record["tags"]),
-            "pattern": dict(record["pattern"]),
+            "pattern": {field: record["pattern"][field] for field in _PACKET_PATTERN_FIELDS},
             "source": dict(record["source"]),
             "source_split": record["split"],
         })
