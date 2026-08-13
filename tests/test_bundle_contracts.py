@@ -1427,6 +1427,47 @@ class BundleContractTests(unittest.TestCase):
                 [],
             )
 
+    def test_asset_manifest_v3_motion_provenance_cannot_reference_compiled_scenes(self) -> None:
+        # Deferred #21: hero/animation assets are motion-route products.  The
+        # compiled route's retained sources live under compiled/ (scenes, gates,
+        # timelines, interactions, visual-spec), and the motion pipeline never
+        # writes there, so a hero/animation provenance that points at a
+        # compiled projection is schema drift -- reject it with E_BUNDLE_ASSET.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = self.make_motion_manifest(root)
+            scene = self.write_json(
+                root,
+                "compiled/scenes/en/desktop.json",
+                {"schema_version": 1, "elements": []},
+            )
+            manifest["assets"][0]["provenance"] = {
+                "kind": "generated",
+                "path": scene["path"],
+                "sha256": scene["sha256"],
+            }
+            with self.assertRaises(ContractError) as raised:
+                validate_asset_manifest(manifest, evidence_graph=EVIDENCE, artifact_root=root)
+            self.assertEqual(raised.exception.code, "E_BUNDLE_ASSET")
+
+            # The motion-route source shape (a sibling static SVG) stays legal.
+            manifest = self.make_motion_manifest(root)
+            source = manifest["assets"][0]
+            manifest["assets"][0]["provenance"] = {
+                "kind": "generated",
+                "path": source["path"],
+                "sha256": source["artifact_sha256"],
+            }
+            normalized = validate_asset_manifest(
+                manifest,
+                evidence_graph=EVIDENCE,
+                artifact_root=root,
+            )
+            self.assertEqual(
+                normalized["assets"][0]["provenance"],
+                {"kind": "generated", "path": source["path"], "sha256": source["artifact_sha256"]},
+            )
+
     def test_generated_bundle_v3_motion_only_passes_without_compiled_projection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
