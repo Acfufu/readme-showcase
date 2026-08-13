@@ -40,6 +40,7 @@ _artifact_json = _BUNDLE._artifact_json
 _artifact_bytes = _BUNDLE._artifact_bytes
 validate_generated_bundle = _BUNDLE.validate_generated_bundle
 
+# Intentionally a partial re-export surface: the module publicly exposes more names via explicit imports.
 __all__ = ["collect_evidence_facts", "self_review_check", "MAX_SELF_REVIEW_REVISIONS"]
 
 

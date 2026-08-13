@@ -544,7 +544,7 @@ def _validate_asset_manifest_v3(
                     raise ContractError("E_BUNDLE_ASSET", f"{context}.provenance.kind must be generated")
                 source_path = _path(provenance["path"], f"{context}.provenance.path")
                 source_hash = _sha(provenance["sha256"], f"{context}.provenance.sha256")
-                if source_path.startswith("compiled/"):
+                if source_path.casefold().startswith("compiled/"):
                     raise ContractError("E_BUNDLE_ASSET", f"{context}.provenance must not reference compiled-route projections")
                 if hashlib.sha256(_v3_read(artifact_root, source_path, f"{context}.provenance")).hexdigest() != source_hash:
                     raise ContractError("E_BUNDLE_HASH", f"{context}.provenance bytes changed")
