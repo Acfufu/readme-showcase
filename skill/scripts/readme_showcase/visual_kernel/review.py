@@ -265,29 +265,37 @@ def review_screenshots(
             findings.append(_finding("E_REVIEW_API_FAILED", str(exc)))
             _write_host_brief(criteria, screenshots, reference, out_dir)
             return _host_report(out_dir, reference, findings)
-        content = completion["choices"][0]["message"]["content"]
         try:
+            # Shape extraction, JSON parse, and dict access all live inside the
+            # exception-handled region: a 200 response with a non-standard shape
+            # (gateway {"error": ...}, JSON array, ...) must fall back to host
+            # mode, never block.
+            content = completion["choices"][0]["message"]["content"]
             parsed = json.loads(content)
-        except json.JSONDecodeError:
-            findings.append(_finding("E_REVIEW_PARSE", "model returned non-JSON"))
+            criteria_out = parsed.get("criteria", [])
+            # "fail" is REACHABLE: derived from the model's own criterion verdicts.
+            status = "pass" if all(
+                isinstance(c, dict) and c.get("pass") is True for c in criteria_out
+            ) else "fail"
+            report = {
+                "schema_version": 1,
+                "status": status,
+                "reviewer_model": resolved_model,
+                "criteria": criteria_out,
+                "pairwise": {
+                    "candidate_win_basis_points": parsed.get("candidate_win_basis_points"),
+                    "reference": reference,
+                },
+                "findings": sorted(findings, key=lambda item: (item["code"], item["message"])),
+            }
+        except (KeyError, IndexError, TypeError, AttributeError, json.JSONDecodeError) as exc:
+            if isinstance(exc, json.JSONDecodeError):
+                message = "model returned non-JSON"
+            else:
+                message = f"model returned malformed response: {exc!r}"
+            findings.append(_finding("E_REVIEW_PARSE", message))
             _write_host_brief(criteria, screenshots, reference, out_dir)
             return _host_report(out_dir, reference, findings)
-        criteria_out = parsed.get("criteria", [])
-        # "fail" is REACHABLE: derived from the model's own criterion verdicts.
-        status = "pass" if all(
-            isinstance(c, dict) and c.get("pass") is True for c in criteria_out
-        ) else "fail"
-        report = {
-            "schema_version": 1,
-            "status": status,
-            "reviewer_model": resolved_model,
-            "criteria": criteria_out,
-            "pairwise": {
-                "candidate_win_basis_points": parsed.get("candidate_win_basis_points"),
-                "reference": reference,
-            },
-            "findings": sorted(findings, key=lambda item: (item["code"], item["message"])),
-        }
     else:
         findings.append(_finding(
             "E_REVIEW_SAME_MODEL",

@@ -1,7 +1,9 @@
 import os
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from skill.scripts.readme_showcase.visual_kernel import review
 from skill.scripts.readme_showcase.visual_kernel.review import load_rubric, review_screenshots
 
 RUBRIC = Path(__file__).resolve().parents[3] / "skill" / "references" / "visual-review-rubric.md"
@@ -87,3 +89,28 @@ class ReviewTest(unittest.TestCase):
         self.assertIn("criteria", report)
         self.assertIn("pairwise", report)
         self.assertIn("candidate_win_basis_points", report["pairwise"])
+
+    def test_malformed_api_response_falls_back_to_host(self):
+        # M: a 200 response without the standard "choices" shape (e.g. a
+        # gateway {"error": ...}) must not block; it falls back to host mode
+        # with an E_REVIEW_PARSE finding.
+        out = Path(__file__).resolve().parent / "review-out-malformed"
+        out.mkdir(exist_ok=True)
+        png = out / "hero.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+        os.environ["VISION_REVIEW_API_KEY"] = "test-key"
+        try:
+            with mock.patch.object(review, "_chat_completion",
+                                   return_value={"error": {"message": "bad gateway"}}):
+                report = review_screenshots([str(png)], str(out), model="gpt-4o")
+            self.assertEqual(report["status"], "host")
+            self.assertEqual(report["reviewer_model"], "host-session")
+            self.assertTrue(any(
+                f["code"] == "E_REVIEW_PARSE" for f in report["findings"]
+            ), report["findings"])
+        finally:
+            os.environ.pop("VISION_REVIEW_API_KEY", None)
+            (out / "vision-review-brief.md").unlink(missing_ok=True)
+            (out / "vision-review-report.v1.json").unlink(missing_ok=True)
+            png.unlink(missing_ok=True)
+            out.rmdir()
