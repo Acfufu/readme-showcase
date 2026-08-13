@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://readme-showcase.local/schemas/screenshot-gate-report.v1.schema.json",
+  "title": "Screenshot gate report v1",
+  "$comment": "Closed screenshot-gate report projection. The JSON Schema enforces the structural shape; Python validation additionally enforces canonical (code, message) ordering of hard-gate and aesthetic findings via validate_screenshot_gate_report_v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "hard_gate", "aesthetic_findings", "screenshots"],
+  "x-python-semantic-validation": {
+    "codes": ["E_SCHEMA_VALUE"]
+  },
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {"enum": ["pass", "fail"]},
+    "hard_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "findings"],
+      "properties": {
+        "status": {"enum": ["pass", "fail"]},
+        "findings": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "message"],
+            "properties": {
+              "code": {"type": "string", "minLength": 1},
+              "message": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    "aesthetic_findings": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": {"type": "string", "minLength": 1},
+          "message": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "screenshots": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["svg", "900px", "360px"],
+        "properties": {
+          "svg": {"type": "string", "minLength": 1},
+          "900px": {"type": "string", "minLength": 1},
+          "360px": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}
