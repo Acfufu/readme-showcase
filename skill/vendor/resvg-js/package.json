@@ -1,0 +1,10 @@
+{
+  "name": "readme-showcase-resvg",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Optional DOM-level bbox measurement for the screenshot gate.",
+  "license": "MPL-2.0",
+  "dependencies": {
+    "@resvg/resvg-js": "2.6.2"
+  }
+}

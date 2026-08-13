@@ -8,6 +8,8 @@ vs aesthetic posture. A message that starts with "SKIPPED:" is a skip note
 
 from __future__ import annotations
 
+import json
+import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -272,5 +274,42 @@ def check_readability_at_360(svg_path: str, *, minimum_px: float = _READABLE_MIN
                 f"text {content!r} renders at {rendered:.1f}px at the 360px "
                 f"projection (minimum {minimum_px:.1f}px); critical text must "
                 f"remain readable"
+            )
+    return findings
+
+
+def check_clipping_bbox(svg_path: str, *, width: int = 900, node_path: str = "node") -> list[str]:
+    """DOM-level clipping detection via resvg-js getBBox, in render-pixel space.
+
+    The Node script reports the SVG's own viewport (scaled to `width`) and the
+    content bbox converted into the same space, so all comparisons happen in
+    one consistent space — including the bottom-overflow check that the pixel
+    scanner also covers. Returns a SKIPPED: note when Node or @resvg/resvg-js
+    is missing; the caller decides whether the note is fatal (require_bbox) or
+    advisory.
+    """
+    script = Path(__file__).resolve().parents[3] / "scripts" / "measure_bbox.mjs"
+    try:
+        result = subprocess.run(
+            [node_path, str(script), svg_path, str(width)],
+            capture_output=True, text=True, timeout=60,
+        )
+    except FileNotFoundError:
+        return ["SKIPPED: node not installed; bbox clipping check skipped"]
+    except subprocess.TimeoutExpired:
+        return ["SKIPPED: bbox measurement timed out"]
+    if result.returncode != 0:
+        return [f"SKIPPED: {result.stderr.strip()[:200]}"]
+    payload = json.loads(result.stdout)
+    findings: list[str] = []
+    viewport = payload["viewport"]
+    for box in payload["text_bboxes"]:
+        if box["x"] < 0 or box["y"] < 0:
+            findings.append("content bbox extends above or left of the viewport")
+        if box["x"] + box["width"] > viewport["width"]:
+            findings.append(f"content bbox exceeds viewport width {viewport['width']}")
+        if box["y"] + box["height"] > viewport["height"]:
+            findings.append(
+                f"content bbox exceeds viewport height {viewport['height']} (bottom overflow)"
             )
     return findings
