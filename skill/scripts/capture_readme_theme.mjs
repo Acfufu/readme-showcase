@@ -22,13 +22,6 @@ const THEME_CSS = `
 [data-color-mode="dark"] .markdown-body img[src$="#gh-dark-mode-only"] { display: initial !important; }
 `;
 
-function fragmentLabel(src) {
-  const fragment = (src ?? "").split("#")[1] ?? "";
-  if (fragment === "gh-light-mode-only") return "light-only";
-  if (fragment === "gh-dark-mode-only") return "dark-only";
-  return "both"; // no fragment: shown in both themes
-}
-
 async function main() {
   const [readmePath, outDir, theme] = process.argv.slice(2);
   if (!readmePath || !outDir || !["light", "dark"].includes(theme)) {
@@ -59,12 +52,22 @@ async function main() {
   // file:// URL: relative img/srcset URLs resolve against the HTML file's
   // directory, so local fixture images load (broken=false).
   await page.goto(`file://${pagePath}`, { waitUntil: "load" });
+  // fragmentLabel is inlined (NOT referenced from Node scope): playwright
+  // serializes this callback with String(fn) and re-evaluates it in the
+  // browser context, where closures over outer-scope functions do not exist.
   const images = await page.$$eval("img", (imgs) =>
     imgs.map((img) => {
       const src = img.getAttribute("src") || "";
+      const fragment = src.split("#")[1] ?? "";
+      const label =
+        fragment === "gh-light-mode-only"
+          ? "light-only"
+          : fragment === "gh-dark-mode-only"
+            ? "dark-only"
+            : "both"; // no fragment: shown in both themes
       return {
         src,
-        fragment: fragmentLabel(src),
+        fragment: label,
         displayed: window.getComputedStyle(img).display === "none" ? "hidden" : "visible",
         broken: img.complete && img.naturalWidth === 0,
       };

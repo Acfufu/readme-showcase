@@ -21,7 +21,7 @@ class ThemeCaptureTest(unittest.TestCase):
         try:
             findings = capture_theme(str(readme), str(out), "dark")
             if any("SKIPPED" in f for f in findings):
-                self.skipTest("playwright not installed")
+                self.skipTest("theme capture unavailable (node/playwright missing or timeout)")
             self.assertEqual(findings, [])
             self.assertTrue((out / "theme-readme-dark.png").exists())
         finally:
@@ -40,7 +40,9 @@ class ThemeCaptureTest(unittest.TestCase):
                 ["node", str(script), str(FIXTURES / "theme-readme.html"), str(out), "light"],
                 capture_output=True, text=True, timeout=120,
             )
-            if result.returncode != 0:
+            # Only exit 3 (playwright missing) is an environment skip; exit 1
+            # (crash) and exit 2 (usage) must surface as failures.
+            if result.returncode == 3:
                 self.skipTest(f"playwright not installed: {result.stderr[:200]}")
             payload = json.loads(result.stdout)
             self.assertTrue(payload["ok"])

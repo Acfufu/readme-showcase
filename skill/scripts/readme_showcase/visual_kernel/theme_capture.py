@@ -30,8 +30,13 @@ def capture_theme(readme_path: str, out_dir: str, theme: str, *, node_path: str 
         return ["SKIPPED: node not installed; theme capture skipped"]
     except subprocess.TimeoutExpired:
         return ["SKIPPED: theme capture timed out"]
+    if result.returncode == 3:
+        # 3 = playwright missing: environment gap, not a defect in the README.
+        return ["SKIPPED: playwright not installed; theme capture skipped"]
     if result.returncode != 0:
-        return [f"SKIPPED: {result.stderr.strip()[:200]}"]
+        # 1 = crash, 2 = usage error: a real failure in the capture path,
+        # NOT a missing dependency — surface it as a finding.
+        return [f"theme capture failed: {result.stderr.strip()[:200]}"]
     import json
     payload = json.loads(result.stdout)
     findings: list[str] = []
