@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Em-dash hero</title>
+  <desc id="desc">Contains an em-dash to trigger the taste rule.</desc>
+  <rect width="1200" height="360" fill="#0a1f44"/>
+  <text x="60" y="120" font-size="48" fill="#ffffff">Build — don&apos;t ship</text>
+</svg>

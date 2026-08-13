@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Mixed radius hero</title>
+  <desc id="desc">Two panels with inconsistent corner radii.</desc>
+  <rect width="1200" height="360" fill="#0a1f44"/>
+  <rect x="60" y="80" width="400" height="200" rx="8" fill="#1e293b"/>
+  <rect x="500" y="80" width="400" height="200" rx="48" fill="#1e293b"/>
+  <text x="80" y="160" font-size="20" fill="#ffffff">Panel A</text>
+  <text x="520" y="160" font-size="20" fill="#ffffff">Panel B</text>
+</svg>

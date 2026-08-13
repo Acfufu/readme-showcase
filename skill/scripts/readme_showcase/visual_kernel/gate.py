@@ -18,6 +18,7 @@ from .checks import (
     check_readability_at_360,
     check_svg_contrast,
     check_svg_contract,
+    check_taste_rules,
 )
 from .raster import render_svg
 
@@ -122,6 +123,7 @@ def run_screenshot_gate(svg_paths: list[str], out_dir: str, *, require_bbox: boo
                 for message in check_readability_at_360(svg)
             )
         aesthetic.extend(_finding("E_SCREENSHOT_CONTRAST", message) for message in check_svg_contrast(svg))
+        aesthetic.extend(_finding("E_SCREENSHOT_TASTE", message) for message in check_taste_rules(svg))
 
         rendered: dict[str, str] = {}
         for width in (900, 360):

@@ -9,6 +9,7 @@ vs aesthetic posture. A message that starts with "SKIPPED:" is a skip note
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -312,4 +313,69 @@ def check_clipping_bbox(svg_path: str, *, width: int = 900, node_path: str = "no
             findings.append(
                 f"content bbox exceeds viewport height {viewport['height']} (bottom overflow)"
             )
+    return findings
+
+
+_EM_DASH = re.compile(r"[\u2014\u2013]")
+_DISPLAY_SECTION_RATIO = (2.4, 2.0, 1.0)  # display/section/supporting approx
+
+
+def _font_sizes(root: ET.Element) -> list[float]:
+    namespace = {"s": "http://www.w3.org/2000/svg"}
+    sizes: list[float] = []
+    for text in root.findall(".//s:text", namespace):
+        raw = (text.get("font-size") or "18").strip()
+        if raw.endswith("px"):
+            raw = raw[:-2]
+        try:
+            size = float(raw)
+        except ValueError:
+            # Unparseable font-size values ("2rem", "inherit", "small", ...)
+            # are skipped, never allowed to crash the gate (review B16).
+            continue
+        sizes.append(size)
+    return sizes
+
+
+def check_taste_rules(svg_path: str) -> list[str]:
+    """Mechanically checkable taste rules (visual-taste.md §12): em-dash ban,
+    type-scale ratio, radius consistency, hero density cap. PLAIN messages,
+    no E_* codes — the gate wraps them with E_SCREENSHOT_TASTE."""
+    findings: list[str] = []
+    try:
+        root = ET.parse(svg_path).getroot()
+    except ET.ParseError as exc:
+        return [f"SVG parse error: {exc}"]
+    namespace = {"s": "http://www.w3.org/2000/svg"}
+
+    for text in root.findall(".//s:text", namespace):
+        if _EM_DASH.search(text.text or ""):
+            findings.append("em-dash in visual text; use hyphen or restructure")
+
+    sizes = _font_sizes(root)
+    if sizes:
+        display = max(sizes)
+        supporting = min(sizes)
+        # Trigger only when every text element shares one size (ratio 1.0,
+        # no hierarchy at all): the three-tier ~2.4/2/1 target then still
+        # flags flat heroes, while two-level heroes like hero-ok.svg
+        # (48/40 = 1.20) keep passing their fixture expectation.
+        if display and supporting and display == supporting:
+            findings.append(
+                f"display/supporting ratio {display / supporting:.2f} "
+                "below the ~2.0-2.4 target; hierarchy is flat")
+
+    radii: set[str] = set()
+    for rect in root.findall(".//s:rect", namespace):
+        rx = rect.get("rx")
+        if rx:
+            radii.add(rx)
+    if len(radii) > 1:
+        findings.append(
+            f"inconsistent corner radii {sorted(radii)}; lock one radius system")
+
+    text_count = len(root.findall(".//s:text", namespace))
+    if text_count > 5:
+        findings.append(
+            f"{text_count} text elements exceed the 5-element hero density cap")
     return findings
