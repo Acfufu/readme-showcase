@@ -1,0 +1,50 @@
+{
+  "record_id": "exemplar-curated-01",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "hero"
+  ],
+  "tags": [
+    "hero",
+    "identity",
+    "split"
+  ],
+  "pattern": {
+    "summary": "Split hero: typographic identity block on the left, code editor window as proof on the right.",
+    "structure": "Left column carries the product name as large display type; right column holds an editor window with a syntax-highlighted code sample; a uniform background keeps the two columns balanced.",
+    "proof": "Proof is the code editor rendering shown as a real window with authentic content.",
+    "composition_structure": {
+      "zones": [
+        "identity",
+        "proof"
+      ],
+      "hierarchy": [
+        "display",
+        "section"
+      ],
+      "negative_patterns": [
+        "centered-template",
+        "generic-gradient",
+        "three-equal"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/curated-01.png",
+    "sha256": "c29f9244aa7ded56ad5f645a05341f33d98ea5c5224efda2ad0ea1e10ca64c15",
+    "kind": "curated"
+  },
+  "source": {
+    "repository_url": "https://github.com/prisma/prisma",
+    "commit": "c332c674d102c7a716409bc5b455777c9725f397",
+    "material_sha256": "c29f9244aa7ded56ad5f645a05341f33d98ea5c5224efda2ad0ea1e10ca64c15",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/prisma/prisma/blob/c332c674d102c7a716409bc5b455777c9725f397/LICENSE",
+    "license_evidence_sha256": "1b7b1c659a82d4688d9f781b3eaccccd5415500e5ba87f32f8f2a5e94dffaa15",
+    "human_reviewed": true
+  },
+  "split": "train"
+}

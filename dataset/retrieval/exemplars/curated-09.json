@@ -1,0 +1,48 @@
+{
+  "record_id": "exemplar-curated-09",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "hero"
+  ],
+  "tags": [
+    "manifesto",
+    "statement",
+    "typography"
+  ],
+  "pattern": {
+    "summary": "Editorial manifesto: a single typographic statement over a full-bleed color field.",
+    "structure": "One large statement centers the frame; no supporting panels or sub-regions; the color field carries the entire composition.",
+    "proof": "Proof is the design-system statement itself, authored by the project.",
+    "composition_structure": {
+      "zones": [
+        "identity"
+      ],
+      "hierarchy": [
+        "display"
+      ],
+      "negative_patterns": [
+        "centered-template",
+        "generic-gradient",
+        "three-equal"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/curated-09.png",
+    "sha256": "1e68bdb05dc71c469aa4677e8157f437324ef32765088944e7300953d5571204",
+    "kind": "curated"
+  },
+  "source": {
+    "repository_url": "https://github.com/withastro/astro",
+    "commit": "09f0dc7f90ef92f8520e13b7ba130e4b8aad31bd",
+    "material_sha256": "1e68bdb05dc71c469aa4677e8157f437324ef32765088944e7300953d5571204",
+    "license_spdx": "MIT",
+    "license_evidence_spdx": "MIT",
+    "license_evidence_url": "https://github.com/withastro/astro/blob/09f0dc7f90ef92f8520e13b7ba130e4b8aad31bd/LICENSE",
+    "license_evidence_sha256": "4aa72be797aad0e5e21827eaae6a1df9e122d7a401f07d2c308a6b9a5f0e1278",
+    "human_reviewed": true
+  },
+  "split": "test"
+}

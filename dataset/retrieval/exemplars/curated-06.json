@@ -1,0 +1,50 @@
+{
+  "record_id": "exemplar-curated-06",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "proof"
+  ],
+  "tags": [
+    "cli",
+    "terminal",
+    "treemap"
+  ],
+  "pattern": {
+    "summary": "Terminal motif: authentic command output split into a tree panel and a treemap panel.",
+    "structure": "A terminal prompt line sits on top; the left panel lists directory sizes as a tree; the right panel renders the same data as a treemap; both panels share one baseline.",
+    "proof": "Proof is authentic command output of the tool against a real directory.",
+    "composition_structure": {
+      "zones": [
+        "context",
+        "proof"
+      ],
+      "hierarchy": [
+        "section",
+        "supporting"
+      ],
+      "negative_patterns": [
+        "centered-template",
+        "empty-hero",
+        "three-equal"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/curated-06.png",
+    "sha256": "f1c0a9f5a82260d5eaf87099d6428a2a0c4ccdeba63ffaf27d0c1d10452237b0",
+    "kind": "curated"
+  },
+  "source": {
+    "repository_url": "https://github.com/bootandy/dust",
+    "commit": "f5852150ba4da4157989fa3779b09d34d5f1a078",
+    "material_sha256": "f1c0a9f5a82260d5eaf87099d6428a2a0c4ccdeba63ffaf27d0c1d10452237b0",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/bootandy/dust/blob/f5852150ba4da4157989fa3779b09d34d5f1a078/LICENSE",
+    "license_evidence_sha256": "aee6e2d13d3a55c7881630c09b41ca7b3b44bb1437b5d36695d22decc3655160",
+    "human_reviewed": true
+  },
+  "split": "train"
+}

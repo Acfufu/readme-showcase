@@ -1,0 +1,51 @@
+{
+  "record_id": "exemplar-curated-10",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "comparison",
+    "proof"
+  ],
+  "tags": [
+    "cli",
+    "table",
+    "terminal"
+  ],
+  "pattern": {
+    "summary": "Comparison table: stacked bordered tables comparing device groups.",
+    "structure": "Section headings separate device groups; each table lists items in identical columns; usage bars visualize values inside rows.",
+    "proof": "Proof is real disk-usage output grouped into labeled tables.",
+    "composition_structure": {
+      "zones": [
+        "context",
+        "proof"
+      ],
+      "hierarchy": [
+        "section",
+        "supporting"
+      ],
+      "negative_patterns": [
+        "centered-template",
+        "generic-gradient",
+        "text-wall"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/curated-10.png",
+    "sha256": "38540f36074055db6db414e002fe4f74fc18f0f9997bcb68c6476b7a22fe62b3",
+    "kind": "curated"
+  },
+  "source": {
+    "repository_url": "https://github.com/muesli/duf",
+    "commit": "4636deb4a7b707a9f04c602db033f9837e50b3f6",
+    "material_sha256": "38540f36074055db6db414e002fe4f74fc18f0f9997bcb68c6476b7a22fe62b3",
+    "license_spdx": "MIT",
+    "license_evidence_spdx": "MIT",
+    "license_evidence_url": "https://github.com/muesli/duf/blob/4636deb4a7b707a9f04c602db033f9837e50b3f6/LICENSE",
+    "license_evidence_sha256": "81090e71a92a18ce7f95bd3433a9523c568329be4fd47d8f0b94d490ca628d86",
+    "human_reviewed": true
+  },
+  "split": "test"
+}

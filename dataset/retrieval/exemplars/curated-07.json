@@ -1,0 +1,53 @@
+{
+  "record_id": "exemplar-curated-07",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "features",
+    "proof"
+  ],
+  "tags": [
+    "dashboard",
+    "grid",
+    "screenshot"
+  ],
+  "pattern": {
+    "summary": "Bento grid: a dashboard of varied widgets under a shared navigation frame.",
+    "structure": "Left sidebar carries navigation; the top bar holds identity and status; the main area tiles charts and metric widgets of unequal sizes in a bento layout.",
+    "proof": "Proof is the product dashboard showing real data charts.",
+    "composition_structure": {
+      "zones": [
+        "context",
+        "metadata",
+        "proof"
+      ],
+      "hierarchy": [
+        "display",
+        "section",
+        "supporting"
+      ],
+      "negative_patterns": [
+        "card-soup",
+        "text-wall",
+        "three-equal"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/curated-07.png",
+    "sha256": "8cb0305f5af116a26a2027b2998830a4f0a0431c110008468ac66c43b90fc1ba",
+    "kind": "curated"
+  },
+  "source": {
+    "repository_url": "https://github.com/supabase/supabase",
+    "commit": "77c5a0b9d941bc75719645d9cd0639296ceff586",
+    "material_sha256": "8cb0305f5af116a26a2027b2998830a4f0a0431c110008468ac66c43b90fc1ba",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/supabase/supabase/blob/77c5a0b9d941bc75719645d9cd0639296ceff586/LICENSE",
+    "license_evidence_sha256": "c29468abcd629e248c2f76848155c386b733872bcabcc4cf65ef1e7c61431042",
+    "human_reviewed": true
+  },
+  "split": "train"
+}

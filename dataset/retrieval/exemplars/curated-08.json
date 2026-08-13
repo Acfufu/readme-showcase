@@ -1,0 +1,50 @@
+{
+  "record_id": "exemplar-curated-08",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "workflow"
+  ],
+  "tags": [
+    "dag",
+    "pipeline",
+    "workflow"
+  ],
+  "pattern": {
+    "summary": "Numbered flow: workflow DAG with split, parallel numbered stages, and a reduce step.",
+    "structure": "Sidebar carries navigation; the header holds breadcrumb and actions; the canvas shows a DAG from a root node through a split, four parallel numbered map stages, and a converge node.",
+    "proof": "Proof is a real executed workflow graph rendered in the product UI.",
+    "composition_structure": {
+      "zones": [
+        "context",
+        "workflow"
+      ],
+      "hierarchy": [
+        "section",
+        "supporting"
+      ],
+      "negative_patterns": [
+        "centered-template",
+        "decorative-filler",
+        "text-wall"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/curated-08.png",
+    "sha256": "7c7d40eb5d896b8836f79308da430e4014565325926f4972c46e6c6ad919e3f4",
+    "kind": "curated"
+  },
+  "source": {
+    "repository_url": "https://github.com/argoproj/argo-workflows",
+    "commit": "96e62da4a1cd273e174df0239804705b913700bd",
+    "material_sha256": "7c7d40eb5d896b8836f79308da430e4014565325926f4972c46e6c6ad919e3f4",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/argoproj/argo-workflows/blob/96e62da4a1cd273e174df0239804705b913700bd/LICENSE",
+    "license_evidence_sha256": "c996fc213c94f4a4a838407d355b081226caa7b103a4f239bb87fb8f1d8e3a60",
+    "human_reviewed": true
+  },
+  "split": "train"
+}

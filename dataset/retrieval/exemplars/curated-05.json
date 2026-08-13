@@ -1,0 +1,51 @@
+{
+  "record_id": "exemplar-curated-05",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "architecture",
+    "workflow"
+  ],
+  "tags": [
+    "architecture",
+    "diagram",
+    "flow"
+  ],
+  "pattern": {
+    "summary": "Integrated diagram: inputs, engine, and outputs combined into one architecture flow.",
+    "structure": "Left column lists input sources; the center box holds the engine with a rule library attached below; the right column lists output formats; arrows connect the three regions.",
+    "proof": "Proof is the component architecture rendered as a labeled flow diagram.",
+    "composition_structure": {
+      "zones": [
+        "context",
+        "workflow"
+      ],
+      "hierarchy": [
+        "section",
+        "supporting"
+      ],
+      "negative_patterns": [
+        "decorative-filler",
+        "generic-gradient",
+        "three-equal"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/curated-05.png",
+    "sha256": "f34a95511eab9a6120ab000f0b40a7db1fc5652791221414545fbe6cf56b53fa",
+    "kind": "curated"
+  },
+  "source": {
+    "repository_url": "https://github.com/kubescape/kubescape",
+    "commit": "a072e35e31ef186087393f89b447a899e974fa12",
+    "material_sha256": "f34a95511eab9a6120ab000f0b40a7db1fc5652791221414545fbe6cf56b53fa",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/kubescape/kubescape/blob/a072e35e31ef186087393f89b447a899e974fa12/LICENSE",
+    "license_evidence_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "human_reviewed": true
+  },
+  "split": "train"
+}

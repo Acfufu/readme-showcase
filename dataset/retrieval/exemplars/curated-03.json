@@ -1,0 +1,51 @@
+{
+  "record_id": "exemplar-curated-03",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "hero",
+    "proof"
+  ],
+  "tags": [
+    "dashboard",
+    "metrics",
+    "terminal"
+  ],
+  "pattern": {
+    "summary": "Background-proof hero: real system metrics fill the entire frame as the visual.",
+    "structure": "The full frame is the proof; metric panels tile the space; status text sits above the panels; no separate title region.",
+    "proof": "Proof is live system output rendered by the tool itself.",
+    "composition_structure": {
+      "zones": [
+        "metadata",
+        "proof"
+      ],
+      "hierarchy": [
+        "display",
+        "supporting"
+      ],
+      "negative_patterns": [
+        "centered-template",
+        "empty-hero",
+        "generic-gradient"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/curated-03.png",
+    "sha256": "7eee6f3c5c84419d782827c6738d5b94cf6df39422cb75a421b668e98da9a3d7",
+    "kind": "curated"
+  },
+  "source": {
+    "repository_url": "https://github.com/aristocratos/btop",
+    "commit": "d5e5619cbf5a267b592b61cdbc3f98a6420259a3",
+    "material_sha256": "7eee6f3c5c84419d782827c6738d5b94cf6df39422cb75a421b668e98da9a3d7",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/aristocratos/btop/blob/d5e5619cbf5a267b592b61cdbc3f98a6420259a3/LICENSE",
+    "license_evidence_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "human_reviewed": true
+  },
+  "split": "train"
+}

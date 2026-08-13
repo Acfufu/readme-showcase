@@ -1,0 +1,51 @@
+{
+  "record_id": "exemplar-curated-02",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "features",
+    "showcase"
+  ],
+  "tags": [
+    "catalog",
+    "grid",
+    "templates"
+  ],
+  "pattern": {
+    "summary": "Artifact wall: categorized grid of labeled annotation-template examples.",
+    "structure": "Column headers group template types; every cell holds one artifact with its label; a consistent cell rhythm forms a catalog wall across the frame.",
+    "proof": "Proof is the collection of real template artifacts rendered as a browsable catalog.",
+    "composition_structure": {
+      "zones": [
+        "context",
+        "proof"
+      ],
+      "hierarchy": [
+        "section",
+        "supporting"
+      ],
+      "negative_patterns": [
+        "card-soup",
+        "text-wall",
+        "three-equal"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/curated-02.png",
+    "sha256": "eefae24dad17e2af46a256bdc0eec5c148ce19bf60c8cf37213687155e52b734",
+    "kind": "curated"
+  },
+  "source": {
+    "repository_url": "https://github.com/HumanSignal/label-studio",
+    "commit": "b4f80615bd6a88b9e85a71796ffe0cc31a35c947",
+    "material_sha256": "eefae24dad17e2af46a256bdc0eec5c148ce19bf60c8cf37213687155e52b734",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/HumanSignal/label-studio/blob/b4f80615bd6a88b9e85a71796ffe0cc31a35c947/LICENSE",
+    "license_evidence_sha256": "ca656b15c1e22468c7798df4356660755fb1ccd12d7ee0bade82bd65e3038e1b",
+    "human_reviewed": true
+  },
+  "split": "train"
+}
