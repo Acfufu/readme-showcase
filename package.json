@@ -17,7 +17,6 @@
   "files": [
     "README_zh.md",
     ".nvmrc",
-    "dataset",
     "skill/.nvmrc",
     "skill/**/*.js",
     "skill/**/*.json",
@@ -25,7 +24,10 @@
     "skill/**/*.mjs",
     "skill/**/*.py",
     "skill/**/*.yaml",
-    "scripts/install_skill.py"
+    "scripts/install_skill.py",
+    "dataset/**/*.json",
+    "dataset/**/*.md",
+    "dataset/**/*.png"
   ],
   "devDependencies": {
     "elkjs": "0.9.3"

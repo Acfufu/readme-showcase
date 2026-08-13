@@ -111,6 +111,10 @@ Code 或 OpenCode 副本。格式兼容不代表当前面向 Codex 的安装器�
 
 - 目标仓库公开声明只能来自仓库证据。
 - 20 条生产 `train` 模式可以辅助结构；2 条隔离 `test` 模式永不进入生产检索。
+- 检索 exemplar 是独立于 manifest 的补充类别：`dataset/retrieval/exemplars/`
+  存放 10 条人工策展记录（8 条 `train`、2 条 `test`）与 4 条仅用于 `train`
+  的合成拆解记录，全部绑定来源并通过许可证筛查；它们只在 ranker 输入处并入，
+  永不进入 `manifest["records"]`，其 22 条记录与 `"retrieval-only"` 用途保持不变。
 - 候选资产绑定证据、语言、精确字节与有效替代文本。
 - 门禁失败不能静默变成可发布结果。
 - 运行状态保存在目标外部的

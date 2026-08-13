@@ -119,6 +119,12 @@ scan → retrieve → plan-import → generation-request → candidate
 - Repository evidence is the only source of public target claims.
 - Twenty production `train` patterns may guide structure; two isolated `test`
   patterns never enter production retrieval.
+- Retrieval exemplars form a separate, non-manifest category:
+  `dataset/retrieval/exemplars/` holds 10 curated records (8 `train`, 2
+  `test`) plus 4 synthetic train-only breakdowns, all provenance-bound and
+  license-screened. They merge at the ranker input and never enter
+  `manifest["records"]`, whose 22 records and `"retrieval-only"` purpose stay
+  unchanged.
 - Candidate assets bind to evidence, locale, exact bytes, and useful alt text.
 - Failed gates cannot silently become a publishable result.
 - Run state stays outside the target under

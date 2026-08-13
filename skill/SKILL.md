@@ -41,6 +41,13 @@ write or publication authority.
 projections stay deterministic. `low` does not promise wow; it targets a
 clear, sober, evidence-first graphic.
 
+Before creating or revising visual assets, read
+[references/visual-production.md](references/visual-production.md) for the
+production contract and [references/visual-taste.md](references/visual-taste.md)
+for the quality floor. Optional retrieval exemplars (`visual-exemplar`
+category) provide structural composition references; they are references, not
+styles to imitate.
+
 `shape` accepts `--ask auto|semi|manual` to control guided-interview
 questioning when the invocation routes into the novice interview: `auto`
 asks only the critical questions (mode, scope) and defaults every optional
@@ -98,6 +105,13 @@ Dataset revision 3 contains 20 production `train` patterns and two isolated
 `test` patterns. Records are newly authored abstractions bound to pinned public
 repository commits and per-source license evidence; they contain no copied
 README text, code, assets, or benchmark answers.
+
+The retrieval manifest keeps its exact contract: `purpose: "retrieval-only"`
+and 22 records (20 production `train`, 2 isolated `test`). A separate
+`visual-exemplar` category lives under `dataset/retrieval/exemplars/`: 10
+curated records (8 `train`, 2 `test`) plus 4 synthetic train-only breakdowns,
+all provenance-bound and license-screened. Exemplar records merge into
+production retrieval at the ranker input and never enter `manifest["records"]`.
 
 Run one ordered artifact flow in orchestrator-managed central state. Never
 create `.readme-showcase-run-*` or another run directory in or beside the target
@@ -326,7 +340,9 @@ to skip notes when their dependencies are absent — never hard failures:
   README light and dark with GitHub theme CSS.
 - `--review` vision review: `VISION_REVIEW_API_KEY`, `VISION_REVIEW_MODEL`,
   and `VISION_REVIEW_API_BASE` configure the optional vision-LLM aesthetic
-  review; without them it falls back to a host-authored review brief.
+  review; without them it falls back to a host-authored review brief. The
+  review rubric is documented in
+  [references/visual-review-rubric.md](references/visual-review-rubric.md).
 
 Pinned upstream classifications and reuse counts live in
 [references/beautify-github-readme-delta.md](references/beautify-github-readme-delta.md).
