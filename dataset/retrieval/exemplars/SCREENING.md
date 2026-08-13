@@ -1,14 +1,14 @@
 # Exemplar Screening Ledger — curated-01 … curated-10
 
 License screening for the 10 curated exemplar records in this directory.
-Screening date: **2026-08-13** · Screener: readme-showcase dataset screener (agent), human confirmation pending final merge review.
+Screening date: **2026-08-13** · Screener: readme-showcase dataset screener (agent) · **Human approval: acfufu, 2026-08-13**
 Screening checklist applied to every record:
 
 1. Repository license at the **pinned commit** is permissive (MIT / Apache-2.0 / BSD-3-Clause / CC-BY-4.0) — `license_evidence_url` + `license_evidence_sha256` recorded below.
 2. The screenshot captures **only content authored by the repository owner** (no third-party trademarks, no user photos) — verified per image.
 3. The record is a **structural reference** — annotation describes composition zones and hierarchy, never style or colors to imitate.
 4. `split` assignment: 8 `train` + 2 `test`; `test` records must never enter production retrieval.
-5. `human_reviewed: true` is set per the retrieval contract (validator requires it); human confirmation happens at merge review of this ledger.
+5. `human_reviewed: true` is set per the retrieval contract (validator requires it); human confirmation recorded by **acfufu on 2026-08-13**.
 
 ## Records
 

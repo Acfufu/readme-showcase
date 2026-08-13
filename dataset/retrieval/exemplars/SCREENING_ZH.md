@@ -1,14 +1,14 @@
 # Exemplar 筛查台账（中文版）: curated-01 … curated-10
 
 本目录 10 条人工策展 exemplar 记录的许可证筛查台账。
-筛查日期: **2026-08-13** · 筛查人: readme-showcase 数据集筛查器（agent），人工确认待合并审查时进行。
+筛查日期: **2026-08-13** · 筛查人: readme-showcase 数据集筛查器（agent）· **人工验收: acfufu，2026-08-13**
 每条记录均应用以下筛查清单:
 
 1. 仓库在**固定 commit** 上的许可证为宽松许可证（MIT / Apache-2.0 / BSD-3-Clause / CC-BY-4.0），`license_evidence_url` 与 `license_evidence_sha256` 记录于下。
 2. 截图仅包含**仓库所有者创作的内容**（无第三方商标、无用户照片），逐图核验。
 3. 记录为**结构参照**: 标注描述构图分区（zones）与层级（hierarchy），从不描述可模仿的风格或颜色。
 4. `split` 分配: 8 条 `train` + 2 条 `test`；`test` 记录永不进入生产检索。
-5. `human_reviewed: true` 依据检索合同设置（校验器要求）；人工确认在本台账的合并审查时进行。
+5. `human_reviewed: true` 依据检索合同设置（校验器要求）；人工验收由 **acfufu 于 2026-08-13 记录**。
 
 ## 记录
 
