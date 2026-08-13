@@ -86,6 +86,41 @@ class VoiceFeatureTests(unittest.TestCase):
         self.assertTrue(result["pass"])
         self.assertIn("insufficient", result["evidence"])
 
+    def test_cjk_skipped_marker_passes_with_explicit_evidence(self) -> None:
+        samples = {"script": "cjk", "skipped": True, "sentence_count": 0}
+        result = evaluate_voice_match("任何候选文本", samples, "zh-Hans")
+        self.assertTrue(result["pass"])
+        self.assertIn("cjk voice matching skipped", result["evidence"])
+
+    def test_collect_voice_samples_propagates_cjk_skipped_marker(self) -> None:
+        fact = build_fact(
+            kind="voice-sample",
+            path="README.md",
+            locator={"line_start": 1, "line_end": 2},
+            semantic_key="voice-sample:readme-prose",
+            value={
+                "script": "cjk",
+                "sentences": [],
+                "imperative_count": 0,
+                "term_count": 0,
+                "skipped": True,
+            },
+            source_bytes="这是一个中文项目。\n".encode("utf-8"),
+            confidence="derived",
+            derivation="voice features derived from README prose",
+        )
+        graph = {
+            "schema_version": 2,
+            "facts": [fact],
+        }
+        from skill.scripts.readme_showcase.contracts.evidence import compute_graph_sha256
+
+        graph["evidence_sha256"] = compute_graph_sha256(graph)
+        collected = collect_voice_samples(graph)
+        self.assertEqual(collected.get("skipped"), True)
+        self.assertEqual(collected.get("script"), "cjk")
+        self.assertEqual(collected.get("sentence_count"), 0)
+
     def test_voice_match_is_evidence_driven_without_repository_access(self) -> None:
         samples = _cli_samples()
         facts = [
@@ -151,6 +186,21 @@ class VoiceScanExtractionTests(unittest.TestCase):
                 self.assertIn("term_count", value)
             prose = next(fact for fact in facts if fact["semantic_key"] == "voice-sample:readme-prose")
             self.assertGreaterEqual(sum(prose["value"]["sentences"]), 4)
+
+    def test_scan_emits_skipped_fact_for_cjk_readme(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "README.md").write_text(
+                "这是一个中文项目。\n它提供了完整的命令行工具。\n", encoding="utf-8"
+            )
+            facts = extract_voice_samples(root)
+            self.assertEqual([fact["semantic_key"] for fact in facts], ["voice-sample:readme-prose"])
+            fact = facts[0]
+            self.assertEqual(validate_fact(fact), fact)
+            value = fact["value"]
+            self.assertEqual(value["script"], "cjk")
+            self.assertEqual(value["sentences"], [])
+            self.assertIs(value["skipped"], True)
 
     def test_scan_without_git_still_extracts_file_based_voice_facts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

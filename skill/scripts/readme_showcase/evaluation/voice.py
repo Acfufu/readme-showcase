@@ -41,12 +41,15 @@ def collect_voice_samples(evidence: Mapping[str, Any]) -> dict[str, object]:
     sentence_count = 0
     script_tallies: dict[str, int] = {}
     sources: set[str] = set()
+    skipped = False
     for fact in evidence.get("facts", []):
         if not isinstance(fact, Mapping) or fact.get("kind") != "voice-sample":
             continue
         value = fact.get("value")
         if not isinstance(value, Mapping):
             continue
+        if value.get("skipped") is True:
+            skipped = True
         sample_lengths = value.get("sentences")
         script = value.get("script")
         if not isinstance(sample_lengths, list) or not all(type(item) is int and item > 0 for item in sample_lengths):
@@ -59,6 +62,9 @@ def collect_voice_samples(evidence: Mapping[str, Any]) -> dict[str, object]:
         if isinstance(fact.get("semantic_key"), str):
             sources.add(fact["semantic_key"])
     if not lengths:
+        if skipped:
+            # Explicit skip: CJK corpora have no ASCII tokens to voice-match.
+            return {"script": "cjk", "skipped": True, "sentence_count": 0}
         return {}
     sentence_count = len(lengths)
     script = max(script_tallies, key=lambda key: (script_tallies[key], key)) if script_tallies else "latin"
@@ -129,6 +135,12 @@ def evaluate_voice_match(candidate_text: str, voice_samples: Mapping[str, Any], 
     """
     if not voice_samples:
         return {"pass": True, "score": 1.0, "evidence": "no voice samples in repository evidence"}
+    if voice_samples.get("skipped"):
+        return {
+            "pass": True,
+            "score": 1.0,
+            "evidence": "cjk voice matching skipped (latin-only tokenizer)",
+        }
     sentence_count = int(voice_samples.get("sentence_count", 0))
     if sentence_count < MIN_SENTENCES_FOR_MATCH:
         return {

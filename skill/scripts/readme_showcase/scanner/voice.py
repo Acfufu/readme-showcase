@@ -173,6 +173,21 @@ def _voice_fact(
     )
 
 
+def _emit_value(features: dict[str, object]) -> dict[str, object]:
+    """Select the fact value for one source, or {} to skip emission.
+
+    The ASCII-only tokenizer yields no sentences for CJK corpora; rather than
+    silently emitting nothing (the voice gate would then pass as a no-op),
+    mark such facts with an explicit ``skipped`` boolean so the evaluator can
+    report an honest skip.
+    """
+    if features["sentences"]:
+        return features
+    if features["script"] == "cjk":
+        return {**features, "skipped": True}
+    return {}
+
+
 def extract_voice_samples(root: Path) -> list[dict[str, Any]]:
     """Extract voice-sample facts at scan time from the target repository.
 
@@ -198,12 +213,13 @@ def extract_voice_samples(root: Path) -> list[dict[str, Any]]:
             lines = lines + paragraphs[1][0]
             end = paragraphs[1][2]
         features = voice_features(" ".join(lines))
-        if features["sentences"]:
+        value = _emit_value(features)
+        if value:
             facts.append(_voice_fact(
                 path=name,
                 locator={"line_start": start, "line_end": end},
                 key="voice-sample:readme-prose",
-                value=features,
+                value=value,
                 raw=raw,
                 derivation="voice features derived from the first two README prose paragraphs",
             ))
@@ -220,12 +236,13 @@ def extract_voice_samples(root: Path) -> list[dict[str, Any]]:
         if not lines:
             continue
         features = voice_features("\n".join(lines))
-        if features["sentences"]:
+        value = _emit_value(features)
+        if value:
             facts.append(_voice_fact(
                 path=name,
                 locator={"line_start": first, "line_end": last},
                 key="voice-sample:changelog",
-                value=features,
+                value=value,
                 raw=raw,
                 derivation=f"voice features derived from the first {_MAX_CHANGELOG_LINES} CHANGELOG content lines",
             ))
@@ -235,12 +252,13 @@ def extract_voice_samples(root: Path) -> list[dict[str, Any]]:
         subject_text = "\n".join(subjects)
         raw = subject_text.encode("utf-8")
         features = voice_features(subject_text)
-        if features["sentences"]:
+        value = _emit_value(features)
+        if value:
             facts.append(_voice_fact(
                 path=VOICE_GIT_LOG_SOURCE,
                 locator={"line_start": 1, "line_end": len(subjects)},
                 key="voice-sample:commit-subjects",
-                value=features,
+                value=value,
                 raw=raw,
                 derivation="voice features derived from the last 20 git commit subjects",
             ))
