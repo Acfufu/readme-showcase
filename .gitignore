@@ -1,5 +1,9 @@
 .DS_Store
+# Local AI work files - never published to GitHub
 .omo/
+.mem/
+.memignore
+docs/superpowers/
 docs/architecture/visual-compiler/
 node_modules/
 __pycache__/
