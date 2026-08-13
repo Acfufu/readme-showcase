@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from pathlib import Path
@@ -108,6 +109,64 @@ class ReviewTest(unittest.TestCase):
             self.assertTrue(any(
                 f["code"] == "E_REVIEW_PARSE" for f in report["findings"]
             ), report["findings"])
+        finally:
+            os.environ.pop("VISION_REVIEW_API_KEY", None)
+            (out / "vision-review-brief.md").unlink(missing_ok=True)
+            (out / "vision-review-report.v1.json").unlink(missing_ok=True)
+            png.unlink(missing_ok=True)
+            out.rmdir()
+
+    def test_non_list_criteria_falls_back_to_host(self):
+        # Hardened extraction: a 200 response whose parsed body is not a dict
+        # (or whose "criteria" is not a list) -> E_REVIEW_PARSE host fallback,
+        # never an invalid report file.
+        out = Path(__file__).resolve().parent / "review-out-criteria"
+        out.mkdir(exist_ok=True)
+        png = out / "hero.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+        os.environ["VISION_REVIEW_API_KEY"] = "test-key"
+        try:
+            content = json.dumps({"criteria": "not-a-list"})
+            with mock.patch.object(review, "_chat_completion",
+                                   return_value={"choices": [{"message": {"content": content}}]}):
+                report = review_screenshots([str(png)], str(out), model="gpt-4o")
+            self.assertEqual(report["status"], "host")
+            self.assertTrue(any(
+                f["code"] == "E_REVIEW_PARSE" for f in report["findings"]
+            ), report["findings"])
+        finally:
+            os.environ.pop("VISION_REVIEW_API_KEY", None)
+            (out / "vision-review-brief.md").unlink(missing_ok=True)
+            (out / "vision-review-report.v1.json").unlink(missing_ok=True)
+            png.unlink(missing_ok=True)
+            out.rmdir()
+
+    def test_schema_violating_report_falls_back_to_host(self):
+        # Model-controlled criteria passing the shape checks but violating the
+        # closed schema (out-of-range basis points) must fall back to host mode
+        # instead of writing an invalid vision-review-report.v1.json.
+        out = Path(__file__).resolve().parent / "review-out-schema"
+        out.mkdir(exist_ok=True)
+        png = out / "hero.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+        os.environ["VISION_REVIEW_API_KEY"] = "test-key"
+        try:
+            content = json.dumps({
+                "criteria": [{
+                    "name": "composition_hierarchy", "pass": True,
+                    "score_basis_points": 99999,
+                    "evidence": [{"screenshot": "hero.png", "region": "0,0,10,10"}],
+                    "reason": "fine",
+                }],
+                "candidate_win_basis_points": None,
+            })
+            with mock.patch.object(review, "_chat_completion",
+                                   return_value={"choices": [{"message": {"content": content}}]}):
+                report = review_screenshots([str(png)], str(out), model="gpt-4o")
+            self.assertEqual(report["status"], "host")
+            parse_findings = [f for f in report["findings"] if f["code"] == "E_REVIEW_PARSE"]
+            self.assertTrue(parse_findings, report["findings"])
+            self.assertIn("schema validation", parse_findings[0]["message"])
         finally:
             os.environ.pop("VISION_REVIEW_API_KEY", None)
             (out / "vision-review-brief.md").unlink(missing_ok=True)

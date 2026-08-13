@@ -199,8 +199,9 @@ npm pack --dry-run
 `screenshot-gate` 路由把所有管线自有 SVG 资产按 900/360 渲染，运行可读性与
 裁剪硬门禁，并把证据写入 `stages/07-validation/attempts/<N>/screenshots/`。
 可选轨道在依赖缺失时降级为跳过提示：栅格化器为 PATH 上的 `resvg`（或
-`rsvg-convert`）——同时内置校验哈希的 `@resvg/resvg-js@2.6.2`
-（`skill/vendor/resvg-js/`，运行时不下载 npm）——`--browser` 主题捕获需要
+`rsvg-convert`）——可选：在 `skill/vendor/resvg-js/` 执行 `npm install`
+（固定 `@resvg/resvg-js@2.6.2`，安装时校验哈希）即可启用 bbox 检查；未安装时
+bbox 检查跳过——`--browser` 主题捕获需要
 `node` + `playwright`，`--review` 使用 `VISION_REVIEW_API_KEY` /
 `VISION_REVIEW_MODEL` / `VISION_REVIEW_API_BASE` 配置可选的视觉-LLM 审美评审。
 

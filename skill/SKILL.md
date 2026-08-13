@@ -333,9 +333,9 @@ renders every pipeline-owned SVG asset into the validation attempt's
 a canonical `screenshot-gate-report.v1.json`. Its optional tracks all degrade
 to skip notes when their dependencies are absent — never hard failures:
 
-- Rasterizer: `resvg` (or `rsvg-convert`) on PATH; the vendored, hash-verified
-  `@resvg/resvg-js@2.6.2` under `skill/vendor/resvg-js/` is pinned at install
-  time with no runtime npm download.
+- Rasterizer: `resvg` (or `rsvg-convert`) on PATH; optionally, `npm install`
+  in `skill/vendor/resvg-js/` (pinned `@resvg/resvg-js@2.6.2`, hash-verified at
+  install) enables the bbox check; absent, the bbox check skips.
 - `--browser` theme capture: `node` + `playwright`, renders the candidate
   README light and dark with GitHub theme CSS.
 - `--review` vision review: `VISION_REVIEW_API_KEY`, `VISION_REVIEW_MODEL`,

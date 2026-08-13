@@ -374,8 +374,21 @@ def check_taste_rules(svg_path: str) -> list[str]:
         findings.append(
             f"inconsistent corner radii {sorted(radii)}; lock one radius system")
 
-    text_count = len(root.findall(".//s:text", namespace))
-    if text_count > 5:
-        findings.append(
-            f"{text_count} text elements exceed the 5-element hero density cap")
+    # Density cap is scoped to the 1200x360 hero (visual-taste.md §5):
+    # diagrams/workflows legitimately carry more than 5 labels, so non-hero
+    # SVGs skip the cap entirely.
+    if _is_hero_svg(root):
+        text_count = len(root.findall(".//s:text", namespace))
+        if text_count > 5:
+            findings.append(
+                f"{text_count} text elements exceed the 5-element hero density cap")
     return findings
+
+
+def _is_hero_svg(root: ET.Element) -> bool:
+    """True when the SVG is the 1200x360 hero: root width/height attributes
+    match (px units tolerated), or the viewBox is exactly '0 0 1200 360'."""
+    if _parse_length(root.get("width")) == 1200.0 and _parse_length(root.get("height")) == 360.0:
+        return True
+    viewbox = _viewbox_numbers(root.get("viewBox"))
+    return viewbox is not None and viewbox == (0.0, 0.0, 1200.0, 360.0)

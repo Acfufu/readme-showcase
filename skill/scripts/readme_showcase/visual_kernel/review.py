@@ -158,6 +158,9 @@ def _host_report(out_dir: str, reference: str | None, findings: list[dict[str, s
         "pairwise": {"candidate_win_basis_points": None, "reference": reference},
         "findings": sorted(findings, key=lambda item: (item["code"], item["message"])),
     }
+    # Host report is minimal by construction; validating keeps a schema drift
+    # from ever writing a violating file (ContractError should not fire here).
+    report = validate_vision_review_report_v1(report)
     write_canonical_json_atomic(out / "vision-review-report.v1.json", report)
     return report
 
@@ -272,6 +275,8 @@ def review_screenshots(
             # mode, never block.
             content = completion["choices"][0]["message"]["content"]
             parsed = json.loads(content)
+            if not isinstance(parsed, dict) or not isinstance(parsed.get("criteria"), list):
+                raise TypeError("criteria must be a JSON array")
             criteria_out = parsed.get("criteria", [])
             # "fail" is REACHABLE: derived from the model's own criterion verdicts.
             status = "pass" if all(
@@ -311,5 +316,14 @@ def review_screenshots(
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    try:
+        report = validate_vision_review_report_v1(report)
+    except ContractError as exc:
+        # Model-controlled criteria violated the closed schema: fall back to
+        # host mode with an E_REVIEW_PARSE finding, never write a bad file.
+        findings.append(_finding(
+            "E_REVIEW_PARSE", f"model report failed schema validation: {exc}"))
+        _write_host_brief(criteria, screenshots, reference, out_dir)
+        return _host_report(out_dir, reference, findings)
     write_canonical_json_atomic(out / "vision-review-report.v1.json", report)
     return report

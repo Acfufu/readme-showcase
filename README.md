@@ -213,8 +213,9 @@ The `screenshot-gate` route renders every pipeline-owned SVG asset at 900/360,
 runs the hard readability/clipping gates, and writes evidence under
 `stages/07-validation/attempts/<N>/screenshots/`. Its optional tracks degrade
 to skip notes when dependencies are absent: the rasterizer is `resvg` (or
-`rsvg-convert`) on PATH — with a vendored, hash-verified `@resvg/resvg-js@2.6.2`
-under `skill/vendor/resvg-js/`, no runtime npm download — `--browser` theme
+`rsvg-convert`) on PATH — optional: `npm install` in `skill/vendor/resvg-js/`
+(pinned `@resvg/resvg-js@2.6.2`, hash-verified at install) enables the bbox
+check; absent, the bbox check skips — `--browser` theme
 capture needs `node` + `playwright`, and `--review` uses
 `VISION_REVIEW_API_KEY` / `VISION_REVIEW_MODEL` / `VISION_REVIEW_API_BASE` for
 the optional vision-LLM aesthetic review.
