@@ -94,3 +94,76 @@ Banned signatures (DTF §0.D, §9.F; HM):
 - No fake precision: values shown must exist in repository evidence
   (DTF §4.9; visual-production.md evidence contract). [M]
 - Colorblind-safe default palettes for series (WILKE ch. 3).
+
+## 7. SVG / diagram legibility
+
+- Consistent node and edge styles within one diagram; one stroke family, one
+  arrowhead style (WPG SVG conventions).
+- Arrow semantics: direction always means data/control flow; label edges that
+  are not obvious.
+- Label placement: labels sit beside, never on top of, the line they name;
+  no overlapping labels (WPG).
+- Text in diagrams uses the supporting scale (18+) or is nonessential
+  (visual-production.md; WPG).
+- No rasterized text; all text is real `<text>` elements (WPG: SVG is the
+  recommended format).
+- `<title>` and `<desc>` required on every visual (visual-production.md; WAI).
+
+## 8. GitHub media conventions
+
+- Alt text on EVERY image; GitHub surfaces enforce it (GHD).
+- Dark/light theme support via the `<picture>` element with
+  `#gh-light-mode-only` / `#gh-dark-mode-only` fragments (GHD), NOT via
+  `prefers-color-scheme` inside the SVG (browser divergence; see Plan 1).
+- Banner sizing: hero width fills the README column; height 300-420 at
+  1200-unit scale (visual-production.md).
+- Badge discipline: group shields, cap at 3, never as the hero (GHD).
+- Asset URLs: changed files ship under a new filename or query parameter
+  (visual-production.md asset replacement contract; camo caching).
+- SVG sanitization constraints: no `<script>`, no `foreignObject`, no
+  external resources (Plan 1 research; GHD).
+
+## 9. Accessibility checklist
+
+- Decorative images: `alt=""` (empty alt) (WAI decision tree).
+- Informative images: descriptive alt stating the visual's purpose (WAI).
+- Contrast ≥ 4.5:1 for body text, ≥ 3:1 for large text and graphics (WAI). [M]
+- No color-only encoding; never rely on color alone to convey meaning (WAI).
+- Text remains readable at 360px mobile width; required detail moves into
+  Markdown if it cannot (visual-production.md).
+
+## 10. Bilingual / CJK
+
+- Mixed-script spacing: insert space between CJK and Latin runs when the
+  locale requires it (visual-production.md locale contract).
+- CJK line-height needs ~1.2× the Latin line-height for the same font-size;
+  descender clipping rules do not apply, but ideograph top/bottom clipping
+  does; verify at 900px (Plan 1 clipping check). [M]
+- Font-fallback stacks: every text-bearing SVG declares the same system
+  stack; no remote fonts (visual-production.md).
+- No text-as-image: proof text is real `<text>` so locale variants can be
+  regenerated (visual-production.md multilingual contract).
+
+## 11. Copy review (self-audit)
+
+Run before accepting a visual (DTF §4.9 copy self-audit):
+
+- No grammatically broken strings; re-read every visible string.
+- No AI-hallucinated metaphors or "cute" wordplay.
+- No fake-craftsman labels (performative humility).
+- No em-dashes (section 1). [M]
+- Every number traceable to repository evidence.
+
+## 12. Mechanically checkable items → gate mapping
+
+| Rule | Check (Plan 1) | Level |
+|---|---|---|
+| viewBox present and well-formed | `check_viewbox` | hard gate |
+| Text clipping / overflow | `check_clipping_pixels` + `check_clipping_bbox` | hard gate |
+| Weak contrast (< 4.5:1) | `check_svg_contrast` | aesthetic findings |
+| Em-dash ban | `check_taste_rules` (Task 7) | aesthetic findings |
+| Type-scale ratio | `check_taste_rules` (Task 7) | aesthetic findings |
+| Radius consistency | `check_taste_rules` (Task 7) | aesthetic findings |
+| Density cap (≤ 5 hero elements) | `check_taste_rules` (Task 7) | aesthetic findings |
+| Theme fragments present for dual-theme | `capture_theme` (playwright) | optional hard gate |
+| Aesthetic judgment | `visual_llm_review` (Plan 1 Task 6) | optional review |
