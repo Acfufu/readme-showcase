@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Fixture hero</title>
+  <desc id="desc">Valid hero SVG for raster tests.</desc>
+  <rect width="1200" height="360" fill="#0a1f44"/>
+  <text x="60" y="120" font-size="48" fill="#ffffff">Fixture Project</text>
+  <text x="60" y="180" font-size="40" fill="#cbd5e1">A fixture hero used by the screenshot gate tests.</text>
+</svg>
