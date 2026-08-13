@@ -192,6 +192,7 @@ local handoff. Remote checks and writes remain a later approval-bound step.
 ```bash
 # English source verification
 python3.11 skill/scripts/readme_pipeline.py validate-dataset --manifest dataset/retrieval/manifest.json
+python3.11 skill/scripts/readme_pipeline.py screenshot-gate --root .
 python3.11 skill/scripts/audit_readme.py README.md
 python3.11 skill/scripts/audit_readme.py README_zh.md
 python3.11 -m unittest discover -s tests -v
@@ -201,6 +202,16 @@ npm pack --dry-run
 Motion rendering additionally needs Pillow, `ffmpeg`, and `rsvg-convert` or
 macOS `sips`. ELK details live in
 [`elk-structure.md`](skill/references/elk-structure.md).
+
+The `screenshot-gate` route renders every pipeline-owned SVG asset at 900/360,
+runs the hard readability/clipping gates, and writes evidence under
+`stages/07-validation/attempts/<N>/screenshots/`. Its optional tracks degrade
+to skip notes when dependencies are absent: the rasterizer is `resvg` (or
+`rsvg-convert`) on PATH — with a vendored, hash-verified `@resvg/resvg-js@2.6.2`
+under `skill/vendor/resvg-js/`, no runtime npm download — `--browser` theme
+capture needs `node` + `playwright`, and `--review` uses
+`VISION_REVIEW_API_KEY` / `VISION_REVIEW_MODEL` / `VISION_REVIEW_API_BASE` for
+the optional vision-LLM aesthetic review.
 
 Motion survives on the live GitHub render pipeline only while both engines
 play it. Replay the dual-engine contract (SMIL + CSS `@keyframes` in Chrome

@@ -1329,6 +1329,12 @@ class PipelineCliTests(unittest.TestCase):
         ):
             self.assertIn(subcommand, result.stdout)
 
+    def test_screenshot_gate_route_declared(self) -> None:
+        result = self.run_cli("screenshot-gate", "--help")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("screenshot-gate", result.stdout)
+
     def test_invalid_schema_diagnostics_use_stderr_and_exit_two(self) -> None:
         fixtures = (
             ({"schema_version": 2}, "E_SCHEMA_VERSION"),

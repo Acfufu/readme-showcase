@@ -182,6 +182,7 @@ python3.11 skill/scripts/readme_pipeline.py preview
 ```bash
 # 中文源码验证
 python3.11 skill/scripts/readme_pipeline.py validate-dataset --manifest dataset/retrieval/manifest.json
+python3.11 skill/scripts/readme_pipeline.py screenshot-gate --root .
 python3.11 skill/scripts/audit_readme.py README.md
 python3.11 skill/scripts/audit_readme.py README_zh.md
 python3.11 -m unittest discover -s tests -v
@@ -190,6 +191,14 @@ npm pack --dry-run
 
 动效渲染另外需要 Pillow、`ffmpeg`，以及 `rsvg-convert` 或 macOS `sips`。ELK
 细节见 [`elk-structure.md`](skill/references/elk-structure.md)。
+
+`screenshot-gate` 路由把所有管线自有 SVG 资产按 900/360 渲染，运行可读性与
+裁剪硬门禁，并把证据写入 `stages/07-validation/attempts/<N>/screenshots/`。
+可选轨道在依赖缺失时降级为跳过提示：栅格化器为 PATH 上的 `resvg`（或
+`rsvg-convert`）——同时内置校验哈希的 `@resvg/resvg-js@2.6.2`
+（`skill/vendor/resvg-js/`，运行时不下载 npm）——`--browser` 主题捕获需要
+`node` + `playwright`，`--review` 使用 `VISION_REVIEW_API_KEY` /
+`VISION_REVIEW_MODEL` / `VISION_REVIEW_API_BASE` 配置可选的视觉-LLM 审美评审。
 
 ## 仓库地图
 

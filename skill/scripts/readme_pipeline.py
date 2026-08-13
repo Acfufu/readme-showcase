@@ -331,6 +331,18 @@ def _preview(arguments: argparse.Namespace) -> dict[str, object]:
     return result
 
 
+def _screenshot_gate(arguments: argparse.Namespace) -> dict[str, object]:
+    result = _RUNNER.screenshot_gate_run(
+        arguments.workspace,
+        arguments.root or Path.cwd(),
+        browser=arguments.browser,
+        review=arguments.review,
+    )
+    if result["status"] == "fail":
+        print("screenshot gate: HARD FAIL", file=sys.stderr)
+    return result
+
+
 _PREVIEW_BROWSER_HINT = "可选: `preview --browser` 双引擎渲染检查"
 _BROWSER_CHECK_TIMEOUT = 300
 
@@ -480,6 +492,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="human-triggered dual-engine matrix check (requires Chrome, Firefox, geckodriver)",
     )
     preview.set_defaults(handler=_preview)
+
+    screenshot_gate = subcommands.add_parser("screenshot-gate")
+    _path_argument(screenshot_gate, "--workspace", required=False)
+    _path_argument(screenshot_gate, "--root", required=False)
+    screenshot_gate.add_argument(
+        "--browser",
+        action="store_true",
+        help="optional playwright theme capture (light+dark) on the README",
+    )
+    screenshot_gate.add_argument(
+        "--review",
+        action="store_true",
+        help="optional vision-LLM aesthetic review of the screenshots",
+    )
+    screenshot_gate.set_defaults(handler=_screenshot_gate)
 
     return parser
 

@@ -48,7 +48,7 @@ class ArchitectureBaselineTests(unittest.TestCase):
         }
         self.assertEqual(
             set(subcommands.choices),
-            legacy_commands | {"run", "resume", "status", "explain", "preview"},
+            legacy_commands | {"run", "resume", "status", "explain", "preview", "screenshot-gate"},
         )
         self.assertEqual(
             {name for name in PUBLIC_SYMBOLS if callable(getattr(pipeline_core, name, None))},

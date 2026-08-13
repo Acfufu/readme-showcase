@@ -35,6 +35,9 @@ from ..generation.request import (
     validate_revision_request,
 )
 from ..preview.renderer import render_preview
+from ..visual_kernel.gate import run_screenshot_gate
+from ..visual_kernel.review import review_screenshots
+from ..visual_kernel.theme_capture import capture_theme
 from .logging import StageLogger
 from .stages import STAGES, CandidateImportStage, RunContext, candidate_files
 from .workspace import RunWorkspace
@@ -812,3 +815,96 @@ def preview_run(workspace_path: Path | None, root: Path | None = None) -> dict[s
                 raise ContractError("E_REVISION_POINTER", "revision root must be a real directory")
             _assert_authoritative_revision_pointer(manifest, _revision_history(root))
         return render_preview(workspace, manifest)
+
+
+def _gate_asset_svgs(
+    workspace: RunWorkspace,
+    manifest: dict[str, Any],
+    validation_attempt: int,
+) -> list[str]:
+    """Inventory text-bearing SVG assets for the screenshot gate.
+
+    Mirrors candidate_files()'s bounded inventory posture: only files the
+    pipeline itself wrote, never templates, deduplicated and sorted so gate
+    output is deterministic. Sources are the stage-5 candidate assets, the
+    stage-6 bundle-assemble attempt (compiled-route SVGs), and the stage-7
+    validation attempt (already-captured SVGs on re-runs).
+    """
+    roots = [
+        workspace.root / "stages/05-candidate",
+        workspace.root
+        / f"stages/06-bundle-assemble/attempts/{manifest['stages'][5]['attempt']}",
+        workspace.root / f"stages/07-validation/attempts/{validation_attempt}",
+    ]
+    svgs: list[str] = []
+    seen: set[str] = set()
+    for root in roots:
+        for path in sorted(root.rglob("*.svg")):
+            if "templates" in {part.casefold() for part in path.parts}:
+                continue
+            candidate = os.fspath(path)
+            if candidate not in seen:
+                seen.add(candidate)
+                svgs.append(candidate)
+    return svgs
+
+
+def _gate_readme_path(workspace: RunWorkspace, manifest: dict[str, Any]) -> str:
+    """Return a localized candidate README for theme capture.
+
+    Candidate READMEs live under stage-5 candidate for both the v2 locale
+    array and the v1 README.md/README_zh.md pair; the first existing one wins.
+    """
+    root = workspace.root / "stages/05-candidate"
+    for relative in ("README.md", "README_zh.md"):
+        path = root / relative
+        if path.is_file():
+            return os.fspath(path)
+    raise ContractError(
+        "E_RUN_PATH",
+        "no candidate README available for screenshot-gate --browser theme capture",
+    )
+
+
+def screenshot_gate_run(
+    workspace_path: Path | None,
+    root: Path | None = None,
+    *,
+    browser: bool = False,
+    review: bool = False,
+) -> dict[str, object]:
+    """Run the screenshot gate for the latest validation attempt.
+
+    Mirrors preview_run: resolve the workspace the same way, hold the runner
+    lock, read the manifest, and derive the validation attempt from
+    manifest["stages"][6] (index 6 = 07-validation). Hard gate findings fail
+    the run; the optional rasterizer, playwright theme capture, and vision-LLM
+    review tracks degrade to advisory skip notes when their dependencies are
+    absent.
+    """
+    workspace = _resolved_workspace(workspace_path, root)
+    with _runner_lock(workspace):
+        manifest = workspace.read_manifest()
+        validation_attempt = manifest["stages"][6]["attempt"]
+        screenshots_dir = (
+            workspace.root
+            / f"stages/07-validation/attempts/{validation_attempt}/screenshots"
+        )
+        svg_assets = _gate_asset_svgs(workspace, manifest, validation_attempt)
+        report = run_screenshot_gate(svg_assets, str(screenshots_dir))
+        result: dict[str, object] = {
+            "status": report["status"],
+            "screenshots_dir": str(screenshots_dir),
+            "screenshot_report": report,
+        }
+        if browser:
+            readme = _gate_readme_path(workspace, manifest)
+            result["theme_capture"] = capture_theme(
+                readme, str(screenshots_dir), "light"
+            ) + capture_theme(readme, str(screenshots_dir), "dark")
+        if review:
+            pngs = sorted(str(path) for path in screenshots_dir.glob("*.png"))
+            result["vision_review"] = review_screenshots(
+                pngs, str(screenshots_dir.parent)
+            )
+        return result

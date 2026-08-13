@@ -30,10 +30,11 @@ Use one Skill entry with an optional command and free-form target:
 | `redesign [target]` | Rebuild the approved README scope around verified behavior | README mode; stop at local preview |
 | `polish [target]` | Refine a narrow existing README area without concealed redesign | README mode; preserve identity and surrounding content |
 | `visualize [target]` | Produce an approved hero, diagram, workflow, or explicit motion variant | Asset-only mode; embedding needs separate approval |
+| `screenshot-gate [--browser] [--review]` | Render every SVG asset at 900/360, run hard gates + optional theme/vision-LLM review | Evidence reports; gate failure stops the run |
 
-`status`, `resume`, and `preview` are operational routes to the existing
-pipeline commands. They are not authoring modes and do not broaden write or
-publication authority.
+`status`, `resume`, `preview`, and `screenshot-gate` are operational routes to
+the existing pipeline commands. They are not authoring modes and do not broaden
+write or publication authority.
 
 `visualize` accepts `--creativity low|medium|high` for hand-authored routes
 (`static`, `elk`) only. The `compiled` route does not accept it — compiled
@@ -311,6 +312,21 @@ recorder fails with an install hint and static SVG stays the default. See the
 - Inspect assets at approximately `900px` desktop width and `360px` mobile width.
 - Report what changed, what stayed intentionally plain, what was not verified, and which files were deliberately left untouched.
 - Show preview and diff before any publish action. Attribution is optional, requires an explicit request for a repository the user owns or maintains, and never changes delivery eligibility.
+
+The `screenshot-gate` pipeline route automates the 900/360 inspection: it
+renders every pipeline-owned SVG asset into the validation attempt's
+`screenshots/` directory, runs the hard readability/clipping gates, and writes
+a canonical `screenshot-gate-report.v1.json`. Its optional tracks all degrade
+to skip notes when their dependencies are absent — never hard failures:
+
+- Rasterizer: `resvg` (or `rsvg-convert`) on PATH; the vendored, hash-verified
+  `@resvg/resvg-js@2.6.2` under `skill/vendor/resvg-js/` is pinned at install
+  time with no runtime npm download.
+- `--browser` theme capture: `node` + `playwright`, renders the candidate
+  README light and dark with GitHub theme CSS.
+- `--review` vision review: `VISION_REVIEW_API_KEY`, `VISION_REVIEW_MODEL`,
+  and `VISION_REVIEW_API_BASE` configure the optional vision-LLM aesthetic
+  review; without them it falls back to a host-authored review brief.
 
 Pinned upstream classifications and reuse counts live in
 [references/beautify-github-readme-delta.md](references/beautify-github-readme-delta.md).
