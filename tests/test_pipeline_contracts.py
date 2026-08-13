@@ -45,6 +45,7 @@ from skill.scripts.readme_showcase.generation.assembler import (
     canonical_markdown_blocks,
     validate_generated_bundle_v3,
 )
+from skill.scripts.readme_showcase.orchestration.runner import screenshot_gate_run
 from skill.scripts.readme_showcase.orchestration.workspace import RunWorkspace
 from skill.scripts.readme_showcase.orchestration import stages as stages_module
 from skill.scripts.readme_showcase.orchestration import workspace as workspace_module
@@ -1358,6 +1359,33 @@ class PipelineCliTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 2)
                     self.assertEqual(result.stdout, "")
                     self.assertIn(code, result.stderr)
+
+
+class ScreenshotGateGuardTests(unittest.TestCase):
+    def test_uncommitted_validation_attempt_fails_before_creating_directories(self) -> None:
+        # Fresh workspace = validation never ran; gate must raise before
+        # run_screenshot_gate() creates a stray attempts/0/screenshots dir.
+        with tempfile.TemporaryDirectory() as workspace_temporary:
+            workspace = RunWorkspace(Path(workspace_temporary), REPO_ROOT)
+            workspace.initialize(
+                repository="local/repository",
+                base_sha="a" * 40,
+                configuration={
+                    "mode": "readme",
+                    "project_type": "developer-tool",
+                    "locales": ["en"],
+                    "scanner_profile": "default",
+                },
+                clock=lambda: "2026-08-05T00:00:00Z",
+            )
+
+            with self.assertRaises(ContractError) as raised:
+                screenshot_gate_run(Path(workspace_temporary))
+
+            self.assertEqual(raised.exception.code, "E_RUN_ATTEMPT")
+            validation_stage = workspace.root / "stages/07-validation"
+            self.assertFalse((validation_stage / "attempts").exists())
+            self.assertFalse((validation_stage / "current.json").exists())
 
 
 if __name__ == "__main__":

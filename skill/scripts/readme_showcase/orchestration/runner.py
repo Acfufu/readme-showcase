@@ -886,6 +886,11 @@ def screenshot_gate_run(
     with _runner_lock(workspace):
         manifest = workspace.read_manifest()
         validation_attempt = manifest["stages"][6]["attempt"]
+        if validation_attempt < 1:
+            raise ContractError(
+                "E_RUN_ATTEMPT",
+                "no validation attempt to gate (validation never ran)",
+            )
         screenshots_dir = (
             workspace.root
             / f"stages/07-validation/attempts/{validation_attempt}/screenshots"
