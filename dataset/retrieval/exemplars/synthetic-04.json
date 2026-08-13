@@ -1,0 +1,47 @@
+{
+  "record_id": "exemplar-synthetic-04",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "workflow"
+  ],
+  "tags": [
+    "diagram",
+    "workflow"
+  ],
+  "pattern": {
+    "summary": "Workflow diagram: a workflow zone carries the numbered pipeline and a metadata strip lists supporting facts.",
+    "structure": "The breakdown marks a workflow zone holding the pipeline diagram and a metadata strip; hierarchy compresses to display and supporting levels.",
+    "proof": "Proof is the rendered pipeline diagram showing real stages, presented without a numbered-eyebrow gimmick.",
+    "composition_structure": {
+      "zones": [
+        "metadata",
+        "workflow"
+      ],
+      "hierarchy": [
+        "display",
+        "supporting"
+      ],
+      "negative_patterns": [
+        "numbered-eyebrow"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/synthetic-04.svg",
+    "sha256": "34a8fbfb20fe926f5e8ea05562b91056f916ed9a16cda889446a93af6ee7f793",
+    "kind": "synthetic"
+  },
+  "source": {
+    "repository_url": "https://github.com/argoproj/argo-workflows",
+    "commit": "96e62da4a1cd273e174df0239804705b913700bd",
+    "material_sha256": "34a8fbfb20fe926f5e8ea05562b91056f916ed9a16cda889446a93af6ee7f793",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/argoproj/argo-workflows/blob/96e62da4a1cd273e174df0239804705b913700bd/LICENSE",
+    "license_evidence_sha256": "c996fc213c94f4a4a838407d355b081226caa7b103a4f239bb87fb8f1d8e3a60",
+    "human_reviewed": true
+  },
+  "split": "train"
+}

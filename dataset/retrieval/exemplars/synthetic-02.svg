@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+<title id="title">Structural breakdown</title>
+<desc id="desc">Composition zones, hierarchy levels, and negative patterns.</desc>
+<rect width="1200" height="360" fill="#0f172a"/>
+<text x="60" y="40" font-size="20" fill="#e2e8f0">Composition zones (structure only)</text>
+<rect x="620" y="80" width="520" height="160" fill="none" stroke="#3b82f6" stroke-width="3"/>
+<text x="632" y="108" font-size="18" fill="#3b82f6">proof</text>
+<rect x="60" y="260" width="1080" height="60" fill="none" stroke="#94a3b8" stroke-width="3"/>
+<text x="72" y="288" font-size="18" fill="#94a3b8">metadata</text>
+<text x="60" y="180" font-size="16" fill="#94a3b8">Hierarchy: display &gt; supporting</text>
+<text x="60" y="220" font-size="16" fill="#f87171" text-decoration="line-through">decoration-text-strip</text>
+<text x="60" y="248" font-size="16" fill="#f87171" text-decoration="line-through">generic-gradient</text>
+<text x="60" y="300" font-size="14" fill="#64748b">Negative patterns (banned, shown crossed out)</text>
+</svg>

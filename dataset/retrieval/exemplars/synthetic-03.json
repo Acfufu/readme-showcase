@@ -1,0 +1,48 @@
+{
+  "record_id": "exemplar-synthetic-03",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "overview"
+  ],
+  "tags": [
+    "background-proof",
+    "context",
+    "proof"
+  ],
+  "pattern": {
+    "summary": "Background proof: the context zone sets the stage while a proof zone carries the product screenshot.",
+    "structure": "The breakdown marks a context zone framing the situation and a proof zone holding the real product surface; hierarchy spans display and section.",
+    "proof": "Proof is the authentic product screenshot rendered in the proof zone, never a fake-precision mock.",
+    "composition_structure": {
+      "zones": [
+        "context",
+        "proof"
+      ],
+      "hierarchy": [
+        "display",
+        "section"
+      ],
+      "negative_patterns": [
+        "fake-precision"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/synthetic-03.svg",
+    "sha256": "7cd2f8c6662da99b0fe08e522c4935656b5c07b789be8af0de9ed2b1fb7ea569",
+    "kind": "synthetic"
+  },
+  "source": {
+    "repository_url": "https://github.com/HumanSignal/label-studio",
+    "commit": "b4f80615bd6a88b9e85a71796ffe0cc31a35c947",
+    "material_sha256": "7cd2f8c6662da99b0fe08e522c4935656b5c07b789be8af0de9ed2b1fb7ea569",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/HumanSignal/label-studio/blob/b4f80615bd6a88b9e85a71796ffe0cc31a35c947/LICENSE",
+    "license_evidence_sha256": "ca656b15c1e22468c7798df4356660755fb1ccd12d7ee0bade82bd65e3038e1b",
+    "human_reviewed": true
+  },
+  "split": "train"
+}

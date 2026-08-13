@@ -1,0 +1,49 @@
+{
+  "record_id": "exemplar-synthetic-02",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "features"
+  ],
+  "tags": [
+    "artifact-wall",
+    "proof",
+    "terminal"
+  ],
+  "pattern": {
+    "summary": "Artifact wall: a dense wall of real output panels occupies the proof zone, with a metadata strip beneath.",
+    "structure": "The breakdown marks a proof zone holding multiple rendered panels plus a metadata strip; hierarchy compresses to display and supporting levels.",
+    "proof": "Proof is the real terminal and panel output shown as an annotated wall, never replaced by decorative placeholders.",
+    "composition_structure": {
+      "zones": [
+        "metadata",
+        "proof"
+      ],
+      "hierarchy": [
+        "display",
+        "supporting"
+      ],
+      "negative_patterns": [
+        "decoration-text-strip",
+        "generic-gradient"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/synthetic-02.svg",
+    "sha256": "9338c61e4d094e66b57f3e3c2825daf42a89cfa195c2feb36c4e4efd6fe4c9e3",
+    "kind": "synthetic"
+  },
+  "source": {
+    "repository_url": "https://github.com/aristocratos/btop",
+    "commit": "d5e5619cbf5a267b592b61cdbc3f98a6420259a3",
+    "material_sha256": "9338c61e4d094e66b57f3e3c2825daf42a89cfa195c2feb36c4e4efd6fe4c9e3",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/aristocratos/btop/blob/d5e5619cbf5a267b592b61cdbc3f98a6420259a3/LICENSE",
+    "license_evidence_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "human_reviewed": true
+  },
+  "split": "train"
+}

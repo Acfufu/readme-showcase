@@ -22,6 +22,19 @@ class ExemplarDatasetTest(unittest.TestCase):
             digest = hashlib.sha256(asset.read_bytes()).hexdigest()
             self.assertEqual(digest, validated["asset"]["sha256"], f"sha mismatch {asset}")
 
+    def test_synthetic_records_valid_train_only(self):
+        records = sorted(EXEMPLARS.glob("synthetic-*.json"))
+        self.assertGreaterEqual(len(records), 4)
+        for path in records:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(record["split"], "train")
+            self.assertEqual(record["asset"]["kind"], "synthetic")
+            validated = validate_exemplar_record_v1(record)
+            asset = EXEMPLARS / validated["asset"]["path"].rsplit("/", 1)[-1]
+            self.assertTrue(asset.exists(), f"missing asset {asset}")
+            digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+            self.assertEqual(digest, validated["asset"]["sha256"], f"sha mismatch {asset}")
+
     def test_split_ratio(self):
         records = [json.loads(p.read_text(encoding="utf-8")) for p in EXEMPLARS.glob("curated-*.json")]
         train = [r for r in records if r["split"] == "train"]

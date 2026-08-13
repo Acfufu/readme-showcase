@@ -1,0 +1,51 @@
+{
+  "record_id": "exemplar-synthetic-01",
+  "project_types": [
+    "developer-tool"
+  ],
+  "section_intents": [
+    "hero"
+  ],
+  "tags": [
+    "hero",
+    "identity",
+    "split-hero"
+  ],
+  "pattern": {
+    "summary": "Split hero with three annotated composition zones: identity, proof, and metadata.",
+    "structure": "A breakdown SVG marks the identity zone on the left, the proof zone on the right, and a metadata strip below; hierarchy runs display to section to supporting.",
+    "proof": "Proof is the rendered editor window shown as real annotated structure rather than decoration.",
+    "composition_structure": {
+      "zones": [
+        "identity",
+        "metadata",
+        "proof"
+      ],
+      "hierarchy": [
+        "display",
+        "section",
+        "supporting"
+      ],
+      "negative_patterns": [
+        "centered-template",
+        "three-equal"
+      ]
+    }
+  },
+  "asset": {
+    "path": "dataset/retrieval/exemplars/synthetic-01.svg",
+    "sha256": "525a618e4b10223893f11da2824849b476b9c32988c35e30a0a40bbc55591ec8",
+    "kind": "synthetic"
+  },
+  "source": {
+    "repository_url": "https://github.com/prisma/prisma",
+    "commit": "c332c674d102c7a716409bc5b455777c9725f397",
+    "material_sha256": "525a618e4b10223893f11da2824849b476b9c32988c35e30a0a40bbc55591ec8",
+    "license_spdx": "Apache-2.0",
+    "license_evidence_spdx": "Apache-2.0",
+    "license_evidence_url": "https://github.com/prisma/prisma/blob/c332c674d102c7a716409bc5b455777c9725f397/LICENSE",
+    "license_evidence_sha256": "1b7b1c659a82d4688d9f781b3eaccccd5415500e5ba87f32f8f2a5e94dffaa15",
+    "human_reviewed": true
+  },
+  "split": "train"
+}
