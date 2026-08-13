@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Weak contrast hero</title>
+  <desc id="desc">Low-contrast text on the background.</desc>
+  <rect width="1200" height="360" fill="#ffffff"/>
+  <text x="60" y="120" font-size="48" fill="#b0b0b0">Low contrast text</text>
+</svg>

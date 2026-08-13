@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Clipped hero</title>
+  <desc id="desc">Text drawn past the viewport bottom to trigger clipping detection.</desc>
+  <rect width="1200" height="360" fill="#0a1f44"/>
+  <text x="60" y="340" font-size="120" fill="#ffffff">Overflowing text block past edge</text>
+</svg>
