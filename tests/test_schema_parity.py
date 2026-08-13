@@ -194,10 +194,10 @@ class SchemaParityTests(unittest.TestCase):
         self.assertEqual(importlib.metadata.version("jsonschema"), "4.26.0")
         self.assertEqual(self.index["draft"], "https://json-schema.org/draft/2020-12/schema")
         entries = self.index["schemas"]
-        self.assertEqual(len(entries), 30)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 30)
-        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 30)
-        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 60)
+        self.assertEqual(len(entries), 31)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))), 31)
+        self.assertEqual(len(list(FIXTURES.glob("*.invalid.json"))), 31)
+        self.assertEqual(len(list(FIXTURES.glob("*.valid.json"))) + len(list(FIXTURES.glob("*.invalid.json"))), 62)
         self.assertEqual(INDEX.read_bytes(), canonical_json_bytes(self.index))
         self.assertEqual(
             [entry["schema"] for entry in entries],

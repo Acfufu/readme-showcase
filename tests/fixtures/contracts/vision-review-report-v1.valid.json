@@ -1,0 +1,1 @@
+{"criteria":[{"evidence":[{"region":"0,0,900,270","screenshot":"hero-ok-900.png"}],"name":"composition_hierarchy","pass":true,"reason":"Clear hierarchy with the project name dominant.","score_basis_points":9000}],"findings":[],"pairwise":{"candidate_win_basis_points":null,"reference":null},"reviewer_model":"gpt-4o","schema_version":1,"status":"pass"}

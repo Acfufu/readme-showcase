@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://readme-showcase.local/schemas/vision-review-report.v1.schema.json",
+  "title": "Vision-LLM review report v1",
+  "$comment": "Closed vision-LLM review report projection. The JSON Schema enforces the structural shape; Python validation additionally enforces canonical (code, message) ordering of findings via validate_vision_review_report_v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "reviewer_model", "criteria", "pairwise", "findings"],
+  "x-python-semantic-validation": {
+    "codes": ["E_SCHEMA_VALUE"]
+  },
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {"enum": ["pass", "fail", "skipped", "host"]},
+    "reviewer_model": {"type": "string", "minLength": 1},
+    "criteria": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "pass", "score_basis_points", "evidence", "reason"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "pass": {"type": "boolean"},
+          "score_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000},
+          "evidence": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["screenshot", "region"],
+              "properties": {
+                "screenshot": {"type": "string", "minLength": 1},
+                "region": {"type": "string", "pattern": "^\\d+,\\d+,\\d+,\\d+$"}
+              }
+            }
+          },
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "pairwise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_win_basis_points", "reference"],
+      "properties": {
+        "candidate_win_basis_points": {"type": ["integer", "null"], "minimum": 0, "maximum": 10000},
+        "reference": {"type": ["string", "null"]}
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": {"type": "string", "minLength": 1},
+          "message": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}
