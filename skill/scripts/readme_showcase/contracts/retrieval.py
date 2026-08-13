@@ -480,9 +480,70 @@ def adapt_v2_to_v1(payload: Any) -> dict[str, Any]:
     }
 
 
+EXEMPLAR_KINDS = ("curated", "synthetic")
+EXEMPLAR_SPLITS = ("train", "test")
+
+
+def validate_exemplar_record_v1(value: Any) -> dict[str, Any]:
+    # Top-level strict field-set check mirrors the schema's
+    # additionalProperties: false (review MINOR: python validator must reject
+    # extra top-level keys exactly like the JSON Schema does).
+    record = _object(value, {
+        "record_id", "project_types", "section_intents", "tags", "pattern",
+        "asset", "source", "split",
+    }, "exemplar record")
+    pattern = _object(record.get("pattern"), {
+        "summary", "structure", "proof", "composition_structure",
+    }, "pattern")
+    composition = _object(pattern.get("composition_structure"), {
+        "zones", "hierarchy", "negative_patterns",
+    }, "pattern.composition_structure")
+    zones = _text_list(composition.get("zones"), "pattern.composition_structure.zones")
+    hierarchy = _text_list(composition.get("hierarchy"), "pattern.composition_structure.hierarchy")
+    if not zones:
+        raise ContractError("E_EXEMPLAR_ZONES", "composition_structure.zones must not be empty")
+    if not hierarchy:
+        raise ContractError("E_EXEMPLAR_HIERARCHY", "composition_structure.hierarchy must not be empty")
+    negative = _text_list(
+        composition.get("negative_patterns"), "pattern.composition_structure.negative_patterns")
+    asset = _object(value.get("asset"), {"path", "sha256", "kind"}, "asset")
+    kind = asset.get("kind")
+    if kind not in EXEMPLAR_KINDS:
+        raise ContractError("E_EXEMPLAR_KIND", f"asset.kind must be one of {EXEMPLAR_KINDS}")
+    split = value.get("split")
+    if split not in EXEMPLAR_SPLITS:
+        raise ContractError("E_EXEMPLAR_SPLIT", f"split must be one of {EXEMPLAR_SPLITS}")
+    return {
+        "record_id": _bounded_text(value.get("record_id"), "record_id", maximum=120),
+        "project_types": _text_list(value.get("project_types"), "project_types"),
+        "section_intents": _text_list(value.get("section_intents"), "section_intents"),
+        "tags": _text_list(value.get("tags"), "tags"),
+        "pattern": {
+            "summary": _bounded_text(pattern.get("summary"), "pattern.summary", maximum=240),
+            "structure": _bounded_text(pattern.get("structure"), "pattern.structure", maximum=400),
+            "proof": _bounded_text(pattern.get("proof"), "pattern.proof", maximum=400),
+            "composition_structure": {
+                "zones": zones,
+                "hierarchy": hierarchy,
+                "negative_patterns": negative,
+            },
+        },
+        "asset": {
+            "path": _bounded_text(asset.get("path"), "asset.path", maximum=400),
+            "sha256": asset.get("sha256"),
+            "kind": kind,
+        },
+        "source": _validate_source(record.get("source"), "source"),
+        "split": split,
+    }
+
+
 __all__ = [
+    "EXEMPLAR_KINDS",
+    "EXEMPLAR_SPLITS",
     "adapt_v2_to_v1",
     "load_retrieval_candidate_ledger_v1",
+    "validate_exemplar_record_v1",
     "validate_retrieval_candidate_ledger_v1",
     "validate_retrieval_packet_v2",
     "validate_retrieval_query",

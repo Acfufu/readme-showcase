@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://readme-showcase.local/schemas/exemplar-record.v1.schema.json",
+  "title": "Exemplar retrieval record v1",
+  "$comment": "Closed exemplar retrieval record with composition-structure annotation. The JSON Schema enforces the structural shape; Python validation additionally enforces normalized/sorted/unique text lists, bounded text lengths, closed kind and split enumerations, and the trusted source binding via validate_exemplar_record_v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["record_id", "project_types", "section_intents", "tags", "pattern", "asset", "source", "split"],
+  "x-python-semantic-validation": {
+    "codes": [
+      "E_RETRIEVAL_PACKET",
+      "E_DATASET_PROVENANCE",
+      "E_EXEMPLAR_ZONES",
+      "E_EXEMPLAR_HIERARCHY",
+      "E_EXEMPLAR_KIND",
+      "E_EXEMPLAR_SPLIT"
+    ]
+  },
+  "properties": {
+    "record_id": {"type": "string", "minLength": 1},
+    "project_types": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "section_intents": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "structure", "proof", "composition_structure"],
+      "properties": {
+        "summary": {"type": "string", "minLength": 1},
+        "structure": {"type": "string", "minLength": 1},
+        "proof": {"type": "string", "minLength": 1},
+        "composition_structure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["zones", "hierarchy", "negative_patterns"],
+          "properties": {
+            "zones": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"enum": ["identity", "proof", "metadata", "context", "workflow"]}
+            },
+            "hierarchy": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"enum": ["display", "section", "supporting"]}
+            },
+            "negative_patterns": {
+              "type": "array",
+              "items": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "kind"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "kind": {"enum": ["curated", "synthetic"]}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository_url", "commit", "material_sha256", "license_spdx", "license_evidence_spdx", "license_evidence_url", "license_evidence_sha256", "human_reviewed"],
+      "properties": {
+        "repository_url": {"type": "string", "minLength": 1},
+        "commit": {"type": "string", "minLength": 40},
+        "material_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "license_spdx": {"type": "string", "minLength": 1},
+        "license_evidence_spdx": {"type": "string", "minLength": 1},
+        "license_evidence_url": {"type": "string", "minLength": 1},
+        "license_evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "human_reviewed": {"const": true}
+      }
+    },
+    "split": {"enum": ["train", "test"]}
+  }
+}
