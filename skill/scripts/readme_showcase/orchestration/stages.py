@@ -584,6 +584,9 @@ class BundleAssembleStage:
         root = context.workspace.root / "stages/05-candidate"
         _, evidence_v1 = _canonical_object(context.attempt_file(0, "repository-evidence.json"))
         evidence = _v3_evidence_graph(context, evidence_v1)
+        # Keep the materialized evidence graph in sync with the bundle so the
+        # validation stage never reads a stale candidate copy.
+        write_bytes_atomic(root / "repository-evidence.json", canonical_json_bytes(evidence))
         retrieval_raw = read_regular_bytes(context.attempt_file(1, "retrieval-packet.json"), maximum=MAX_CANDIDATE_BYTES)
         claim_raw = read_regular_bytes(root / "claim-map.json", maximum=MAX_CANDIDATE_BYTES)
         manifest_raw = read_regular_bytes(root / "asset-manifest.json", maximum=MAX_CANDIDATE_BYTES)
