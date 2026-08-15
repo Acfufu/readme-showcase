@@ -26,17 +26,15 @@ REFERENCE_DEFINITION = re.compile(
 )
 MARKDOWN_IMAGE_REFERENCE = re.compile(r"!\[([^\]]*)\]\[([^\]]*)\]")
 MARKDOWN_LINK_REFERENCE = re.compile(r"(?<!!)\[([^\]]+)\]\[([^\]]*)\]")
+# SMIL animation tags (animate/animatecolor/animatemotion/animatetransform/set)
+# are GitHub-safe and required by the documented animated route
+# (see references/motion-production.md playback matrix); they are not unsafe.
 UNSAFE_SVG_TAGS = {
-    "animate",
-    "animatecolor",
-    "animatemotion",
-    "animatetransform",
     "discard",
     "foreignobject",
     "image",
     "mpath",
     "script",
-    "set",
     "style",
 }
 MAX_SVG_BYTES = 2 * 1024 * 1024
