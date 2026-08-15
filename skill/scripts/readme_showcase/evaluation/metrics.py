@@ -15,7 +15,7 @@ from ...pipeline_contracts import (
 from ..contracts.assets import validate_asset_manifest
 from ..contracts.claims import validate_claim_map
 from ..contracts.evidence import validate_evidence_graph
-from ..contracts.plan import validate_readme_plan_v2
+from ..contracts.plan import validate_readme_plan_v2, validate_readme_plan
 from .contract import ADVISORY_METRIC_NAMES, metric, validate_advisory_metrics
 
 
@@ -315,21 +315,32 @@ def evaluate_v1_legacy(payload: Any, artifact_root: Path) -> dict[str, object]:
     diagram_claims = cast(list[dict[str, Any]], claims["diagram_labels"])
     claim_entries = [*markdown_claims, *diagram_claims]
     assets = cast(list[dict[str, Any]], asset_manifest["assets"])
+    plan_languages = plan.get("languages") or [
+        ("zh" if entry["tag"].startswith("zh") else entry["tag"]) for entry in plan.get("locales", [])
+    ]
     expected_diagram_labels = core._diagram_claim_inputs(
         asset_manifest,
         root=artifact_root,
-        default_language=cast(list[str], plan["languages"])[0],
+        default_language=cast(list[str], plan_languages)[0],
     )
     planned_evidence = set(cast(list[str], plan["evidence_ids"]))
-    used_evidence = {cast(str, claim["truth_id"]) for claim in claim_entries}
+    def _truth(claim: Mapping[str, Any]) -> str:
+        value = claim.get("truth_id")
+        if isinstance(value, str):
+            return value
+        ids = claim.get("evidence_ids")
+        return cast(str, ids[0]) if isinstance(ids, list) and ids else ""
+    used_evidence = {_truth(claim) for claim in claim_entries}
     for asset in assets:
-        used_evidence.update(cast(list[str], asset["truth_ids"]))
+        ids = asset.get("truth_ids") or asset.get("evidence_ids")
+        if isinstance(ids, list):
+            used_evidence.update(cast(list[str], ids))
     pair_counts: dict[str, int] = {}
     for claim in claim_entries:
         pair_id = claim["language_pair_id"]
         if isinstance(pair_id, str):
             pair_counts[pair_id] = pair_counts.get(pair_id, 0) + 1
-    language_count = len(cast(list[str], plan["languages"]))
+    language_count = len(cast(list[str], plan_languages))
     retrieved_sections: set[str] = set()
     records = retrieval.get("records", [])
     if isinstance(records, list):
@@ -368,7 +379,7 @@ def evaluate_v2_advisory(payload: Mapping[str, Any], artifact_root: Path) -> dic
     mode = payload.get("mode")
     if not isinstance(artifacts, Mapping) or not isinstance(mode, str):
         raise ContractError("E_EVALUATION_METRIC", "generated bundle evaluation inputs are invalid")
-    plan = validate_readme_plan_v2(_read_json(artifact_root, artifacts.get("plan"), "plan"), mode=mode)
+    plan = validate_readme_plan(_read_json(artifact_root, artifacts.get("plan"), "plan"), mode=mode)
     retrieval = _read_json(artifact_root, artifacts.get("retrieval"), "retrieval")
     evidence = validate_evidence_graph(_read_json(artifact_root, artifacts.get("evidence"), "evidence"))
     claims = validate_claim_map(_read_json(artifact_root, artifacts.get("claim_map"), "claim map"), evidence_graph=evidence)
