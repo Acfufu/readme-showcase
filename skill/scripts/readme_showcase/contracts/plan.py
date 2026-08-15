@@ -248,6 +248,6 @@ def canonical_readme_plan_bytes(
 
 def validate_readme_plan_v2(payload: Any, *, mode: str | None = None) -> dict[str, Any]:
     plan = validate_readme_plan(payload, mode=mode)
-    if plan["schema_version"] != README_PLAN_V2_SCHEMA_VERSION:
-        raise ContractError("E_SCHEMA_VERSION", "README plan producer requires schema_version 2")
+    if plan["schema_version"] not in {README_PLAN_V2_SCHEMA_VERSION, README_PLAN_V3_SCHEMA_VERSION}:
+        raise ContractError("E_SCHEMA_VERSION", "README plan producer requires schema_version 2 or 3")
     return plan
