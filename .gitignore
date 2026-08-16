@@ -11,3 +11,6 @@ node_modules/
 __pycache__/
 *.pyc
 *.pyo
+
+# Local test virtualenv - never committed
+.venv/
