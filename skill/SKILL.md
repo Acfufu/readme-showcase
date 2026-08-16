@@ -139,99 +139,29 @@ handoff output. Use explicit `--workspace` only when the user requests a custom
 absolute location. Never create a per-run virtual environment; use the existing
 runtime and remove temporary files before returning.
 
-When `readme-plan.json` is Plan v3 with `diagram_route: "compiled"`, the
-external candidate owns only the locale README files, Claim Map v3, and Visual
-Spec v1 in `stages/05-candidate/`. Existing `bundle-assemble` then compiles
-independent desktop/mobile Scene, SVG, gate, timeline, interaction, and
-fingerprint outputs under its immutable Stage 6 attempt; it owns Asset Manifest
-v3 and Generated Bundle v3. This is an opt-in compatibility path, not a new
-stage or command, and it does not grant publication authority.
+Each stage's contract, commands, and gate rules live in `skill/workflows/`;
+read the [workflow index](workflows/_index.md) first, then run the stages in
+order:
 
-1. Validate licensed retrieval patterns:
+1. `validate-dataset` the licensed retrieval manifest — [retrieve.md](workflows/retrieve.md).
+2. Run scan on the target repository — [scan.md](workflows/scan.md).
+3. Run retrieve for up to five train-only patterns — [retrieve.md](workflows/retrieve.md).
+4. Import the plan and request generation — [plan-import.md](workflows/plan-import.md) and [generation-request.md](workflows/generation-request.md); invoke `render_elk.mjs` once for an `elk` route.
+5. Author the candidate — [candidate.md](workflows/candidate.md).
+6. Assemble and `validate-bundle` the bundle — [bundle-assemble.md](workflows/bundle-assemble.md) and [validation.md](workflows/validation.md).
+7. Run evaluate on hard gates and revise only surfaced findings — [evaluation.md](workflows/evaluation.md).
+8. `build-pr-bundle`, then `check-publish-gate` after explicit approval and fresh preflight — [bundle-assemble.md](workflows/bundle-assemble.md) and [evaluation.md](workflows/evaluation.md).
 
-   ```bash
-   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" validate-dataset \
-     --manifest "$README_SHOWCASE_SKILL/dataset/retrieval/manifest.json"
-   ```
-
-2. Scan target repository:
-
-   ```bash
-   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" scan \
-     --root "$TARGET" \
-     --output "$RUN/repository-evidence.json"
-   ```
-
-3. Retrieve up to five train-only patterns for evidence-bound query dimensions:
-
-   ```bash
-   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" retrieve \
-     --evidence "$RUN/repository-evidence.json" \
-     --manifest "$README_SHOWCASE_SKILL/dataset/retrieval/manifest.json" \
-     --project-type developer-tool \
-     --section overview \
-     --section quick-start \
-     --tag workflow \
-     --mode production \
-     --output "$RUN/retrieval-packet.json"
-   ```
-
-4. Write `readme-plan.json`, candidate files, `claim-map.json`, and
-   `asset-manifest.json` directly from target evidence. For v2 multilingual
-   work, use an explicit ordered `locales` array of `{tag, readme_path}`
-   mappings; allowed tags are exactly `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`,
-   `fr`, and `de`. Every asset must declare either a supported `locale` or
-   `language_neutral: true`, never both. Do not infer, normalize, or pair
-   locales from filenames, directories, or suffixes: `workflow-zh.svg` is not
-   locale metadata; legacy visual markup such as
-   `data-readme-language="neutral"` is an output annotation, not v2 manifest
-   metadata. Use semantic `language_pair_id` values and matching ordered
-   evidence/support for localized claims. Keep v1 bilingual
-   `README.md`/`README_zh.md` inputs readable and unchanged. If route is `elk`,
-   invoke optional adapter once; its two fresh runs are validation, not hidden
-   retries:
-
-   ```bash
-   node "$README_SHOWCASE_SKILL/scripts/render_elk.mjs" \
-     --input "$RUN/diagram.diagram.json" \
-     --output "$RUN/diagram.svg" \
-     --metadata "$RUN/diagram.engine.json"
-   ```
-
-5. Assemble `generated-readme-bundle.json`, then validate it:
-
-   ```bash
-   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" validate-bundle \
-     --bundle "$RUN/generated-readme-bundle.json"
-   ```
-
-6. Evaluate hard gates and revise only surfaced findings:
-
-   ```bash
-   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" evaluate \
-     --bundle "$RUN/generated-readme-bundle.json" \
-     --output "$RUN/evaluation-report.json"
-   ```
-
-7. After Pass, build local fingerprinted handoff only:
-
-   ```bash
-   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" build-pr-bundle \
-     --bundle "$RUN/generated-readme-bundle.json" \
-     --evaluation "$RUN/evaluation-report.json" \
-     --output "$RUN/pr-bundle.json"
-   ```
-
-8. Only after explicit approval and fresh read-only remote preflight, check
-   exact publish state:
-
-   ```bash
-   python3 "$README_SHOWCASE_SKILL/scripts/readme_pipeline.py" check-publish-gate \
-     --pr-bundle "$RUN/pr-bundle.json" \
-     --remote-state "$RUN/remote-state.json" \
-     --approval "$RUN/approval-envelope.json" \
-     --output "$RUN/publish-gate.json"
-   ```
+For v2 multilingual work, use an explicit ordered `locales` array of
+`{tag, readme_path}` mappings; allowed tags are exactly `en`, `zh-Hans`,
+`zh-Hant`, `ja`, `ko`, `fr`, and `de`. Every asset must declare either a
+supported `locale` or `language_neutral: true`, never both. Do not infer,
+normalize, or pair locales from filenames, directories, or suffixes:
+`workflow-zh.svg` is not locale metadata; legacy visual markup such as
+`data-readme-language="neutral"` is an output annotation, not v2 manifest
+metadata. Use semantic `language_pair_id` values and matching ordered
+evidence/support for localized claims. Keep v1 bilingual
+`README.md`/`README_zh.md` inputs readable and unchanged.
 
 Never publish from evaluation success alone. GitHub branch, commit, push, and PR
 writes require separate explicit approval bound to current fingerprint, target,
