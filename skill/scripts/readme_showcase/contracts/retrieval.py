@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib
 import re
+import stat
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
@@ -482,6 +484,128 @@ def adapt_v2_to_v1(payload: Any) -> dict[str, Any]:
 
 EXEMPLAR_KINDS = ("curated", "synthetic")
 EXEMPLAR_SPLITS = ("train", "test")
+_EXEMPLARS_INDEX_FIELDS = {"schema_version", "dataset_id", "index_sha256", "records"}
+_EXEMPLARS_INDEX_ENTRY_FIELDS = {"record_id", "split", "asset"}
+_EXEMPLARS_INDEX_ASSET_FIELDS = {"path", "sha256", "kind"}
+_EXEMPLARS_INDEX_EXPECTED_COUNT = 14
+_EXEMPLARS_INDEX_DATASET_ID = "readme-showcase-exemplars"
+_EXEMPLARS_INDEX_MAX_ASSET_BYTES = 8 * 1024 * 1024
+
+
+def _indexed_asset_path(value: Any, context: str) -> str:
+    if not isinstance(value, str) or not value or "\\" in value or "\x00" in value:
+        raise ContractError("E_EXEMPLARS_INDEX_PATH", f"{context} must be a relative POSIX path")
+    path = PurePosixPath(value)
+    if path.is_absolute() or path.as_posix() != value or any(part in {"", ".", ".."} for part in path.parts):
+        raise ContractError("E_EXEMPLARS_INDEX_PATH", f"{context} must be a normalized relative path")
+    return value
+
+
+def validate_exemplars_index_v1(
+    value: Any,
+    *,
+    dataset_root: Path | None = None,
+) -> dict[str, Any]:
+    """Validate the exemplars index and (given a dataset root) every asset.
+
+    The index is the trust anchor for the 14 exemplar assets.  The
+    self-anchor (index_sha256) is verified against the canonical bytes of the
+    remaining payload BEFORE any asset file is consulted, so a tampered index
+    always fails closed ahead of the per-asset integrity checks.  When
+    dataset_root is supplied each indexed asset must resolve to a regular
+    non-symlink file whose sha256 matches the index.
+    """
+    _reject_floats(value)
+    index = _object(value, _EXEMPLARS_INDEX_FIELDS, "exemplars index")
+    if type(index["schema_version"]) is not int or index["schema_version"] != 1:
+        raise ContractError("E_SCHEMA_VERSION", "exemplars index requires schema_version 1")
+    if index["dataset_id"] != _EXEMPLARS_INDEX_DATASET_ID:
+        raise ContractError("E_DATASET_PROVENANCE", "exemplars index dataset_id is invalid")
+    records = index["records"]
+    if not isinstance(records, list) or len(records) != _EXEMPLARS_INDEX_EXPECTED_COUNT:
+        raise ContractError(
+            "E_EXEMPLARS_INDEX_COUNT",
+            f"exemplars index must contain exactly {_EXEMPLARS_INDEX_EXPECTED_COUNT} records",
+        )
+    validated: list[dict[str, Any]] = []
+    for position, raw in enumerate(records):
+        context = f"exemplars index records[{position}]"
+        entry = _object(raw, _EXEMPLARS_INDEX_ENTRY_FIELDS, context)
+        record_id = entry["record_id"]
+        if not isinstance(record_id, str) or not record_id:
+            raise ContractError("E_EXEMPLARS_INDEX", f"{context}.record_id is invalid")
+        split = entry["split"]
+        if split not in EXEMPLAR_SPLITS:
+            raise ContractError("E_EXEMPLARS_INDEX_SPLIT", f"{context}.split is invalid")
+        asset = _object(entry["asset"], _EXEMPLARS_INDEX_ASSET_FIELDS, f"{context}.asset")
+        kind = asset["kind"]
+        if kind not in EXEMPLAR_KINDS:
+            raise ContractError("E_EXEMPLARS_INDEX_KIND", f"{context}.asset.kind is invalid")
+        asset_path = _indexed_asset_path(asset["path"], f"{context}.asset.path")
+        if (kind == "curated" and not asset_path.endswith(".png")) or (
+            kind == "synthetic" and not asset_path.endswith(".svg")
+        ):
+            raise ContractError(
+                "E_EXEMPLARS_INDEX_KIND", f"{context}.asset.kind disagrees with the asset path"
+            )
+        asset_sha = asset["sha256"]
+        if not isinstance(asset_sha, str) or not _SHA256.fullmatch(asset_sha):
+            raise ContractError("E_EXEMPLARS_INDEX_SHA", f"{context}.asset.sha256 is invalid")
+        validated.append({
+            "record_id": record_id,
+            "split": split,
+            "asset": {"path": asset_path, "sha256": asset_sha, "kind": kind},
+        })
+    identifiers = [entry["record_id"] for entry in validated]
+    if identifiers != sorted(set(identifiers)):
+        raise ContractError("E_DATASET_DUPLICATE_ID", "exemplars index record IDs must be sorted and unique")
+    expected_anchor = canonical_sha256({
+        "schema_version": index["schema_version"],
+        "dataset_id": index["dataset_id"],
+        "records": validated,
+    })
+    if index["index_sha256"] != expected_anchor:
+        raise ContractError(
+            "E_EXEMPLARS_INDEX_ANCHOR", "exemplars index self-anchor does not match canonical bytes"
+        )
+    if dataset_root is not None:
+        try:
+            root_info = dataset_root.lstat()
+        except OSError as exc:
+            raise ContractError("E_EXEMPLARS_INDEX_PATH", "exemplars dataset root is unavailable") from exc
+        if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+            raise ContractError("E_EXEMPLARS_INDEX_PATH", "exemplars dataset root must be a real directory")
+        for entry in validated:
+            relative = PurePosixPath(entry["asset"]["path"])
+            candidate = dataset_root.joinpath(*relative.parts)
+            try:
+                raw = _contracts.read_regular_bytes(
+                    candidate,
+                    maximum=_EXEMPLARS_INDEX_MAX_ASSET_BYTES,
+                    path_code="E_EXEMPLARS_INDEX_PATH",
+                    size_code="E_EXEMPLARS_INDEX_PATH",
+                )
+            except ContractError as exc:
+                if exc.code == "E_INPUT_NOT_FOUND":
+                    raise ContractError("E_EXEMPLARS_INDEX_PATH", "indexed asset is unavailable") from exc
+                raise
+            if hashlib.sha256(raw).hexdigest() != entry["asset"]["sha256"]:
+                raise ContractError(
+                    "E_EXEMPLARS_INDEX_SHA", "indexed asset bytes do not match the index sha256"
+                )
+    return copy.deepcopy(value)
+
+
+def load_exemplars_index_v1(
+    path: Path,
+    *,
+    dataset_root: Path | None = None,
+) -> dict[str, Any]:
+    raw, payload = read_json_object_bytes(path)
+    index = validate_exemplars_index_v1(payload, dataset_root=dataset_root)
+    if raw != canonical_json_bytes(index):
+        raise ContractError("E_DATASET_PROVENANCE", "exemplars index file must use canonical JSON bytes")
+    return index
 
 
 def validate_exemplar_record_v1(value: Any) -> dict[str, Any]:
@@ -542,8 +666,10 @@ __all__ = [
     "EXEMPLAR_KINDS",
     "EXEMPLAR_SPLITS",
     "adapt_v2_to_v1",
+    "load_exemplars_index_v1",
     "load_retrieval_candidate_ledger_v1",
     "validate_exemplar_record_v1",
+    "validate_exemplars_index_v1",
     "validate_retrieval_candidate_ledger_v1",
     "validate_retrieval_packet_v2",
     "validate_retrieval_query",

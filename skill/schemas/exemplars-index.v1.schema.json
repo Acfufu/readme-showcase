@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://readme-showcase.local/schemas/exemplars-index.v1.schema.json",
+  "title": "Exemplars index v1",
+  "$comment": "Trust anchor for the 14 retrieval exemplar assets. The JSON Schema enforces the closed structural shape; Python validation additionally enforces normalized relative asset paths, kind/split enums with asset-extension coupling, sorted unique record ids, the index_sha256 self-anchor, and (given a dataset root) regular non-symlink asset files whose sha256 matches the index, via validate_exemplars_index_v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "dataset_id", "index_sha256", "records"],
+  "x-python-semantic-validation": {
+    "codes": [
+      "E_SCHEMA_VERSION",
+      "E_DATASET_PROVENANCE",
+      "E_EXEMPLARS_INDEX",
+      "E_EXEMPLARS_INDEX_COUNT",
+      "E_EXEMPLARS_INDEX_SPLIT",
+      "E_EXEMPLARS_INDEX_KIND",
+      "E_EXEMPLARS_INDEX_PATH",
+      "E_EXEMPLARS_INDEX_SHA",
+      "E_EXEMPLARS_INDEX_ANCHOR",
+      "E_DATASET_DUPLICATE_ID"
+    ]
+  },
+  "properties": {
+    "schema_version": {"const": 1},
+    "dataset_id": {"const": "readme-showcase-exemplars"},
+    "index_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "records": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["record_id", "split", "asset"],
+        "properties": {
+          "record_id": {"type": "string", "minLength": 1},
+          "split": {"enum": ["train", "test"]},
+          "asset": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "kind"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "kind": {"enum": ["curated", "synthetic"]}
+            }
+          }
+        }
+      }
+    }
+  }
+}

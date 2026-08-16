@@ -107,7 +107,8 @@ def assert_kernel_package_paths(paths: set[str]) -> None:
         for path in paths
         if (
             "__pycache__" in path
-            or path.endswith((".pyc", ".pyo", ".svg"))
+            or path.endswith((".pyc", ".pyo"))
+            or (path.startswith("skill/") and path.endswith(".svg"))
             or "archscribe" in path.casefold()
         )
     )

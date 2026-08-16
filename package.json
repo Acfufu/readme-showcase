@@ -27,7 +27,8 @@
     "scripts/install_skill.py",
     "dataset/**/*.json",
     "dataset/**/*.md",
-    "dataset/**/*.png"
+    "dataset/**/*.png",
+    "dataset/**/*.svg"
   ],
   "devDependencies": {
     "elkjs": "0.9.3"
