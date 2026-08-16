@@ -755,6 +755,26 @@ class BundleAssembleStage:
         )
 
 
+def _check_plan_lock(
+    context: RunContext,
+    bundle: dict[str, Any],
+    root: Path,
+) -> dict[str, Any] | None:
+    from ..contracts.plan_lock import (
+        APPROVAL_ENVELOPE_PATH,
+        PLAN_LOCK_PATH,
+        check_plan_lock,
+    )
+
+    return check_plan_lock(
+        lock_path=context.workspace.root / PLAN_LOCK_PATH,
+        approval_path=context.workspace.root / APPROVAL_ENVELOPE_PATH,
+        manifest=context.manifest,
+        bundle=bundle,
+        artifact_root=root,
+    )
+
+
 def _materialize(context: RunContext, root: Path) -> dict[str, Any]:
     bundle_path = context.attempt_file(5, "generated-readme-bundle.json")
     _, bundle = _canonical_object(bundle_path)
@@ -963,8 +983,12 @@ class EvaluateStage:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             bundle = _materialize(context, root)
+            lock_report = _check_plan_lock(context, bundle, root)
             report = evaluate_generated_bundle(bundle, root)
-        return StageResult("pass" if report["status"] == "pass" else "failed", {"evaluation-report.json": canonical_json_bytes(report)})
+        files = {"evaluation-report.json": canonical_json_bytes(report)}
+        if lock_report is not None:
+            files["plan-lock-report.v1.json"] = canonical_json_bytes(lock_report)
+        return StageResult("pass" if report["status"] == "pass" else "failed", files)
 
 
 STAGES: tuple[Stage, ...] = (

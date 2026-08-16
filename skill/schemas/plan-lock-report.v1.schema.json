@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/plan-lock-report.v1.schema.json",
+  "title": "README Showcase Plan Lock Report v1",
+  "$comment": "Write-only evidence produced by the EvaluateStage plan-lock gate. Never read back as a decision input; the gate always recomputes from the lock and bundle artifact bytes.",
+  "x-python-semantic-validation": {
+    "validator": "skill.scripts.readme_showcase.contracts.plan_lock.validate_plan_lock_report_v1",
+    "codes": ["E_PLAN_LOCK", "E_PLAN_DRIFT"]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "lock_sha256", "plan_sha256", "findings"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {"enum": ["pass", "fail"]},
+    "lock_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "findings": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": {"type": "string", "minLength": 1, "maxLength": 64},
+          "message": {"type": "string", "minLength": 1, "maxLength": 4096}
+        }
+      }
+    }
+  }
+}

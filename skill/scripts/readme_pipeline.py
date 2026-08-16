@@ -6,6 +6,7 @@ import argparse
 import importlib
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -51,6 +52,10 @@ RunContractError = _RUNNER.ContractError
 
 
 Handler = Callable[[argparse.Namespace], dict[str, object]]
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _pending(command: str) -> Handler:
@@ -256,6 +261,11 @@ def _deliver(arguments: argparse.Namespace) -> dict[str, object]:
     if gate["status"] != "authorized":
         findings = ",".join(gate["findings"])
         raise ContractError(_GITHUB.AUTHORITY_CODE, f"delivery approval is not current: {findings}")
+    _APPROVAL.write_plan_lock(
+        arguments.workspace,
+        approval,
+        locked_after=utc_now(),
+    )
     metadata = bundle.get("metadata")
     if not isinstance(metadata, dict):
         raise ContractError(_GITHUB.PLAN_CODE, "delivery bundle metadata is missing")

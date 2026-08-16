@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "plan_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "locale_pairs": [["en", "zh-Hans"]],
+  "asset_sha256": [
+    {"path": "assets/readme-showcase/en/desktop.svg", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+    {"path": "assets/readme-showcase/en/mobile.svg", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
+  ],
+  "claim_ids": ["markdown:en:overview", "markdown:zh-Hans:overview"],
+  "locked_after": "2026-08-16T00:00:00Z",
+  "approval_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+}

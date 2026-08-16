@@ -25,6 +25,7 @@ from ...pipeline_contracts import (
     write_canonical_json_atomic,
 )
 from ..contracts.run import canonical_repository
+from ..contracts.plan_lock import PLAN_LOCK_PATH
 from ..errors import AGGREGATABLE_CODES
 from ..generation.request import (
     MAX_GENERATION_REQUEST_BYTES,
@@ -229,6 +230,10 @@ def _copy_plan(workspace: RunWorkspace, plan: Path | None) -> None:
 
 def _write_state(workspace: RunWorkspace, manifest: dict[str, Any]) -> dict[str, Any]:
     manifest["updated_at"] = utc_now()
+    # Latch: once the run is lock-required (an approved plan lock exists), the
+    # requirement survives lock deletion so the evaluation gate stays closed.
+    if (workspace.root / PLAN_LOCK_PATH).is_file() or manifest.get("requires_plan_lock"):
+        manifest["requires_plan_lock"] = True
     workspace.write_manifest(manifest)
     return workspace.read_manifest()
 

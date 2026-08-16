@@ -1,0 +1,30 @@
+{
+  "cases": [
+    {
+      "code": "E_PLAN_LOCK",
+      "name": "missing-plan-sha256",
+      "payload": {
+        "schema_version": 1,
+        "locale_pairs": [["en", "zh-Hans"]],
+        "asset_sha256": [],
+        "claim_ids": [],
+        "locked_after": "2026-08-16T00:00:00Z",
+        "approval_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    },
+    {
+      "code": "E_SCHEMA_UNKNOWN_FIELD",
+      "name": "unknown-field",
+      "payload": {
+        "schema_version": 1,
+        "plan_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "locale_pairs": [["en", "zh-Hans"]],
+        "asset_sha256": [],
+        "claim_ids": [],
+        "locked_after": "2026-08-16T00:00:00Z",
+        "approval_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "lock_source": "agent"
+      }
+    }
+  ]
+}

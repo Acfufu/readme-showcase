@@ -149,11 +149,13 @@ def validate_run_manifest(payload: Any) -> dict[str, Any]:
             "current_stage",
             "stages",
         },
-        optional={"current_revision"},
+        optional={"current_revision", "requires_plan_lock"},
         context="run manifest",
     )
     if not isinstance(manifest["run_id"], str) or not _SHA256.fullmatch(manifest["run_id"]):
         raise ContractError("E_SCHEMA_TYPE", "run manifest.run_id must be a SHA-256 hex digest")
+    if "requires_plan_lock" in manifest and not isinstance(manifest["requires_plan_lock"], bool):
+        raise ContractError("E_SCHEMA_TYPE", "run manifest.requires_plan_lock must be a boolean")
     _timestamp(manifest["created_at"], "run manifest.created_at")
     _timestamp(manifest["updated_at"], "run manifest.updated_at")
     if manifest["status"] not in RUN_STATES:

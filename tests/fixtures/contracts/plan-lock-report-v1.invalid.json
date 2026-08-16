@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "code": "E_PLAN_LOCK",
+      "name": "missing-status",
+      "payload": {
+        "schema_version": 1,
+        "lock_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "plan_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "findings": []
+      }
+    },
+    {
+      "code": "E_SCHEMA_UNKNOWN_FIELD",
+      "name": "unknown-field",
+      "payload": {
+        "schema_version": 1,
+        "status": "pass",
+        "lock_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "plan_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "findings": [],
+        "decision_input": true
+      }
+    }
+  ]
+}

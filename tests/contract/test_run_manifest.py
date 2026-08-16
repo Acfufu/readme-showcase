@@ -95,6 +95,23 @@ class RunManifestContractTests(unittest.TestCase):
                 validate_run_manifest(changed)
             self.assertEqual(raised.exception.code, "E_REVISION_POINTER")
 
+    def test_requires_plan_lock_is_optional_boolean_defaulting_false(self) -> None:
+        legacy = json.loads((FIXTURES / "run-manifest-v1.valid.json").read_text())
+        self.assertNotIn("requires_plan_lock", legacy)
+        self.assertEqual(validate_run_manifest(legacy), legacy)
+        locked = json.loads(json.dumps(legacy))
+        locked["requires_plan_lock"] = True
+        self.assertEqual(validate_run_manifest(locked), locked)
+        unlocked = json.loads(json.dumps(legacy))
+        unlocked["requires_plan_lock"] = False
+        self.assertEqual(validate_run_manifest(unlocked), unlocked)
+        for invalid in (1, "true", None, []):
+            changed = json.loads(json.dumps(legacy))
+            changed["requires_plan_lock"] = invalid
+            with self.subTest(invalid=invalid), self.assertRaises(ContractError) as raised:
+                validate_run_manifest(changed)
+            self.assertEqual(raised.exception.code, "E_SCHEMA_TYPE")
+
     def test_run_id_is_stable_and_excludes_time_paths_and_secrets(self) -> None:
         first = self.create(clock=lambda: "2026-08-02T00:00:00Z").read_manifest()
         other_root = self.root / "other"

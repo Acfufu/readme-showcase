@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Acfufu/readme-showcase/schemas/plan-lock.v1.schema.json",
+  "title": "README Showcase Plan Lock v1",
+  "$comment": "Python semantic validation enforces required-field presence (E_PLAN_LOCK) and recomputes every hash from the locked bundle artifacts (E_PLAN_DRIFT). The lock is written only by the approval handler from a human-approved approval envelope.",
+  "x-python-semantic-validation": {
+    "validator": "skill.scripts.readme_showcase.contracts.plan_lock.validate_plan_lock_v1",
+    "codes": ["E_PLAN_LOCK", "E_PLAN_DRIFT"]
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "plan_sha256", "locale_pairs", "asset_sha256", "claim_ids", "locked_after", "approval_sha256"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "locale_pairs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 2,
+        "uniqueItems": true,
+        "items": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
+    "asset_sha256": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "claim_ids": {
+      "type": "array",
+      "maxItems": 100000,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 512}
+    },
+    "locked_after": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "approval_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

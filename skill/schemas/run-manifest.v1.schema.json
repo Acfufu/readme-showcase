@@ -23,6 +23,10 @@
       "type": ["string", "null"],
       "pattern": "^stages/04-generation-request/revisions/[1]/revision-request\\.json$"
     },
+    "requires_plan_lock": {
+      "type": "boolean",
+      "description": "Set by the runner when an approved plan lock exists; optional, defaults to false."
+    },
     "stages": {
       "type": "array",
       "minItems": 8,
