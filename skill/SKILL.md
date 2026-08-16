@@ -36,6 +36,10 @@ Use one Skill entry with an optional command and free-form target:
 the existing pipeline commands. They are not authoring modes and do not broaden
 write or publication authority.
 
+Read [references/failure-recovery.md](references/failure-recovery.md) before
+recovering a failed run: it maps every stage to its error codes, the
+last-good resume point, and the lock/no-bypass recovery rules.
+
 `visualize` accepts `--creativity low|medium|high` for hand-authored routes
 (`static`, `elk`) only. The `compiled` route does not accept it — compiled
 projections stay deterministic. `low` does not promise wow; it targets a
