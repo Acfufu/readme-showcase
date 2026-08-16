@@ -216,10 +216,9 @@ class ReadmeHardGateTests(unittest.TestCase):
                 "<text>",
                 " " * (2 * 1024 * 1024) + "<text>",
             ),
-            "animate-transform": VALID_SVG.replace(
-                "<text>",
-                '<animateTransform attributeName="transform"/><text>',
-            ),
+            # SMIL animation (animate/animateTransform) is GitHub-safe and
+            # required by the documented animated route; see the v3
+            # non-compiled readme regression tests for the allowed case.
             "discard": VALID_SVG.replace(
                 "<text>",
                 "<discard/><text>",

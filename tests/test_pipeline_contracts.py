@@ -809,10 +809,12 @@ class BundleAssembleStageTests(unittest.TestCase):
         return plan, candidate, v1_evidence, evidence_v2
 
     def test_legacy_bundle_bytes_and_stage_registry_are_unchanged(self) -> None:
+        # Plan v1 keeps the legacy schema-1 bundle path; v2/v3 plans assemble
+        # the modern schema-2 bundle via BundleAssembleStage._execute_modern.
         plan = {
-            "schema_version": 2,
+            "schema_version": 1,
             "mode": "readme",
-            "locales": [{"tag": "en", "readme_path": "README.md"}],
+            "languages": ["en"],
             "sections": ["overview"],
             "visual_intent": "project-structure",
             "diagram_route": "static",
@@ -1119,8 +1121,10 @@ class MaterializeStageTests(unittest.TestCase):
         }
 
     def test_legacy_v1_v2_materialization_bytes_remain_unchanged(self) -> None:
+        # v1 keeps the legacy materialization bytes; v2/v3 plans materialize
+        # the modern schema-2 bundle (covered by the v3 regression tests).
         asset = b"<svg>legacy\n</svg>\n"
-        for version in (1, 2):
+        for version in (1,):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 plan: dict[str, object] = {
