@@ -10,7 +10,10 @@ review). Rules, in priority order:
   from, and never written to, ``.env``.
 - **Required contract**: ``resolve_config(required=[...])`` raises
   ``ContractError("E_CONFIG_MISSING_KEY", ...)`` when a required name does not
-  resolve. The message carries the key *name* only, never a value. The check
+  resolve. An empty value (``KEY=`` in ``.env`` or an empty process-environment
+  variable) counts as missing here — it does not satisfy the contract (the
+  resolved-dict semantics still let an empty env value win over ``.env``). The
+  message carries the key *name* only, never a value. The check
   applies to the actually-resolved key name: a dynamic name (e.g. a
   ``--api-key-env`` override) is resolved as a process-environment variable,
   so the static default name never leaks its value under the dynamic name.
@@ -47,8 +50,9 @@ def parse_env_file(text: str) -> dict[str, str]:
     """Self-written ``.env`` KV parser.
 
     Blank lines and ``#`` comments are ignored; values are stripped and, when
-    wrapped in matching single or double quotes, unquoted. Inline comments
-    after a value are not stripped (a ``#`` inside a key's value is data).
+    wrapped in matching single or double quotes, unquoted. A trailing
+    `` # comment`` on an unquoted value is stripped; a ``#`` inside a quoted
+    value is kept verbatim.
     """
     parsed: dict[str, str] = {}
     for raw_line in text.splitlines():
@@ -60,20 +64,27 @@ def parse_env_file(text: str) -> dict[str, str]:
             continue
         key = key.strip()
         value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
-            value = value[1:-1]
+        if value and value[0] in ("'", '"'):
+            quote = value[0]
+            end = value.find(quote, 1)
+            value = value[1:] if end == -1 else value[1:end]
+        else:
+            value = value.partition(" #")[0].strip()
         if key:
             parsed[key] = value
     return parsed
 
 
-def load_env_file(env_path: str | Path | None = None) -> dict[str, str]:
-    """Read and parse the ``.env`` file, filtered to the configured prefix.
+def load_env_file(
+    env_path: str | Path | None = None,
+    prefix: str = DEFAULT_PREFIX,
+) -> dict[str, str]:
+    """Read and parse the ``.env`` file, filtered to the active prefix.
 
-    A missing file yields ``{}``. Only keys starting with ``DEFAULT_PREFIX``
-    are returned — the prefix whitelist is enforced at read time so every
-    downstream lookup (``config_get``, ``resolve_config``, the required
-    contract) inherits it.
+    A missing file yields ``{}``. Only keys starting with ``prefix`` (default
+    ``DEFAULT_PREFIX``) are returned — the prefix whitelist is enforced at
+    read time so every downstream lookup (``config_get``, ``resolve_config``,
+    the required contract) inherits it.
     """
     path = Path(env_path) if env_path is not None else DEFAULT_ENV_PATH
     if not path.is_file():
@@ -81,7 +92,7 @@ def load_env_file(env_path: str | Path | None = None) -> dict[str, str]:
     return {
         key: value
         for key, value in parse_env_file(path.read_text(encoding="utf-8")).items()
-        if key.startswith(DEFAULT_PREFIX)
+        if key.startswith(prefix)
     }
 
 
@@ -149,12 +160,13 @@ def resolve_config(
     """Resolve the full prefixed configuration.
 
     For every key matching ``prefix`` present in either source, the process
-    environment wins over the ``.env`` file. ``required`` names must each
-    resolve (process environment first, then the prefixed ``.env``) or a
-    ``ContractError("E_CONFIG_MISSING_KEY", ...)`` is raised — the message
-    contains the key name only, never a value.
+    environment wins over the ``.env`` file (which is filtered by the active
+    ``prefix``, default ``DEFAULT_PREFIX``). ``required`` names must each
+    resolve to a non-empty value (process environment first, then the
+    prefixed ``.env``) or a ``ContractError("E_CONFIG_MISSING_KEY", ...)`` is
+    raised — the message contains the key name only, never a value.
     """
-    env_file = load_env_file(env_path)
+    env_file = load_env_file(env_path, prefix=prefix)
     prefixed_env = {key: value for key, value in os.environ.items() if key.startswith(prefix)}
     names = set(prefixed_env) | set(env_file)
     resolved: dict[str, str] = {}
@@ -163,9 +175,9 @@ def resolve_config(
         resolved[name] = env_value if env_value is not None else env_file[name]
     for name in required:
         value = os.environ.get(name)
-        if value is None:
+        if value is None or value == "":
             value = env_file.get(name)
-        if value is None:
+        if value is None or value == "":
             raise ContractError(
                 "E_CONFIG_MISSING_KEY",
                 f"missing required environment key {name}",

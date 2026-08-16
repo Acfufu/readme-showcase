@@ -184,6 +184,69 @@ class ConfigEnvTests(unittest.TestCase):
                 self.assertEqual(
                     resolved["VISION_REVIEW_API_BASE"], "https://example.test/v1")
 
+    def test_inline_comments_stripped_from_dotenv_values(self) -> None:
+        with _EnvIsolation():
+            with tempfile.TemporaryDirectory() as d:
+                env_file = Path(d) / ".env"
+                env_file.write_text(
+                    "VISION_REVIEW_API_KEY=sk-x # note\n"
+                    'VISION_REVIEW_MODEL="a#b"\n'
+                    "VISION_REVIEW_API_BASE=https://example.test/v1 # base\n",
+                    encoding="utf-8")
+                resolved = _config_env().resolve_config(env_path=env_file)
+                self.assertEqual(resolved["VISION_REVIEW_API_KEY"], "sk-x")
+                self.assertEqual(resolved["VISION_REVIEW_MODEL"], "a#b")
+                self.assertEqual(
+                    resolved["VISION_REVIEW_API_BASE"], "https://example.test/v1")
+
+    def test_required_empty_dotenv_value_raises(self) -> None:
+        """`KEY=` (empty) in .env does not satisfy the required contract."""
+        with _EnvIsolation():
+            with tempfile.TemporaryDirectory() as d:
+                env_file = Path(d) / ".env"
+                env_file.write_text("VISION_REVIEW_API_KEY=\n", encoding="utf-8")
+                with self.assertRaises(ContractError) as ctx:
+                    _config_env().resolve_config(
+                        required=["VISION_REVIEW_API_KEY"], env_path=env_file)
+                self.assertEqual(ctx.exception.code, "E_CONFIG_MISSING_KEY")
+
+    def test_required_empty_env_var_raises(self) -> None:
+        """An empty process-environment variable does not satisfy required."""
+        with _EnvIsolation():
+            with tempfile.TemporaryDirectory() as d:
+                env_file = Path(d) / ".env"
+                env_file.write_text("VISION_REVIEW_MODEL=gpt-4o\n", encoding="utf-8")
+                os.environ["VISION_REVIEW_API_KEY"] = ""
+                with self.assertRaises(ContractError) as ctx:
+                    _config_env().resolve_config(
+                        required=["VISION_REVIEW_API_KEY"], env_path=env_file)
+                self.assertEqual(ctx.exception.code, "E_CONFIG_MISSING_KEY")
+
+    def test_required_absent_key_raises(self) -> None:
+        """The absent-key case still raises (unchanged contract)."""
+        with _EnvIsolation():
+            with tempfile.TemporaryDirectory() as d:
+                env_file = Path(d) / ".env"
+                env_file.write_text("VISION_REVIEW_MODEL=gpt-4o\n", encoding="utf-8")
+                with self.assertRaises(ContractError) as ctx:
+                    _config_env().resolve_config(
+                        required=["VISION_REVIEW_API_KEY"], env_path=env_file)
+                self.assertEqual(ctx.exception.code, "E_CONFIG_MISSING_KEY")
+
+    def test_custom_prefix_reads_its_keys_from_dotenv(self) -> None:
+        """resolve_config(prefix=...) filters .env by the active prefix."""
+        with _EnvIsolation():
+            with tempfile.TemporaryDirectory() as d:
+                env_file = Path(d) / ".env"
+                env_file.write_text(
+                    "OTHER_KEY=from-file\n"
+                    "VISION_REVIEW_MODEL=gpt-4o\n",
+                    encoding="utf-8")
+                resolved = _config_env().resolve_config(
+                    prefix="OTHER_", env_path=env_file)
+                self.assertEqual(resolved.get("OTHER_KEY"), "from-file")
+                self.assertNotIn("VISION_REVIEW_MODEL", resolved)
+
     def test_env_file_created_with_mode_0600(self) -> None:
         with _EnvIsolation():
             with tempfile.TemporaryDirectory() as d:
