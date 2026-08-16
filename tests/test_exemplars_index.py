@@ -19,6 +19,7 @@ anchor for the 14 retrieval exemplar assets.  The suite here pins:
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -54,8 +55,6 @@ def _load(path: Path) -> dict[str, Any]:
 
 def _tamper_index(payload: dict[str, Any], mutate: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
     """Return a copy of the index with a mutation but a STALE self-anchor."""
-    import copy
-
     tampered = copy.deepcopy(payload)
     mutate(tampered)
     return tampered
@@ -170,6 +169,18 @@ class ExemplarsIndexValidatorTests(unittest.TestCase):
             with self.assertRaises(ContractError) as ctx:
                 validate_exemplars_index_v1(payload, dataset_root=root)
             self.assertEqual(ctx.exception.code, "E_EXEMPLARS_INDEX_SHA")
+
+    def test_oversized_asset_rejected_by_shared_reader_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shutil.copytree(DATASET_DIR, root / "dataset")
+            asset = root / "dataset" / "retrieval" / "exemplars" / "curated-01.png"
+            with asset.open("wb") as handle:
+                handle.write(b"\0" * (8 * 1024 * 1024 + 1))
+            payload = _load(root / "dataset" / "retrieval" / "exemplars_index.json")
+            with self.assertRaises(ContractError) as ctx:
+                validate_exemplars_index_v1(payload, dataset_root=root)
+            self.assertEqual(ctx.exception.code, "E_EXEMPLARS_INDEX_PATH")
 
 
 class ExemplarsIndexSelfTamperTests(unittest.TestCase):
