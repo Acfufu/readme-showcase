@@ -25,6 +25,9 @@ PUBLIC_MODULES = (
     REPO_ROOT / "skill/scripts/pipeline_contracts.py",
     REPO_ROOT / "skill/scripts/pipeline_core.py",
     REPO_ROOT / "skill/scripts/readme_pipeline.py",
+    # errors.py owns FAIL_FAST_CODES: the error-classification surface must be
+    # scanned so internal-only registered codes stay in the snapshot.
+    REPO_ROOT / "skill/scripts/readme_showcase/errors.py",
 )
 
 

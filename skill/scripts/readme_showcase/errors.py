@@ -116,6 +116,7 @@ FAIL_FAST_CODES = frozenset(
         "E_SCHEMA_TYPE",
         "E_SCHEMA_UNKNOWN_FIELD",
         "E_SCHEMA_VERSION",
+        "E_SVG_UNSAFE",
         "E_VISUAL_MOTION_APPROVAL",
     }
 )
