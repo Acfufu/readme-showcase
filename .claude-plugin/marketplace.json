@@ -1,0 +1,6 @@
+{
+  "name": "readme-showcase",
+  "version": "0.1.0",
+  "description": "Single-source readme-showcase skill package with zero runtime dependencies and an official Codex installer. The installer does not write .claude/skills; Claude Code recognizes the skill through the audited manual path.",
+  "path": "skill"
+}
