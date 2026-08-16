@@ -7,7 +7,7 @@ pipeline source (`skill/scripts/readme_showcase/`); no code is invented.
 ## Stage × failure-mode matrix
 
 Rows are the eight pipeline stages in order (contracts: `STAGE_NAMES` in
-`contracts/run.py:32`; adapters: `STAGES` in `orchestration/stages.py:970`).
+`contracts/run.py:32`; adapters: `STAGES` in `orchestration/stages.py:994`).
 "Blocking" means the run stops and the stage needs something before it can
 finish; "auto-recoverable" means a plain idempotent rerun or resume makes
 progress without a code or state change.
@@ -32,8 +32,8 @@ Where each code is raised and what it means. All codes are real
 
 | Code | Raised where | Meaning | Recover |
 | --- | --- | --- | --- |
-| `E_RUN_TARGET` | `runner.py` `_git` (60-70), `_target_root`, `_resolved_workspace` (171-176), `read_manifest` (`workspace.py:331`) | Target is not a Git repository, HEAD is not immutable, or the workspace manifest points at a different target | Point `--root` at the real repo; `run` not `resume` if the target changed |
-| `E_RUN_STATE_ROOT` | `runner.py:138` (allocation), `144` (open), `152` (non-dir entry) | Centralized state dir cannot be allocated/opened, or a run entry is not a real directory | Fix `CODEX_HOME` / state permissions; remove corrupt entries |
+| `E_RUN_TARGET` | `runner.py` `_git` (55-68), `_target_root`, `_resolved_workspace` (171-176), `read_manifest` (`workspace.py:332`) | Target is not a Git repository, HEAD is not immutable, or the workspace manifest points at a different target | Point `--root` at the real repo; `run` not `resume` if the target changed |
+| `E_RUN_STATE_ROOT` | `runner.py:139` (allocation), `145` (open), `153` (non-dir entry) | Centralized state dir cannot be allocated/opened, or a run entry is not a real directory | Fix `CODEX_HOME` / state permissions; remove corrupt entries |
 | `E_RUN_INPUT` | `stages.py:132`, `150` (voice/visual fact JSON malformed or not a bounded list) | Optional scan facts are corrupt | Remove or repair the fact file; rerun |
 | scan non-pass | `stages.py:199` (`StageResult("failed")` when `value["status"] != "complete"`) | `scan_repository_v1` hit a scan limit (files/dirs/bytes/depth/seconds) | Enlarge limits or simplify the tree; rerun |
 
@@ -41,17 +41,17 @@ Where each code is raised and what it means. All codes are real
 
 | Code | Raised where | Meaning | Recover |
 | --- | --- | --- | --- |
-| `E_RETRIEVAL_PACKET` | `contracts/retrieval.py:106`, `108`, `114`, `117` | Packet slugs must be bounded/sorted/unique; text lists bounded, normalized, sorted, unique | Fix the ranker/packet producer, not the bytes by hand |
-| `E_DATASET_*` | `retrieve_patterns` → `validate_dataset_manifest` (`pipeline_core.py:126`) | Dataset manifest contract violation (records, split, license, provenance, sha256) | Repair the vendored `dataset/retrieval/manifest.json` |
-| `E_SCHEMA_TYPE` / `E_SCHEMA_UNKNOWN_FIELD` / `E_SCHEMA_MISSING_FIELD` | `contracts/retrieval.py:95-100` | Packet shape violates its schema | Fix the producer |
-| `E_RUN_INPUT` | `stages.py:210` (evidence canonical bytes) | Evidence JSON is not canonical | Re-run scan |
+| `E_RETRIEVAL_PACKET` | `contracts/retrieval.py:108`, `110`, `116`, `119` | Packet slugs must be bounded/sorted/unique; text lists bounded, normalized, sorted, unique | Fix the ranker/packet producer, not the bytes by hand |
+| `E_DATASET_*` | `retrieval/service.py` `validate_dataset_manifest` (`:99`; `E_DATASET_*` raises `:70-142`) | Dataset manifest contract violation (records, split, license, provenance, sha256) | Repair the vendored `dataset/retrieval/manifest.json` |
+| `E_SCHEMA_TYPE` / `E_SCHEMA_UNKNOWN_FIELD` / `E_SCHEMA_MISSING_FIELD` | `contracts/retrieval.py:95-102` | Packet shape violates its schema | Fix the producer |
+| `E_RUN_INPUT` | `stages.py:210` (evidence canonical bytes; raise in `_canonical_object`, `stages.py:96`) | Evidence JSON is not canonical | Re-run scan |
 
 ### `plan-import` (`stages.py:223`, `PlanImportStage`)
 
 | Code | Raised where | Meaning | Recover |
 | --- | --- | --- | --- |
 | `E_INPUT_NOT_FOUND` | `stages.py:244` | No `inputs/readme-plan.json` yet → stage reports `waiting-for-plan` (run pauses, not fails) | Write the plan; resume |
-| `E_GENERATION_REQUEST_SIZE` | `stages.py:236`, `runner.py:222-223` (`_copy_plan`) | Plan exceeds `MAX_GENERATION_REQUEST_BYTES` | Shrink the plan |
+| `E_GENERATION_REQUEST_SIZE` | `stages.py:236`, `runner.py:221-224` (`_copy_plan`) | Plan exceeds `MAX_GENERATION_REQUEST_BYTES` | Shrink the plan |
 | `E_RUN_INPUT` | `stages.py:242-247` (non-canonical plan bytes); `_canonical_object` (`stages.py:93-97`) | Plan JSON must use canonical bytes | Re-serialize with `canonical_json_bytes` |
 | `E_SCHEMA_*` / `E_SCHEMA_VERSION` | `validate_readme_plan` (`stages.py:247`) | Plan violates the README Plan contract for the current mode | Fix the plan |
 
@@ -63,8 +63,8 @@ Where each code is raised and what it means. All codes are real
 | `E_GENERATION_EVIDENCE*` | `generation/request.py` (`E_GENERATION_EVIDENCE`, `_DANGLING`, `_DUPLICATE`, `_STALE`) | Evidence graph/references are dangling, duplicated, or stale vs base SHA | Refresh evidence (re-scan) |
 | `E_GENERATION_RETRIEVAL` / `E_GENERATION_REQUEST_VALUE` / `E_GENERATION_REQUEST_SIZE` | `generation/request.py` | Retrieval packet or request contract violation; request too large | Fix upstream packet / shrink plan |
 | `E_LOCALE` | `generation/request.py` | Locale not in the allowed set or not paired with a README path | Fix plan locales |
-| `E_RUN_INPUT` | `stages.py:258-260` (canonical upstream files) | Upstream attempt files not canonical | Re-run upstream stages |
-| `E_REVISION_*` | `runner.py` `_revision_root`/revision commit helpers | Revision history state corrupt (`E_REVISION_COMMIT`, `E_REVISION_RECOVERY` re-raised at `runner.py:721-723`) | Repair revision state under `stages/04-generation-request/revisions/`; these are never auto-recovered |
+| `E_RUN_INPUT` | `stages.py:258-260` (canonical upstream files; raise in `_canonical_object`, `stages.py:96`) | Upstream attempt files not canonical | Re-run upstream stages |
+| `E_REVISION_*` | `runner.py` `_revision_root`/revision commit helpers | Revision history state corrupt (`E_REVISION_COMMIT`, `E_REVISION_RECOVERY` re-raised at `runner.py:726-728`) | Repair revision state under `stages/04-generation-request/revisions/`; these are never auto-recovered |
 
 ### `candidate` (`stages.py:506`, `CandidateImportStage`)
 
@@ -80,28 +80,28 @@ Where each code is raised and what it means. All codes are real
 
 | Code | Raised where | Meaning | Recover |
 | --- | --- | --- | --- |
-| `E_SCHEMA_TYPE` | `stages.py:537`, `541`, `840`, `854`, `874` | Manifest/bundle arrays or entries malformed | Fix the manifest |
-| `E_RUN_PATH` | `stages.py:544`, `797`, `871-872` | Asset path escapes `assets/` or duplicates a materialized path | Fix candidate paths |
-| `E_BUNDLE_HASH` | `stages.py:547`, `784`, `799`, `864`, `888`, `892` | Asset/artifact bytes differ from their declared sha256 | Recompute hashes or restore bytes |
-| `E_BUNDLE_PLAN` | `stages.py:765` | Bundle v3 requires README Plan v3 with `diagram_route: "compiled"` | Align plan and route |
-| `E_VISUAL_PATH` / `E_VISUAL_FINGERPRINT` | `stages.py:777`, `793`, `795`, `824` | Visual Spec path/hash mismatch between stage 5 and stage 6 | Re-compile from the stage-5 source |
-| `E_BUNDLE_MODE` / `E_CLAIM_LANGUAGE` | `stages.py:843`, `845`, `862` | Bundle README references disagree with the plan's mode/locales | Fix candidate references vs plan |
-| `E_BUNDLE_ASSET` | `stages.py:880`, `882`, `885` | Candidate SVG not a stage-6 SVG, duplicated, or absent from inventory | Re-run the compiled route |
+| `E_SCHEMA_TYPE` | `stages.py:537`, `541`, `860`, `874`, `894` | Manifest/bundle arrays or entries malformed | Fix the manifest |
+| `E_RUN_PATH` | `stages.py:544`, `817` | Asset path escapes `assets/` or duplicates a materialized path | Fix candidate paths |
+| `E_BUNDLE_HASH` | `stages.py:547`, `804`, `819`, `884`, `908`, `912` | Asset/artifact bytes differ from their declared sha256 | Recompute hashes or restore bytes |
+| `E_BUNDLE_PLAN` | `stages.py:785` | Bundle v3 requires README Plan v3 with `diagram_route: "compiled"` | Align plan and route |
+| `E_VISUAL_PATH` / `E_VISUAL_FINGERPRINT` | `stages.py:797`, `813`, `815`, `878`, `880`, `898` (`E_VISUAL_PATH`), `844` (`E_VISUAL_FINGERPRINT`) | Visual Spec path/hash mismatch between stage 5 and stage 6 | Re-compile from the stage-5 source |
+| `E_BUNDLE_MODE` / `E_CLAIM_LANGUAGE` | `stages.py:863`, `865`, `882` | Bundle README references disagree with the plan's mode/locales | Fix candidate references vs plan |
+| `E_BUNDLE_ASSET` | `stages.py:900`, `902`, `905` | Candidate SVG not a stage-6 SVG, duplicated, or absent from inventory | Re-run the compiled route |
 
-### `validation` (`stages.py:939`, `ValidateStage`)
+### `validation` (`stages.py:959`, `ValidateStage`)
 
 | Code | Raised where | Meaning | Recover |
 | --- | --- | --- | --- |
-| Report `fail` (any gate code) | `stages.py:951-952` | `validate_generated_bundle` diagnostics; the failure is captured into `validation-report.json`, the stage reports failed | Fix the surfaced diagnostics; auto-revision loop fires at index 6 (`runner.py:716-717`) |
+| Report `fail` (any gate code) | `stages.py:971-972` | `validate_generated_bundle` diagnostics; the failure is captured into `validation-report.json`, the stage reports failed | Fix the surfaced diagnostics; auto-revision loop fires at index 6 (`runner.py:721-722`) |
 | `E_VISUAL_SPEC_EVIDENCE` | `visual_kernel/gates.py:180`, `186`, `189`, `192` | Compiled scene claims must bind to Evidence v2 graph ids | Fix the Visual Spec / scene claims |
-| `E_OUTPUT_PATH` | `stages.py:899`, `909` | Materialization destination ancestry is unsafe | Move/clean the materialization target |
-| `E_REVISION_COMMIT` / `E_REVISION_RECOVERY` | `runner.py:721-723` | Revision commit failed or unrecoverable | Repair revision state; not auto-recovered |
+| `E_OUTPUT_PATH` | `stages.py:919`, `929` | Materialization destination ancestry is unsafe | Move/clean the materialization target |
+| `E_REVISION_COMMIT` / `E_REVISION_RECOVERY` | `runner.py:726-728` | Revision commit failed or unrecoverable | Repair revision state; not auto-recovered |
 
-### `evaluation` (`stages.py:956`, `EvaluateStage`)
+### `evaluation` (`stages.py:976`, `EvaluateStage`)
 
 | Code | Raised where | Meaning | Recover |
 | --- | --- | --- | --- |
-| Report `fail` | `stages.py:966-967` | Hard evaluation gates failed; the stage reports failed and downstream stages go `stale` | Address diagnostics; resume. No bypass: evaluation is the authority |
+| Report `fail` | `stages.py:986-987` | Hard evaluation gates failed; the stage reports failed and downstream stages go `stale` | Address diagnostics; resume. No bypass: evaluation is the authority |
 | `E_REVISION_COMMIT` / `E_REVISION_RECOVERY` | as above | Revision machinery broken | Repair revision state |
 
 ## Resume map
@@ -123,15 +123,15 @@ Run state lives outside the target in a centralized directory
   over the sorted list of `{path, sha256}` pairs of every file in that
   attempt directory (`RunWorkspace.attempt_output_sha256`, `workspace.py:337`).
   The candidate stage is special-cased at attempt 0 to use `input_sha256`
-  (`runner.py:659-663`).
+  (`runner.py:664-668`).
 - `input_sha256` is the adapter's `fingerprint()` (`stages.py:88`), which
   covers everything the stage consumes: scan evidence for `scan`, dataset +
   upstream scan for `retrieve`, plan bytes for `plan-import`, upstream stage
   hashes for later stages.
 - Skipping: `_drive` skips a stage only when status is `pass`, `input_sha256`
   equals the live fingerprint, and the stored output matches the manifest
-  (`runner.py:664-668`). Otherwise the stage re-runs; changed inputs mark
-  downstream stages `stale` (`_stale_from`, `runner.py:245-247`).
+  (`runner.py:669-674`). Otherwise the stage re-runs; changed inputs mark
+  downstream stages `stale` (`_stale_from`, `runner.py:250-252`).
 
 ### Last-good state → resume point per failure
 
@@ -156,7 +156,7 @@ loudly instead of inventing state.
 
 1. **Idempotent rerun.** Re-running or resuming re-executes only non-pass /
    drifted stages. Passed stages whose fingerprint and output hash are intact
-   are skipped (`runner.py:664-668`). Fixing an input marks all downstream
+   are skipped (`runner.py:669-674`). Fixing an input marks all downstream
    stages `stale`; nothing is silently reused.
 2. **Lock semantics (`E_RUN_LOCKED`).** Every `run` / `resume` / `preview`
    acquires two locks: the workspace mutex (`RunWorkspace.lock`) and a
@@ -169,9 +169,9 @@ loudly instead of inventing state.
    `manual-review-required`, downstream stages go `stale`, and `resume`
    re-executes the failing stage against real inputs. Hand-editing
    `run-manifest.json` is rejected: `read_manifest` validates the manifest and
-   requires canonical bytes (`E_RUN_MANIFEST_CANONICAL`, `workspace.py:333-334`).
+   requires canonical bytes (`E_RUN_MANIFEST_CANONICAL`, `workspace.py:334`).
    `E_REVISION_COMMIT` / `E_REVISION_RECOVERY` are deliberately re-raised
-   (`runner.py:721-723`) so a corrupt revision history can never be papered over.
+   (`runner.py:726-728`) so a corrupt revision history can never be papered over.
 4. **Fresh-chat recovery.** Any new session resumes an interrupted run with
    `python3 .../readme_pipeline.py resume --root <target>` (or the explicit
    `--workspace` from a debug summary). `status` / `explain` read the manifest
