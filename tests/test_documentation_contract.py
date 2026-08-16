@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +15,28 @@ _IMPORT_STATEMENT = re.compile(
     r"(?:\bfrom\s+|\bimport(?:\s|[\"'])|\brequire\s*\()", re.IGNORECASE
 )
 _FORBIDDEN_IMPORT_TOKENS = ("archscribe", "rough.js", "roughjs", "font", "icon")
+
+_LINK_TARGET = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+
+# docs/superpowers/ holds archived scratch plans, not the user-documentation
+# contract. Their broken relative links are exempted per exact (path, line)
+# entry below — deliberately NOT a blanket directory exemption: any other
+# unreachable link, including a new one inside those files, still fails.
+_SUPERPOWERS_EXEMPTIONS = frozenset(
+    {
+        ("docs/superpowers/plans/2026-08-13-visual-quality-production.md", 1326),
+        ("docs/superpowers/plans/2026-08-13-visual-quality-production.md", 1327),
+    }
+)
+
+_DOC_CONTRACT_FILES = (
+    "README.md",
+    "README_zh.md",
+    "skill/SKILL.md",
+    "skill/.env.example",
+)
+
+_DOC_CONTRACT_TREES = ("skill/references", "skill/workflows", "docs")
 
 
 def _visual_kernel_boundary_violations(root: Path) -> list[str]:
@@ -46,6 +70,61 @@ def _assert_visual_kernel_clean(root: Path) -> None:
     violations = _visual_kernel_boundary_violations(root)
     if violations:
         raise AssertionError("visual kernel clean-room violations: " + ", ".join(violations))
+
+
+def _scanned_document_set() -> dict[str, str]:
+    """Read the documentation contract into memory as {relative path: text}."""
+
+    scanned: dict[str, str] = {}
+    for relative in _DOC_CONTRACT_FILES:
+        path = REPO_ROOT / relative
+        if path.is_file():
+            scanned[relative] = path.read_text(encoding="utf-8")
+    for directory in _DOC_CONTRACT_TREES:
+        for path in sorted((REPO_ROOT / directory).rglob("*.md")):
+            scanned[str(path.relative_to(REPO_ROOT))] = path.read_text(encoding="utf-8")
+    return scanned
+
+
+def _forward_reachability_violations(scanned: dict[str, str]) -> list[str]:
+    """Return every relative link target that does not resolve to a file."""
+
+    violations: list[str] = []
+    for relative, text in sorted(scanned.items()):
+        if not relative.endswith(".md"):
+            continue
+        source = REPO_ROOT / relative
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for match in _LINK_TARGET.finditer(line):
+                target = match.group(1).strip()
+                if target.startswith(("http://", "https://", "mailto:", "ftp://", "#")):
+                    continue
+                path_part = target.split("#", 1)[0].rstrip("/")
+                if not path_part or " " in path_part:
+                    continue
+                resolved = (source.parent / path_part).resolve()
+                if not resolved.exists() and (relative, line_number) not in _SUPERPOWERS_EXEMPTIONS:
+                    violations.append(f"{relative}:{line_number} -> {target}")
+    return violations
+
+
+def _assert_forward_reachability(scanned: dict[str, str]) -> None:
+    violations = _forward_reachability_violations(scanned)
+    if violations:
+        raise AssertionError("unreachable documentation links: " + "; ".join(violations))
+
+
+def _assert_env_example_hygiene(text: str) -> None:
+    """Reject any KEY=<concrete value> template line in the .env example."""
+
+    violations: list[str] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        probe = line.strip().lstrip("#").strip()
+        key, sep, value = probe.partition("=")
+        if sep and value.strip():
+            violations.append(f"{line_number}: {line.strip()}")
+    if violations:
+        raise AssertionError(".env.example must stay a value-free template: " + "; ".join(violations))
 
 
 def _assert_public_readme_boundary(text: str) -> None:
@@ -269,6 +348,132 @@ class DocumentationContractTests(unittest.TestCase):
     def test_roadmap_stays_within_public_readme_boundary(self) -> None:
         roadmap = (REPO_ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
         _assert_public_readme_boundary(roadmap)
+
+    def test_doc_contract_forward_reachability(self) -> None:
+        scanned = _scanned_document_set()
+        for required in _DOC_CONTRACT_FILES:
+            self.assertIn(required, scanned, f"contract set missing: {required}")
+        for directory in _DOC_CONTRACT_TREES:
+            self.assertTrue(
+                any(relative.startswith(directory + "/") for relative in scanned),
+                f"contract set has no files under {directory}/",
+            )
+        _assert_forward_reachability(scanned)
+
+    def test_doc_contract_reverse_reachability(self) -> None:
+        scanned = _scanned_document_set()
+        referenced: set[str] = set()
+        for relative, text in scanned.items():
+            if not relative.endswith(".md"):
+                continue
+            source = REPO_ROOT / relative
+            for line in text.splitlines():
+                for match in _LINK_TARGET.finditer(line):
+                    target = match.group(1).strip().split("#", 1)[0].rstrip("/")
+                    if not target or target.startswith(
+                        ("http://", "https://", "mailto:", "ftp://", "#")
+                    ):
+                        continue
+                    resolved = (source.parent / target).resolve()
+                    try:
+                        referenced.add(str(resolved.relative_to(REPO_ROOT)))
+                    except ValueError:
+                        continue
+        orphans: list[str] = []
+        for relative in scanned:
+            is_workflow = relative.startswith("skill/workflows/") and relative.endswith(".md")
+            is_top_level_doc = (
+                relative.startswith("docs/")
+                and relative.endswith(".md")
+                and "/" not in relative[len("docs/") :]
+            )
+            if (is_workflow or is_top_level_doc) and relative not in referenced:
+                orphans.append(relative)
+        self.assertEqual(orphans, [], "unreferenced documentation: " + ", ".join(orphans))
+
+    def test_doc_contract_content_assertions(self) -> None:
+        failure_recovery = (REPO_ROOT / "skill/references/failure-recovery.md").read_text(
+            encoding="utf-8"
+        )
+        matrix = failure_recovery.split("## Stage × failure-mode matrix", 1)[1]
+        matrix = matrix.split("\n## ", 1)[0]
+        stage_rows = [row for row in matrix.splitlines() if row.lstrip().startswith("| `")]
+        self.assertEqual(len(stage_rows), 8, "failure-recovery matrix must hold eight stages")
+        for row in stage_rows:
+            cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
+            self.assertGreaterEqual(len(cells), 6)
+            self.assertTrue(cells[5], f"stage without recovery entry: {cells[0]}")
+
+        commands = (REPO_ROOT / "skill/references/commands.md").read_text(encoding="utf-8")
+        self.assertLess(
+            commands.index("## Request routing at a glance"),
+            commands.index("## Routing"),
+            "routing table must sit above the ## Routing rules",
+        )
+        self.assertIn("| Request shape |", commands)
+
+        index_path = REPO_ROOT / "dataset/retrieval/exemplars_index.json"
+        self.assertTrue(index_path.is_file(), "exemplars_index.json missing")
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        self.assertIsInstance(index.get("records"), list)
+        self.assertGreater(len(index["records"]), 0)
+
+        for relative in (
+            "docs/getting-started.md",
+            "docs/faq.md",
+            "docs/roadmap.md",
+            "docs/project-positioning.md",
+            "docs/zh/getting-started.md",
+            "docs/zh/faq.md",
+            "docs/zh/roadmap.md",
+            "docs/zh/project-positioning.md",
+        ):
+            self.assertTrue((REPO_ROOT / relative).is_file(), f"missing user doc: {relative}")
+
+        for relative, marker in (
+            ("docs/getting-started.md", "exactly one place"),
+            ("docs/zh/getting-started.md", "只放在一个位置"),
+        ):
+            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn(marker, text, f"{relative} must state the .env-only-place rule")
+            self.assertIn("chmod 600", text, f"{relative} must carry chmod 600 guidance")
+            self.assertIn("skill/.env", text)
+
+        _assert_env_example_hygiene(
+            (REPO_ROOT / "skill/.env.example").read_text(encoding="utf-8")
+        )
+
+    def test_doc_contract_mutation_isolation(self) -> None:
+        scanned = _scanned_document_set()
+        baseline_status = self._porcelain_status()
+        with self.subTest(mutation="broken_link"):
+            mutated = dict(scanned)
+            mutated["skill/SKILL.md"] = (
+                mutated["skill/SKILL.md"] + "\n\n[broken link](./definitely-missing.md)\n"
+            )
+            with self.assertRaises(AssertionError):
+                _assert_forward_reachability(mutated)
+            self.assertEqual(self._porcelain_status(), baseline_status, "broken-link mutation dirtied the tree")
+        with self.subTest(mutation="superpowers_requires_exact_allowlist"):
+            mutated = dict(scanned)
+            scratch = "docs/superpowers/plans/2026-08-13-visual-quality-gate.md"
+            mutated[scratch] = mutated[scratch] + "\n\n[scratch broken](./missing.md)\n"
+            with self.assertRaises(AssertionError):
+                _assert_forward_reachability(mutated)
+            self.assertEqual(self._porcelain_status(), baseline_status, "scratch mutation dirtied the tree")
+        with self.subTest(mutation="env_example_secret"):
+            env = (REPO_ROOT / "skill/.env.example").read_text(encoding="utf-8")
+            with self.assertRaises(AssertionError):
+                _assert_env_example_hygiene(env + "\nVISION_REVIEW_API_KEY=sk-live-secret\n")
+            self.assertEqual(self._porcelain_status(), baseline_status, "env mutation dirtied the tree")
+
+    def _porcelain_status(self) -> str:
+        return subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
 
 
 if __name__ == "__main__":

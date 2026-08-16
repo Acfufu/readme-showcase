@@ -54,7 +54,7 @@ $readme-showcase shape [target]
 
 `shape` 梳理证据、叙事、范围与视觉方向；它等待批准，不创建候选文件。其余
 命令——`audit`、`redesign`、`polish` 与 `visualize`——在
-[README](../README_zh.md) 中有说明。
+[README](../../README_zh.md) 中有说明。
 
 ## `.env` 文件
 
