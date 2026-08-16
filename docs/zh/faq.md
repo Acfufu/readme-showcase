@@ -43,8 +43,9 @@ Markdown。
 ## 支持哪些平台？
 
 Codex 已正式支持并验证项目级与用户级安装。Claude Code 能识别
-`.claude/skills` 下的 Skill（audit-only 运行时验收已通过）；OpenCode 能识别
-`.agents/skills` 项目级安装。当前安装器面向 Codex 路径。
+`.claude/skills` 下的 Skill（已通过 Claude Code 2.1.222 的 audit-only 运行时
+验收）；OpenCode 能识别当前 `.agents/skills` 项目级安装（已通过
+OpenCode 1.18.13 的 audit-only 运行时验收）。当前安装器面向 Codex 路径。
 
 ## 如何报告问题？
 

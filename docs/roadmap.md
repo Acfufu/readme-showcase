@@ -29,8 +29,8 @@ claim here goes beyond what the repository currently demonstrates.
 These are candidate directions. None is committed, and none changes the
 approval gates:
 
-- User documentation under `docs/` with the same en / zh-Hans pairing as the
-  READMEs (this hierarchy).
+- Expand the user documentation hierarchy under `docs/` with deeper
+  getting-started, FAQ, and roadmap coverage.
 - Deeper coverage of the motion and compiled visual routes, each retaining its
   editable evidence-bound source.
 - More editorial patterns in the retrieval dataset, always license-screened

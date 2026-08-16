@@ -17,6 +17,25 @@ _IMPORT_STATEMENT = re.compile(
 _FORBIDDEN_IMPORT_TOKENS = ("archscribe", "rough.js", "roughjs", "font", "icon")
 
 _LINK_TARGET = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+_FENCE_MARKER = re.compile(r"^\s*```")
+
+
+def _link_targets_outside_fences(text: str):
+    """Yield (line_number, match) for link targets outside fenced code blocks.
+
+    A line whose first non-whitespace run is ``` toggles fence membership;
+    links inside fences (example URLs in command blocks) are not scanned.
+    """
+
+    in_fence = False
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if _FENCE_MARKER.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for match in _LINK_TARGET.finditer(line):
+            yield line_number, match
 
 # docs/superpowers/ holds archived scratch plans, not the user-documentation
 # contract. Their broken relative links are exempted per exact (path, line)
@@ -94,17 +113,19 @@ def _forward_reachability_violations(scanned: dict[str, str]) -> list[str]:
         if not relative.endswith(".md"):
             continue
         source = REPO_ROOT / relative
-        for line_number, line in enumerate(text.splitlines(), start=1):
-            for match in _LINK_TARGET.finditer(line):
-                target = match.group(1).strip()
-                if target.startswith(("http://", "https://", "mailto:", "ftp://", "#")):
-                    continue
-                path_part = target.split("#", 1)[0].rstrip("/")
-                if not path_part or " " in path_part:
-                    continue
-                resolved = (source.parent / path_part).resolve()
-                if not resolved.exists() and (relative, line_number) not in _SUPERPOWERS_EXEMPTIONS:
-                    violations.append(f"{relative}:{line_number} -> {target}")
+        for line_number, match in _link_targets_outside_fences(text):
+            target = match.group(1).strip()
+            if target.startswith(("http://", "https://", "mailto:", "ftp://", "#")):
+                continue
+            path_part = target.split("#", 1)[0].rstrip("/")
+            if not path_part:
+                continue
+            if " " in path_part:
+                violations.append(f"{relative}:{line_number} -> spaced target {target!r}")
+                continue
+            resolved = (source.parent / path_part).resolve()
+            if not resolved.exists() and (relative, line_number) not in _SUPERPOWERS_EXEMPTIONS:
+                violations.append(f"{relative}:{line_number} -> {target}")
     return violations
 
 
@@ -348,6 +369,8 @@ class DocumentationContractTests(unittest.TestCase):
     def test_roadmap_stays_within_public_readme_boundary(self) -> None:
         roadmap = (REPO_ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
         _assert_public_readme_boundary(roadmap)
+        zh_roadmap = (REPO_ROOT / "docs/zh/roadmap.md").read_text(encoding="utf-8")
+        _assert_public_readme_boundary(zh_roadmap)
 
     def test_doc_contract_forward_reachability(self) -> None:
         scanned = _scanned_document_set()
@@ -367,18 +390,19 @@ class DocumentationContractTests(unittest.TestCase):
             if not relative.endswith(".md"):
                 continue
             source = REPO_ROOT / relative
-            for line in text.splitlines():
-                for match in _LINK_TARGET.finditer(line):
-                    target = match.group(1).strip().split("#", 1)[0].rstrip("/")
-                    if not target or target.startswith(
-                        ("http://", "https://", "mailto:", "ftp://", "#")
-                    ):
-                        continue
-                    resolved = (source.parent / target).resolve()
-                    try:
-                        referenced.add(str(resolved.relative_to(REPO_ROOT)))
-                    except ValueError:
-                        continue
+            for _line_number, match in _link_targets_outside_fences(text):
+                target = match.group(1).strip().split("#", 1)[0].rstrip("/")
+                if (
+                    not target
+                    or " " in target
+                    or target.startswith(("http://", "https://", "mailto:", "ftp://", "#"))
+                ):
+                    continue
+                resolved = (source.parent / target).resolve()
+                try:
+                    referenced.add(str(resolved.relative_to(REPO_ROOT)))
+                except ValueError:
+                    continue
         orphans: list[str] = []
         for relative in scanned:
             is_workflow = relative.startswith("skill/workflows/") and relative.endswith(".md")
@@ -395,8 +419,13 @@ class DocumentationContractTests(unittest.TestCase):
         failure_recovery = (REPO_ROOT / "skill/references/failure-recovery.md").read_text(
             encoding="utf-8"
         )
-        matrix = failure_recovery.split("## Stage × failure-mode matrix", 1)[1]
-        matrix = matrix.split("\n## ", 1)[0]
+        split_matrix = failure_recovery.split("## Stage × failure-mode matrix", 1)
+        self.assertEqual(
+            len(split_matrix),
+            2,
+            "failure-recovery.md missing heading: ## Stage × failure-mode matrix",
+        )
+        matrix = split_matrix[1].split("\n## ", 1)[0]
         stage_rows = [row for row in matrix.splitlines() if row.lstrip().startswith("| `")]
         self.assertEqual(len(stage_rows), 8, "failure-recovery matrix must hold eight stages")
         for row in stage_rows:
@@ -405,6 +434,12 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertTrue(cells[5], f"stage without recovery entry: {cells[0]}")
 
         commands = (REPO_ROOT / "skill/references/commands.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "## Request routing at a glance",
+            commands,
+            "commands.md missing heading: ## Request routing at a glance",
+        )
+        self.assertIn("## Routing", commands, "commands.md missing heading: ## Routing")
         self.assertLess(
             commands.index("## Request routing at a glance"),
             commands.index("## Routing"),

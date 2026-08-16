@@ -139,7 +139,7 @@ handoff output. Use explicit `--workspace` only when the user requests a custom
 absolute location. Never create a per-run virtual environment; use the existing
 runtime and remove temporary files before returning.
 
-Each stage's contract, commands, and gate rules live in `skill/workflows/`;
+Each stage's contract, commands, and gate rules live in the `workflows/` directory;
 read the [workflow index](workflows/_index.md) first, then run the stages in
 order:
 

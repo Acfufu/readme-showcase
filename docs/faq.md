@@ -48,8 +48,9 @@ changing facts stay searchable Markdown.
 
 Codex is officially installed and verified in project or user scope. Claude
 Code recognizes the Skill under `.claude/skills` (audit-only runtime
-acceptance passed); OpenCode recognizes the project install under
-`.agents/skills`. The current installer targets the Codex paths.
+acceptance passed with Claude Code 2.1.222); OpenCode recognizes the project
+install under `.agents/skills` (audit-only runtime acceptance passed with
+OpenCode 1.18.13). The current installer targets the Codex paths.
 
 ## How do I report an issue?
 

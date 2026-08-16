@@ -163,16 +163,24 @@ loudly instead of inventing state.
    `flock` on `<workspace>/.runner.lock` (`_runner_lock`, `runner.py:189-213`).
    A concurrent run raises `E_RUN_LOCKED` ("run workspace is locked") — never
    force, delete, or bypass the lock; serialize and retry after the other run
-   exits. Stage mutations take the same lock individually.
-3. **No gate bypass.** There is no flag, manifest edit, or command that marks a
+       exits. Stage mutations take the same lock individually.
+3. **Plan-lock ordering.** The plan lock is written by the approved handler
+   during delivery, after the run completes. The first evaluation therefore
+   runs before approval; tampering between evaluation and approval is caught
+   by the approval-envelope-to-bundle binding check at delivery, and every
+   post-approval re-evaluation is protected by the plan-lock gate (runner
+   latch + byte/locale/asset/claim drift detection). The approval-before-run
+   ordering is supported — a pre-placed lock engages the gate on resume — but
+   is not the default pipeline flow.
+4. **No gate bypass.** There is no flag, manifest edit, or command that marks a
    failed validation/evaluation stage as passed. Non-pass stages set the run to
    `manual-review-required`, downstream stages go `stale`, and `resume`
    re-executes the failing stage against real inputs. Hand-editing
    `run-manifest.json` is rejected: `read_manifest` validates the manifest and
    requires canonical bytes (`E_RUN_MANIFEST_CANONICAL`, `workspace.py:334`).
    `E_REVISION_COMMIT` / `E_REVISION_RECOVERY` are deliberately re-raised
-   (`runner.py:726-728`) so a corrupt revision history can never be papered over.
-4. **Fresh-chat recovery.** Any new session resumes an interrupted run with
+       (`runner.py:726-728`) so a corrupt revision history can never be papered over.
+5. **Fresh-chat recovery.** Any new session resumes an interrupted run with
    `python3 .../readme_pipeline.py resume --root <target>` (or the explicit
    `--workspace` from a debug summary). `status` / `explain` read the manifest
    without locking; `preview` re-locks and re-verifies the revision pointer
