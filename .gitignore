@@ -3,6 +3,8 @@
 .omo/
 .mem/
 .memignore
+# Local environment secrets (skill/.env) - never published; .env.example is the template
+.env
 docs/superpowers/
 docs/architecture/visual-compiler/
 node_modules/

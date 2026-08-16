@@ -18,6 +18,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from ..config_env import config_get, resolve_config
 from ...pipeline_contracts import ContractError, write_canonical_json_atomic
 
 RUBRIC_PATH = Path(__file__).resolve().parents[3] / "references" / "visual-review-rubric.md"
@@ -239,13 +240,16 @@ def review_screenshots(
                 "findings": [_finding("E_REVIEW_SKIPPED", "E_REVIEW_SKIPPED: no screenshots provided")]}
     criteria = load_rubric()
 
-    # Resolve reviewer: explicit > env > session probe > host mode.
-    api_key = os.environ.get(api_key_env)
+    # Resolve reviewer: explicit > env > session probe > host mode. Env reads
+    # go through config_env (process env wins over skill/.env); the dynamic
+    # api_key_env name keeps process-environment-variable semantics.
+    cfg = resolve_config()
+    api_key = config_get(api_key_env)
     resolved_model: str | None = None
     if model != "auto":
         resolved_model = model
-    elif os.environ.get("VISION_REVIEW_MODEL"):
-        resolved_model = os.environ["VISION_REVIEW_MODEL"]
+    elif cfg.get("VISION_REVIEW_MODEL"):
+        resolved_model = cfg["VISION_REVIEW_MODEL"]
     elif api_key and _session_model_probe():
         resolved_model = _session_model_probe()
 
@@ -260,8 +264,8 @@ def review_screenshots(
                 "Pass --model <other-family> for an independent judge."))
         pairwise = reference is not None
         prompt = _build_prompt(criteria, screenshots, reference, pairwise)
-        resolved_base = api_base or os.environ.get("VISION_REVIEW_API_BASE",
-                                                   "https://api.openai.com/v1")
+        resolved_base = api_base or cfg.get("VISION_REVIEW_API_BASE",
+                                            "https://api.openai.com/v1")
         try:
             completion = _chat_completion(resolved_model, resolved_base, api_key, prompt)
         except Exception as exc:  # network/API failure → host mode, not blocking
