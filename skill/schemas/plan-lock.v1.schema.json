@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Acfufu/readme-showcase/schemas/plan-lock.v1.schema.json",
+  "$id": "https://readme-showcase.local/schemas/plan-lock.v1.schema.json",
   "title": "README Showcase Plan Lock v1",
   "$comment": "Python semantic validation enforces required-field presence (E_PLAN_LOCK) and recomputes every hash from the locked bundle artifacts (E_PLAN_DRIFT). The lock is written only by the approval handler from a human-approved approval envelope.",
   "x-python-semantic-validation": {

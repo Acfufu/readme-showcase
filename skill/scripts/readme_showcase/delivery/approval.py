@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,8 @@ from ..contracts.publishing import (
 
 
 INPUT_ERROR_CODE = "E_APPROVAL_INPUT"
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def create_approval_template(pr_payload: Any, candidate_root: Path) -> dict[str, Any]:
@@ -87,6 +90,9 @@ def write_plan_lock(
     """
     plan_path = workspace / "inputs/readme-plan.json"
     if not (workspace / "run-manifest.json").is_file() or not plan_path.is_file():
+        _LOGGER.warning(
+            "no plan lock written: workspace is missing run-manifest.json or inputs/readme-plan.json"
+        )
         return None
     raw, plan = read_json_object_bytes(plan_path)
     if raw != canonical_json_bytes(plan):

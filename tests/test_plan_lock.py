@@ -342,6 +342,15 @@ class PlanLockDriftTests(unittest.TestCase):
             self._check(tampered)
         self.assertEqual(raised.exception.code, "E_PLAN_DRIFT")
 
+    def test_claim_map_ref_deleted_with_empty_lock_still_raises_drift(self) -> None:
+        bundle = json.loads(json.dumps(self.bundle))
+        bundle["artifacts"].pop("claim_map")
+        tampered = json.loads(json.dumps(self.lock))
+        tampered["claim_ids"] = []
+        with self.assertRaises(ContractError) as raised:
+            self._check(tampered, bundle=bundle)
+        self.assertEqual(raised.exception.code, "E_PLAN_DRIFT")
+
     def test_plan_artifact_bytes_tampered_after_lock_raises_drift(self) -> None:
         from skill.scripts.readme_showcase.generation.assembler import assemble_generated_bundle
 
@@ -821,6 +830,23 @@ class PlanLockErrorCodeTests(unittest.TestCase):
     def test_known_error_codes_contain_all_three_plan_lock_codes(self) -> None:
         for code in ("E_PLAN_DRIFT", "E_PLAN_LOCK", "E_CONFIG_MISSING_KEY"):
             self.assertIn(code, KNOWN_ERROR_CODES)
+
+
+class PlanLockFieldParityTests(unittest.TestCase):
+    def test_python_field_sets_match_schema_required_arrays(self) -> None:
+        from skill.scripts.readme_showcase.contracts.plan_lock import (
+            _LOCK_FIELDS,
+            _REPORT_FIELDS,
+        )
+
+        lock_schema = json.loads(
+            (REPO_ROOT / "skill/schemas/plan-lock.v1.schema.json").read_text(encoding="utf-8")
+        )
+        report_schema = json.loads(
+            (REPO_ROOT / "skill/schemas/plan-lock-report.v1.schema.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(_LOCK_FIELDS, set(lock_schema["required"]))
+        self.assertEqual(_REPORT_FIELDS, set(report_schema["required"]))
 
 
 if __name__ == "__main__":

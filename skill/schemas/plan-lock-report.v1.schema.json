@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Acfufu/readme-showcase/schemas/plan-lock-report.v1.schema.json",
+  "$id": "https://readme-showcase.local/schemas/plan-lock-report.v1.schema.json",
   "title": "README Showcase Plan Lock Report v1",
   "$comment": "Write-only evidence produced by the EvaluateStage plan-lock gate. Never read back as a decision input; the gate always recomputes from the lock and bundle artifact bytes.",
   "x-python-semantic-validation": {

@@ -74,7 +74,7 @@ def _asset_hashes(bundle: Mapping[str, Any]) -> list[dict[str, str]]:
 def _claim_ids(artifact_root: Path, artifacts: Mapping[str, Any]) -> list[str]:
     claim_map_ref = artifacts.get("claim_map")
     if claim_map_ref is None:
-        return []
+        _fail("E_PLAN_DRIFT", "locked bundle claim map artifact is missing")
     try:
         claim_map, _ = _artifact_json(artifact_root, claim_map_ref, "bundle artifacts.claim_map")
     except ContractError as exc:

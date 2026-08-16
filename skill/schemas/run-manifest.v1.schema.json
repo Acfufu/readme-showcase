@@ -25,6 +25,7 @@
     },
     "requires_plan_lock": {
       "type": "boolean",
+      "default": false,
       "description": "Set by the runner when an approved plan lock exists; optional, defaults to false."
     },
     "stages": {
