@@ -240,6 +240,13 @@ failure and identity override is also recorded locally as a candidate entry in
 `lessons-pending.json` beside the evaluation report; human-confirmed lessons
 migrate into [`skill/references/lessons.md`](skill/references/lessons.md).
 
+## Documentation
+
+- [Getting started](docs/getting-started.md)
+- [FAQ](docs/faq.md)
+- [Roadmap](docs/roadmap.md)
+- [Project positioning](docs/project-positioning.md)
+
 ## Repository map
 
 ```text

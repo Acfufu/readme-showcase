@@ -266,6 +266,10 @@ class DocumentationContractTests(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     _assert_public_readme_boundary(baseline + injection)
 
+    def test_roadmap_stays_within_public_readme_boundary(self) -> None:
+        roadmap = (REPO_ROOT / "docs/roadmap.md").read_text(encoding="utf-8")
+        _assert_public_readme_boundary(roadmap)
+
 
 if __name__ == "__main__":
     _ = unittest.main()

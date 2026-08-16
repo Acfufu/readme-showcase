@@ -205,6 +205,13 @@ bbox 检查跳过——`--browser` 主题捕获需要
 `node` + `playwright`，`--review` 使用 `VISION_REVIEW_API_KEY` /
 `VISION_REVIEW_MODEL` / `VISION_REVIEW_API_BASE` 配置可选的视觉-LLM 审美评审。
 
+## 文档
+
+- [快速开始](docs/zh/getting-started.md)
+- [常见问题](docs/zh/faq.md)
+- [路线图](docs/zh/roadmap.md)
+- [项目定位](docs/zh/project-positioning.md)
+
 ## 仓库地图
 
 ```text
