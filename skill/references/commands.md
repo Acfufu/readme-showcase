@@ -3,6 +3,19 @@
 Commands provide a small user vocabulary over the existing three modes. They
 do not add pipeline stages, execution engines, or publication authority.
 
+## Request routing at a glance
+
+| Request shape | Example request | Command / mode |
+| --- | --- | --- |
+| Plan before writing | "propose a narrative for my README", "what visual direction?", "plan first" | `shape [target]` — planning; stop for approval, no candidate files |
+| Read-only diagnosis | "review this README", "check the claims and links" | `audit [target]` — audit-only; findings only |
+| Approved rebuild | "redesign the README", "rewrite the homepage" | `redesign [target]` — README mode; validated local preview |
+| Narrow refinement | "polish the quick-start section" | `polish [target]` — README mode, target as hard scope boundary |
+| One visual | "make a hero image", "diagram the workflow" | `visualize [target]` — asset-only; validated asset, not embedded |
+| Bare invocation | "help me with my README" (no command, no intent) | Inspect current README, dirty tree, and latest run; recommend two or three concrete commands with targets and wait |
+| Ambiguous audit/redesign wording | "review this README and fix it", "give it an overhaul" | Ask once before writing (routing rule 3) |
+| Natural-language request | Any plain request that does not name a command | Routes normally; commands are vocabulary, not a requirement to repeat the request |
+
 ## Routing
 
 1. Run an explicit command below when the request names it.
