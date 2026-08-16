@@ -35,8 +35,11 @@ class MarketplaceContractTests(unittest.TestCase):
         data = self.load_manifest()
         self.assertEqual(set(data.keys()), CLOSED_FIELDS)
         for field in sorted(CLOSED_FIELDS):
+            self.assertIsInstance(
+                data[field], str, f"marketplace field {field!r} must be a string"
+            )
             self.assertTrue(
-                str(data[field]).strip(),
+                data[field].strip(),
                 f"marketplace field {field!r} must be non-empty",
             )
 
@@ -69,8 +72,14 @@ class MarketplaceContractTests(unittest.TestCase):
             self.skipTest("npm not available on PATH")
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        packed_paths = [entry["path"] for pkg in payload for entry in pkg.get("files", [])]
-        self.assertNotIn("marketplace.json", packed_paths)
+        # npm >= 7 emits an array; npm 6 emits a single object. Normalize both.
+        packages = payload if isinstance(payload, list) else [payload]
+        packed_paths = [entry["path"] for pkg in packages for entry in pkg.get("files", [])]
+        # npm packs path-prefixed entry names (".claude-plugin/marketplace.json",
+        # never bare "marketplace.json"): exact membership would false-pass on the
+        # real violation, so assert the suffix AND that the directory is absent.
+        self.assertFalse(any(p.endswith("marketplace.json") for p in packed_paths))
+        self.assertNotIn(".claude-plugin", packed_paths)
 
 
 if __name__ == "__main__":
