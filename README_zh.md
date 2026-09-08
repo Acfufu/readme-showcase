@@ -132,6 +132,7 @@ Code 或 OpenCode 副本。格式兼容不代表当前面向 Codex 的安装器�
 | `static` | 项目身份与紧凑几何更重要 | 项目拥有的可编辑 SVG |
 | `elk` | 架构、流程图或 C4 关系需要布局 | 语义 JSON + 已验证 SVG |
 | `compiled` | Plan v3 需要独立桌面/移动投影 | Visual Spec + 不可变 Stage 6 输出 |
+| `animated` | Plan v3 以 `static_frame: true` 选择启用；状态变化或序列能增加理解 | 动画 SVG 源 + 静态帧变体 + motion JSON + 派生 GIF |
 | motion | 状态变化或序列能增加理解 | 静态 SVG + motion JSON + 派生 GIF |
 
 <details>
