@@ -14,3 +14,11 @@ __pycache__/
 
 # Local test virtualenv - never committed
 .venv/
+
+# Local agent-tooling state and one-off reports - never published to GitHub
+/.lazyzcode/
+/.superpowers/
+/.impeccable/
+/.codegraph
+/artifacts/
+/handoff-report*.html
