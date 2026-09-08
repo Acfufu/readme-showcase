@@ -138,6 +138,7 @@ jobs:
         with:
           node-version: "22.22.3"
           cache: npm
+      - run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
       - run: npm ci --ignore-scripts
       - run: cmp node_modules/elkjs/lib/elk.bundled.js skill/vendor/elkjs/lib/elk.bundled.js
       - run: cmp node_modules/elkjs/package.json skill/vendor/elkjs/package.json
