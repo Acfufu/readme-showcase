@@ -1,7 +1,7 @@
 # AGENTS.md — readme-showcase
 
 Orientation map for AI coding agents (and humans) continuing work in this repo.
-State snapshot: 2026-09-09, after the repo-sweep described at the bottom.
+State snapshot: 2026-09-14, after the repo-sweep and first-green-CI push described at the bottom.
 
 ## What this repo is
 
@@ -79,30 +79,28 @@ nvm install && nvm use           # Node 22.22.3 — HARD-PINNED, see below
    a gate test failing with `'pass' != 'fail'` (e.g. `test_clipped_svg_fails`)
    means your environment lacks Pillow, not that the gate is buggy.
 
-## Open threads (as of 2026-09-09)
+## Open threads (as of 2026-09-14)
 
 Derived from the 2026-09-04 handoff review (RS-HANDOFF-2026-09-04); the report
 HTML itself was untracked and has been superseded by this section.
 
-- **Push debt — 18 commits ahead of origin/main only.** GitHub sits at
-  `a2059b9` (2026-08-13); the `localgitea` mirror is already in sync. Public
-  `npx` users install the 3-week-old version until you push. Push only after
-  the CI fix below is in.
-- **Public CI red since 2026-08-13 — both root causes were missing CI deps, not
-  regressions**: `elk-unit` had no `pip install -r requirements-dev.txt` step
-  (→ `ImportError: jsonschema` in e2e tests), and `legacy-all` lacked Pillow
-  (top-level `from PIL import Image` in `verify_animation_matrix.py`). Fixed
-  in-tree on 2026-09-09 (elk-unit step added; Pillow + numpy added to
-  `requirements-dev.txt`). Verify all six jobs green after push. Last known
-  full green: 2026-08-11.
-- **PR #2 is open on GitHub**: "fix(skill): support Plan v3 animated route…",
-  4 commits, CI red, forked from `a2059b9`. Read its diff, rebase onto current
-  main, re-run CI, then merge or close deliberately.
+- **Resolved 2026-09-14 — push debt and public CI.** origin/main now carries
+  everything through `1be0e28`, and all ten CI legs (6 jobs, 3×Python matrix)
+  are green — first full green since 2026-08-11. Two push-time lessons: pin
+  numpy to the 3.11-compatible line (2.5.x requires Python ≥3.12), and the
+  doc-contract mutation test now tolerates the absent local-only
+  `docs/superpowers/` tree on fresh clones.
+- **PR #2 is still open on GitHub**: "fix(skill): support Plan v3 animated route…",
+  4 commits, CI red, forked from `a2059b9` (now 23 commits behind main). Read
+  its diff, rebase onto current main, re-run CI, then merge or close
+  deliberately.
 - **Credential hygiene (user action)**: the local `.git/config` `localgitea`
   remote URL embeds a plaintext password (`http://acfufu:***@localhost:3000/…`).
   Treat it as leaked: rotate the Gitea password, then strip credentials from the
   URL and switch to a credential helper (`git config credential.helper osxkeychain`)
-  or SSH. Left untouched in the sweep to avoid breaking the local push flow.
+  or SSH. Left untouched to avoid breaking the local push flow. Note: the
+  `localgitea` mirror is behind main (its server was offline at push time,
+  2026-09-14) — `git push localgitea main` once Gitea is up.
 - **M1–M15 review findings**: `docs/superpowers/reviews/…plans-review.md` lists
   15 visual-quality findings; later commits closed some (e.g. M10, M15) but full
   closure is unverified — check M12 (min font size at 360px) first. Then decide:
@@ -119,10 +117,13 @@ HTML itself was untracked and has been superseded by this section.
 Failed gates auto-append to the lessons ledger (`lessons-pending.json`;
 promoted to `skill/references/lessons.md` only after human confirmation).
 
-## 2026-09-09 sweep (this repo's last hygiene pass)
+## 2026-09-14 sweep (this repo's last hygiene pass)
 
 Deleted local junk (`.omo/` run records — archived to
-`~/.readme-showcase-omo-archive-20260909.tgz`, `.DS_Store`, empty `artifacts/`,
-`.impeccable/` cache); hardened `.gitignore` for all local tool dirs; synced
-README_zh.md visual-routes table with the `animated` route; fixed the two CI
-dep gaps above; added this file.
+`~/.readme-showcase-omo-archive-20260914.tgz` as `20260909`, `.DS_Store`, empty
+`artifacts/`, `.impeccable/` cache); hardened `.gitignore` for all local tool
+dirs; synced README_zh.md visual-routes table with the `animated` route; added
+this file and `tests/fixtures/contracts/AGENTS.md`; fixed the two CI dep gaps
+(elk-unit pip install; Pillow + numpy in requirements-dev.txt); pushed main and
+verified the first all-green CI run since 2026-08-11 (numpy re-pinned to
+3.11-compatible 2.4.6; doc-contract mutation test made clone-safe along the way).
