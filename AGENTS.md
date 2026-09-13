@@ -27,7 +27,7 @@ publish — commit/push/publish always require separate human approval.
 | `skill/scripts/` | `readme_pipeline.py` (run/status/resume/preview/screenshot-gate/validate-dataset), `audit_readme.py`, renderers; core package `readme_showcase/` (error codes in `errors.py`) |
 | `skill/vendor/` | Pinned elkjs 0.9.3 bundle + resvg-js manifest (hash-locked) |
 | `dataset/` | Retrieval-mode dataset: `manifest.json` (22 records, hash-pinned), queries, candidates, exemplars + index. Read-only by contract |
-| `tests/` | 101 unittest files (~748 tests) mirroring the package |
+| `tests/` | 101 unittest files (762 tests) mirroring the package; `tests/fixtures/contracts/` golden pairs have their own AGENTS.md |
 | `docs/` | Bilingual user docs (`docs/` en + `docs/zh/`); `docs/superpowers/` is local-only design history |
 | `scripts/install_skill.py` | Atomic project/user installer; npm `bin` entry |
 | `assets/readme/` | Bilingual README artwork + editable sources (`workflow.diagram.json`, `workflow.engine.json`, `hero-motion.json`) |
