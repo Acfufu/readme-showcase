@@ -39,7 +39,7 @@ class CiContractTests(unittest.TestCase):
         )
         self.assertEqual(
             (REPO_ROOT / "requirements-dev.txt").read_text(encoding="utf-8"),
-            "jsonschema==4.26.0\nPillow==11.3.0\nnumpy==2.5.3\n",
+            "jsonschema==4.26.0\nPillow==11.3.0\nnumpy==2.4.6\n",
         )
         self.assertNotIn("jsonschema>=", self.workflow)
 
