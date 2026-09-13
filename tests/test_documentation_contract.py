@@ -490,8 +490,13 @@ class DocumentationContractTests(unittest.TestCase):
                 _assert_forward_reachability(mutated)
             self.assertEqual(self._porcelain_status(), baseline_status, "broken-link mutation dirtied the tree")
         with self.subTest(mutation="superpowers_requires_exact_allowlist"):
-            mutated = dict(scanned)
             scratch = "docs/superpowers/plans/2026-08-13-visual-quality-gate.md"
+            if scratch not in scanned:
+                # docs/superpowers/ is a gitignored local-only tree; fresh clones
+                # (CI) never have it, exactly like the other absent-file tolerance
+                # in _scanned_document_set(). The exemption still guards local runs.
+                self.skipTest("docs/superpowers/ absent on this clone (local-only tree)")
+            mutated = dict(scanned)
             mutated[scratch] = mutated[scratch] + "\n\n[scratch broken](./missing.md)\n"
             with self.assertRaises(AssertionError):
                 _assert_forward_reachability(mutated)
