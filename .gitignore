@@ -20,5 +20,6 @@ __pycache__/
 /.superpowers/
 /.impeccable/
 /.codegraph
+/.video_agent/
 /artifacts/
 /handoff-report*.html

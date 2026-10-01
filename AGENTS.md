@@ -1,7 +1,7 @@
 # AGENTS.md — readme-showcase
 
 Orientation map for AI coding agents (and humans) continuing work in this repo.
-State snapshot: 2026-09-14, after the repo-sweep and first-green-CI push described at the bottom.
+State snapshot: 2026-10-02, after PR #2 (Plan v3 animated route) was rebased, re-verified, and merged (see bottom).
 
 ## What this repo is
 
@@ -27,7 +27,7 @@ publish — commit/push/publish always require separate human approval.
 | `skill/scripts/` | `readme_pipeline.py` (run/status/resume/preview/screenshot-gate/validate-dataset), `audit_readme.py`, renderers; core package `readme_showcase/` (error codes in `errors.py`) |
 | `skill/vendor/` | Pinned elkjs 0.9.3 bundle + resvg-js manifest (hash-locked) |
 | `dataset/` | Retrieval-mode dataset: `manifest.json` (22 records, hash-pinned), queries, candidates, exemplars + index. Read-only by contract |
-| `tests/` | 101 unittest files (762 tests) mirroring the package; `tests/fixtures/contracts/` golden pairs have their own AGENTS.md |
+| `tests/` | 102 unittest files (769 tests) mirroring the package; `tests/fixtures/contracts/` golden pairs have their own AGENTS.md |
 | `docs/` | Bilingual user docs (`docs/` en + `docs/zh/`); `docs/superpowers/` is local-only design history |
 | `scripts/install_skill.py` | Atomic project/user installer; npm `bin` entry |
 | `assets/readme/` | Bilingual README artwork + editable sources (`workflow.diagram.json`, `workflow.engine.json`, `hero-motion.json`) |
@@ -37,7 +37,7 @@ publish — commit/push/publish always require separate human approval.
 ## Commands
 
 ```bash
-# Full test suite (~748 tests; "OK" expected)
+# Full test suite (769 tests; "OK" expected)
 npm test   # = PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 
 # Dev deps (requirements-dev.txt is the authoritative list)
@@ -50,7 +50,10 @@ nvm install && nvm use           # Node 22.22.3 — HARD-PINNED, see below
 
 - **Node version trap**: `skill/scripts/render_elk.mjs` hard-pins
   `NODE_VERSION = "22.22.3"` and exits `E_ENGINE_RUNTIME` on any other version.
-  Local default node ≠ 22.22.3 is an environment error, not a code bug.
+  Local default node ≠ 22.22.3 is an environment error, not a code bug. Node
+  missing from PATH entirely (non-interactive shells) errors ~47 elk/compiled
+  tests at once — export PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH"
+  before judging a red suite.
 - Dataset check: `python3 skill/scripts/readme_pipeline.py validate-dataset`.
 - Installer: `python3 scripts/install_skill.py install|check|update`.
 - Runtime state lives in `~/.codex/state/readme-showcase/` — never written into
@@ -79,7 +82,7 @@ nvm install && nvm use           # Node 22.22.3 — HARD-PINNED, see below
    a gate test failing with `'pass' != 'fail'` (e.g. `test_clipped_svg_fails`)
    means your environment lacks Pillow, not that the gate is buggy.
 
-## Open threads (as of 2026-09-14)
+## Open threads (as of 2026-10-02)
 
 Derived from the 2026-09-04 handoff review (RS-HANDOFF-2026-09-04); the report
 HTML itself was untracked and has been superseded by this section.
@@ -90,10 +93,15 @@ HTML itself was untracked and has been superseded by this section.
   numpy to the 3.11-compatible line (2.5.x requires Python ≥3.12), and the
   doc-contract mutation test now tolerates the absent local-only
   `docs/superpowers/` tree on fresh clones.
-- **PR #2 is still open on GitHub**: "fix(skill): support Plan v3 animated route…",
-  4 commits, CI red, forked from `a2059b9` (now 23 commits behind main). Read
-  its diff, rebase onto current main, re-run CI, then merge or close
-  deliberately.
+- **Resolved 2026-10-02 — PR #2 merged.** "fix(skill): support Plan v3 animated
+  route in the non-compiled readme pipeline" was rebased onto `7831c3b` (no
+  conflicts), verified with a full-suite A/B run (main 762 / PR 769, both green
+  with node 22.22.3 on PATH) and a 10/10 green CI matrix, then rebase-merged as
+  `7d5b463`; branch deleted on both sides. Design note worth remembering: the
+  schema-2 bundle carries a deterministic evaluation-pass *placeholder*
+  envelope, which is never an approval shortcut — EvaluateStage re-runs
+  `evaluate_generated_bundle` over freshly materialized bytes, and the publish
+  gate re-validates before any remote write.
 - **Credential hygiene (user action)**: the local `.git/config` `localgitea`
   remote URL embeds a plaintext password (`http://acfufu:***@localhost:3000/…`).
   Treat it as leaked: rotate the Gitea password, then strip credentials from the
@@ -101,10 +109,14 @@ HTML itself was untracked and has been superseded by this section.
   or SSH. Left untouched to avoid breaking the local push flow. Note: the
   `localgitea` mirror is behind main (its server was offline at push time,
   2026-09-14) — `git push localgitea main` once Gitea is up.
-- **M1–M15 review findings**: `docs/superpowers/reviews/…plans-review.md` lists
-  15 visual-quality findings; later commits closed some (e.g. M10, M15) but full
-  closure is unverified — check M12 (min font size at 360px) first. Then decide:
-  commit sanitized copies or archive deliberately (they exist only on this machine).
+- **M1–M15 review findings**: spot-verified 2026-10-02 as closed in code: M1
+  (nearest-background contrast + large-text 3:1), M3 (canonical atomic JSON
+  writes), M7 (host-path same-model note, pairwise field aligned), M12
+  (`check_readability_at_360`, 12px floor at the 360px projection), M13
+  (rubric-only aesthetics), M10/M15 previously; M4 is the vendored resvg
+  posture. Not individually audited: M2, M5, M6, M8, M9, M11, M14. Still open:
+  decide whether to commit sanitized copies of the `docs/superpowers/` history
+  or archive deliberately (exists only on this machine).
 - **Local-only dirs (all gitignored, intentionally kept on disk)**: `.lazyzcode/`
   (goal-loop state for the LazyZCode loop), `.superpowers/` (SDD briefs/reports),
   `docs/superpowers/` (design history, contract-test allowlisted),
@@ -127,3 +139,15 @@ this file and `tests/fixtures/contracts/AGENTS.md`; fixed the two CI dep gaps
 (elk-unit pip install; Pillow + numpy in requirements-dev.txt); pushed main and
 verified the first all-green CI run since 2026-08-11 (numpy re-pinned to
 3.11-compatible 2.4.6; doc-contract mutation test made clone-safe along the way).
+
+## 2026-10-02 PR #2 merge (most recent pass)
+
+Rebased PR #2 (Plan v3 animated route, 4 commits, previously red since
+2026-08-16) onto `7831c3b` without conflicts; its old CI failures were the
+stale pre-79cbb2c/d796ca6 environment gaps, not logic. Ran the full suite as
+an A/B pair with node 22.22.3 on PATH (main 762 / PR 769, both OK — node
+missing from a non-interactive PATH causes ~47 elk/compiled errors that look
+like real breakage), force-pushed, watched all ten CI legs go green, and
+rebase-merged as `7d5b463`. Local main synced, PR branch deleted both sides;
+`.video_agent/` added to `.gitignore`; `pnpm-lock.yaml` (stray pnpm artifact,
+repo ships npm) left on disk pending an owner decision.
