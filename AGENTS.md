@@ -70,8 +70,11 @@ nvm install && nvm use           # Node 22.22.3 — HARD-PINNED, see below
    (version parity with `package.json`; must stay out of the npm tarball).
 4. `skill/SKILL.md`, `skill/references/`, `skill/workflows/`, `skill/.env.example` —
    doc-contract tree; `tests/test_documentation_contract.py` enforces
-   forward/reverse reachability. `docs/superpowers/` (gitignored) is also covered
-   by an exact allowlist there — do not delete or move it.
+   forward/reverse reachability. The former local-only `docs/superpowers/`
+   scratch tree was archived to
+   `~/.readme-showcase-superpowers-archive-20261002.tgz` and deleted on
+   2026-10-02 (the contract test skips its superpowers assertions when the
+   tree is absent; extract from the archive to restore).
 5. `assets/readme/*` — referenced by both READMEs, partly test-pinned.
 6. `dataset/retrieval/manifest.json`, `exemplars_index.json`, `exemplars/` —
    CI `validate-dataset` + dataset population tests.
@@ -114,12 +117,11 @@ HTML itself was untracked and has been superseded by this section.
   writes), M7 (host-path same-model note, pairwise field aligned), M12
   (`check_readability_at_360`, 12px floor at the 360px projection), M13
   (rubric-only aesthetics), M10/M15 previously; M4 is the vendored resvg
-  posture. Not individually audited: M2, M5, M6, M8, M9, M11, M14. Still open:
-  decide whether to commit sanitized copies of the `docs/superpowers/` history
-  or archive deliberately (exists only on this machine).
+  posture. Not individually audited: M2, M5, M6, M8, M9, M11, M14. The
+  `docs/superpowers/` history question was resolved 2026-10-02: archived and
+  deleted (see red line 4).
 - **Local-only dirs (all gitignored, intentionally kept on disk)**: `.lazyzcode/`
   (goal-loop state for the LazyZCode loop), `.superpowers/` (SDD briefs/reports),
-  `docs/superpowers/` (design history, contract-test allowlisted),
   `.codegraph` → symlink into `~/.omo/codegraph/` (local code index).
 
 ## Reading path for a new agent
@@ -151,3 +153,21 @@ like real breakage), force-pushed, watched all ten CI legs go green, and
 rebase-merged as `7d5b463`. Local main synced, PR branch deleted both sides;
 `.video_agent/` added to `.gitignore`; `pnpm-lock.yaml` (stray pnpm artifact,
 repo ships npm) left on disk pending an owner decision.
+
+## 2026-10-02 grilling pass (most recent)
+
+Owner decisions taken in a grilling session and executed the same day:
+
+- `localgitea` remote URL stripped of its embedded plaintext password;
+  repo-local `credential.helper osxkeychain` set (keychain already holds an
+  entry for localhost:3000 — after the password rotation it will 401 once,
+  then git prompts and updates the entry).
+- `docs/superpowers/` archived to
+  `~/.readme-showcase-superpowers-archive-20261002.tgz` (4 files, roundtrip
+  verified) and deleted; AGENTS.md red line 4 and local-only-dirs updated
+  accordingly.
+- Stray `pnpm-lock.yaml` deleted (repo ships npm; zero pnpm usage).
+- Next direction chosen: real-world validation — `redesign` + `animated`
+  route on dsh-desktop (fresh single-locale target), then the same-route
+  rerun on alas-launcher (PR #2's origin repo) with merged main, both
+  stopping at local preview; candidates stay out of the target repos.
